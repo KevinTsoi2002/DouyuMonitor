@@ -1,0 +1,28 @@
+{
+  "error": 0,
+  "data": {
+    "relateShow": [
+      {
+        "rid": 6846643,
+        "nickName": "示例主播",
+        "roomName": "示例直播间",
+        "avatar": "https://apic.douyucdn.cn/upload/avatar/search_big.jpg",
+        "cateName": "经典单机",
+        "isLive": 1,
+        "hot": "186000"
+      },
+      {
+        "rid": 6846643,
+        "nickName": "重复结果",
+        "roomName": "重复直播间",
+        "cateName": "经典单机",
+        "isLive": 1,
+        "hot": "1"
+      },
+      {
+        "rid": null,
+        "nickName": "无效结果"
+      }
+    ]
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "error": 0,
+  "data": {
+    "room_id": "63136",
+    "room_name": "示例直播间",
+    "owner_name": "示例主播",
+    "avatar": "https://apic.douyucdn.cn/upload/avatar/example_big.jpg",
+    "cate_name": "CS2",
+    "room_status": "1",
+    "online": 186000
+  }
+}

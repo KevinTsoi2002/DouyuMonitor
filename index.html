@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0d1117" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://apic.douyucdn.cn; connect-src 'self' http: https: ws: wss:; media-src 'self' blob: http: https:; worker-src 'self' blob:"
+    />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23ff6a2a'/%3E%3Cpath d='M10 8h6a8 8 0 0 1 0 16h-6V8zm5 4h-1v8h1a4 4 0 0 0 0-8z' fill='white'/%3E%3C/svg%3E" />
+    <title>Douyu Monitor</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/renderer/main.tsx"></script>
+  </body>
+</html>
