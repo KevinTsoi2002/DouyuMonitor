@@ -1,0 +1,12 @@
+{
+  "room": {
+    "room_id": 63136,
+    "show_status": 1,
+    "multirates": [
+      { "name": "蓝光10M", "type": 0 },
+      { "name": "蓝光10M重复", "type": 0 },
+      { "name": "超清", "type": 2 },
+      { "name": null, "type": 3 }
+    ]
+  }
+}

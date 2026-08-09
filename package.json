@@ -1,0 +1,78 @@
+{
+  "name": "douyu-monitor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/main/main.js",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build:sidecar": "\".venv\\Scripts\\python.exe\" -m PyInstaller --noconfirm --clean --onefile --name streamget_bridge --distpath build/streamget --workpath build/pyinstaller --specpath build/pyinstaller scripts/streamget_bridge.py",
+    "build:main": "vite build --config vite.main.config.ts",
+    "build:preload": "vite build --config vite.preload.config.ts",
+    "build:renderer": "vite build",
+    "test": "vitest run",
+    "test:performance": "node scripts/performance-baseline.mjs",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.json && npm run build:main && npm run build:preload && npm run build:renderer",
+    "dist:unpacked": "npm run build:sidecar && npm run build && electron-builder --win --x64 --dir",
+    "dist:win": "npm run build:sidecar && npm run build && electron-builder --win --x64",
+    "start": "electron dist/main/main.js"
+  },
+  "dependencies": {
+    "lucide-react": "latest",
+    "mpegts.js": "^1.8.1",
+    "react": "latest",
+    "react-dom": "latest",
+    "ws": "8.21.2",
+    "zustand": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@types/ws": "8.18.1",
+    "@vitejs/plugin-react": "^6.0.5",
+    "electron": "^43.3.0",
+    "electron-builder": "^26.15.3",
+    "playwright": "^1.62.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.2.1",
+    "vitest": "^4.1.10"
+  },
+  "build": {
+    "appId": "com.douyumonitor.desktop",
+    "productName": "DouyuMonitor",
+    "asar": true,
+    "electronDist": "node_modules/electron/dist",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "build/streamget/streamget_bridge.exe",
+        "to": "streamget/streamget_bridge.exe"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-Setup-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}
