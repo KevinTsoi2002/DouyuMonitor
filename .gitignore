@@ -4,6 +4,7 @@ node_modules/
 .playwright-mcp/
 .serena/
 .superpowers/
+.worktrees/
 dist/
 build/
 release/
