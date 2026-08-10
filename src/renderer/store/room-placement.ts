@@ -1,4 +1,4 @@
-export function normalizeRoomPlacementOrder(activeRoomIds: string[], requestedOrder: unknown): string[] {
+export function normalizeRoomPlacementOrder(activeRoomIds: readonly string[], requestedOrder: unknown): string[] {
   const activeIds = new Set(activeRoomIds);
   const normalized: string[] = [];
   const requestedIds = Array.isArray(requestedOrder) ? requestedOrder : [];
@@ -16,7 +16,7 @@ export function normalizeRoomPlacementOrder(activeRoomIds: string[], requestedOr
   return normalized;
 }
 
-export function moveRoomPlacement(roomIds: string[], sourceRoomId: string, targetRoomId: string): string[] {
+export function moveRoomPlacement(roomIds: readonly string[], sourceRoomId: string, targetRoomId: string): string[] {
   const sourceIndex = roomIds.indexOf(sourceRoomId);
   const targetIndex = roomIds.indexOf(targetRoomId);
   if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) return [...roomIds];
@@ -28,7 +28,7 @@ export function moveRoomPlacement(roomIds: string[], sourceRoomId: string, targe
 }
 
 export function swapPrimaryRoomPlacement(
-  roomIds: string[],
+  roomIds: readonly string[],
   currentPrimaryRoomId: string | undefined,
   targetPrimaryRoomId: string,
 ): string[] {
@@ -48,8 +48,8 @@ export function swapPrimaryRoomPlacement(
   return swappedRoomIds;
 }
 
-export function nextPrimaryAfterRemoval(roomIds: string[], removedRoomId: string): string | undefined {
+export function nextPrimaryAfterRemoval(roomIds: readonly string[], removedRoomId: string): string | undefined {
   const removedIndex = roomIds.indexOf(removedRoomId);
-  if (removedIndex < 0) return undefined;
+  if (removedIndex < 0) return roomIds[0];
   return roomIds[removedIndex + 1] ?? roomIds[removedIndex - 1];
 }

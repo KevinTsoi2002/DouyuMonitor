@@ -39,5 +39,6 @@ describe('room placement', () => {
     expect(nextPrimaryAfterRemoval(['a', 'b', 'c'], 'b')).toBe('c');
     expect(nextPrimaryAfterRemoval(['a', 'b', 'c'], 'c')).toBe('b');
     expect(nextPrimaryAfterRemoval(['a'], 'a')).toBeUndefined();
+    expect(nextPrimaryAfterRemoval(['a', 'b'], 'missing')).toBe('a');
   });
 });
