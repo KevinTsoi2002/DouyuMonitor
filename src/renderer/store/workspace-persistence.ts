@@ -1,4 +1,9 @@
-import type { LayoutId } from '../../domain/layout-engine';
+import {
+  DEFAULT_PRIMARY_ROOM_RATIO,
+  PRIMARY_ROOM_RATIOS,
+  type LayoutId,
+  type PrimaryRoomRatio,
+} from '../../domain/layout-engine';
 import type { StreamQuality } from '../../domain/douyu-adapter';
 import {
   parseDanmakuSettings,
@@ -13,6 +18,7 @@ import {
   type RoomHistoryEntry,
   type RoomLibrary,
 } from './room-library';
+import { normalizeRoomPlacementOrder } from './room-placement';
 
 export const WORKSPACE_STORAGE_KEY = 'douyu-monitor.workspace.v1';
 export const WORKSPACE_SCHEMA_VERSION = 3;
@@ -35,6 +41,8 @@ export interface WorkspaceSnapshot {
   activeGroupId?: string;
   layoutId: LayoutId;
   primaryRoomId?: string;
+  roomPlacementOrder: string[];
+  primaryRoomRatio: PrimaryRoomRatio;
   audioRoomId?: string;
   globalDanmakuEnabled: boolean;
   globalMuted: boolean;
@@ -183,6 +191,12 @@ function parseLayoutId(value: unknown): LayoutId {
   return typeof value === 'string' && LAYOUT_VALUES.has(value) ? value as LayoutId : 'single';
 }
 
+function parsePrimaryRoomRatio(value: unknown): PrimaryRoomRatio {
+  return typeof value === 'number' && PRIMARY_ROOM_RATIOS.includes(value as PrimaryRoomRatio)
+    ? value as PrimaryRoomRatio
+    : DEFAULT_PRIMARY_ROOM_RATIO;
+}
+
 function sameRoomIds(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((roomId, index) => roomId === right[index]);
 }
@@ -241,6 +255,12 @@ export function loadWorkspaceSnapshot(storage: WorkspaceStorage | undefined = ge
       activeGroupId,
       layoutId: parseLayoutId(parsed.layoutId),
       primaryRoomId: readString(parsed.primaryRoomId),
+      roomPlacementOrder: parsed.schemaVersion === WORKSPACE_SCHEMA_VERSION
+        ? normalizeRoomPlacementOrder(migrated.activeRoomIds, parsed.roomPlacementOrder)
+        : [...migrated.activeRoomIds],
+      primaryRoomRatio: parsed.schemaVersion === WORKSPACE_SCHEMA_VERSION
+        ? parsePrimaryRoomRatio(parsed.primaryRoomRatio)
+        : DEFAULT_PRIMARY_ROOM_RATIO,
       audioRoomId: readString(parsed.audioRoomId),
       globalDanmakuEnabled: parsed.globalDanmakuEnabled !== false,
       globalMuted: parsed.globalMuted === true,
