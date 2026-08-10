@@ -12,6 +12,7 @@ interface RoomTileProps {
   room: RoomSession;
   slot: LayoutSlot;
   index: number;
+  controlsLocked?: boolean;
 }
 
 const STATUS_LABELS = {
@@ -21,7 +22,7 @@ const STATUS_LABELS = {
   error: '信号异常',
 } as const;
 
-export function RoomTile({ room, slot, index }: RoomTileProps) {
+export function RoomTile({ room, slot, index, controlsLocked = false }: RoomTileProps) {
   const primaryRoomId = useWorkspace((state) => state.primaryRoomId);
   const audioRoomId = useWorkspace((state) => state.audioRoomId);
   const globalDanmakuEnabled = useWorkspace((state) => state.globalDanmakuEnabled);
@@ -71,14 +72,18 @@ export function RoomTile({ room, slot, index }: RoomTileProps) {
   const resetControlsHide = useCallback(() => {
     hideCleanupRef.current();
     hideCleanupRef.current = scheduleControlsHide({
-      locked: focusWithin || menuOpen,
+      locked: controlsLocked || focusWithin || menuOpen,
       onHide: () => setControlsVisible(false),
     });
-  }, [focusWithin, menuOpen]);
+  }, [controlsLocked, focusWithin, menuOpen]);
   const showControls = useCallback(() => {
     setControlsVisible(true);
     resetControlsHide();
   }, [resetControlsHide]);
+
+  useEffect(() => {
+    if (controlsLocked) setControlsVisible(true);
+  }, [controlsLocked]);
 
   useEffect(() => {
     resetControlsHide();
@@ -87,6 +92,7 @@ export function RoomTile({ room, slot, index }: RoomTileProps) {
 
   return (
     <article
+      data-room-id={room.roomId}
       className={`room-tile ${isPrimary ? 'is-primary' : ''} ${controlsVisible ? 'controls-visible' : 'controls-hidden'}`}
       style={tileStyle}
       aria-label={`${room.anchorName} 的直播画面`}

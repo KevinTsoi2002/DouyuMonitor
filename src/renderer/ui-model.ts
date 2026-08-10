@@ -16,7 +16,7 @@ export const LAYOUT_OPTIONS: LayoutOption[] = [
   { id: 'grid-2x2', label: '2 × 2 网格', shortLabel: '2×2', hint: '适合四路同时监看' },
   { id: 'grid-3x2', label: '3 × 2 网格', shortLabel: '3×2', hint: '适合六路同时监看' },
   { id: 'grid-3x3', label: '3 × 3 网格', shortLabel: '3×3', hint: '最多九路同时监看' },
-  { id: 'primary-two', label: '主画面 + 两侧', shortLabel: '主 + 2', hint: '主画面占据更大区域' },
+  { id: 'primary-two', label: '主画面布局', shortLabel: '主画面', hint: '拖动分隔线调整主画面比例' },
   { id: 'split-horizontal', label: '横向分屏', shortLabel: '横向', hint: '左右并排对比' },
   { id: 'split-vertical', label: '纵向分屏', shortLabel: '纵向', hint: '上下堆叠对比' },
 ];
