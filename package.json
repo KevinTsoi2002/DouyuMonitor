@@ -12,6 +12,7 @@
     "build:renderer": "vite build",
     "test": "vitest run",
     "test:performance": "node scripts/performance-baseline.mjs",
+    "test:primary-resize": "node scripts/primary-room-resize-e2e.mjs",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "build": "tsc -p tsconfig.json && npm run build:main && npm run build:preload && npm run build:renderer",
