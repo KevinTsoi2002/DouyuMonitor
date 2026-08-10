@@ -1,5 +1,9 @@
 import { createStore, type StoreApi } from 'zustand/vanilla';
-import type { LayoutId } from '../../domain/layout-engine';
+import {
+  DEFAULT_PRIMARY_ROOM_RATIO,
+  type LayoutId,
+  type PrimaryRoomRatio,
+} from '../../domain/layout-engine';
 import { resolveRoomInput } from '../../domain/input-resolver';
 import type {
   DouyuAdapter,
@@ -30,6 +34,12 @@ import {
   type RoomHistoryEntry,
   type RoomLibrary,
 } from './room-library';
+import {
+  moveRoomPlacement,
+  nextPrimaryAfterRemoval,
+  normalizeRoomPlacementOrder,
+  swapPrimaryRoomPlacement,
+} from './room-placement';
 
 export type PlaybackAvailabilityStatus = 'checking' | 'available' | 'blocked' | 'error';
 
@@ -55,6 +65,8 @@ export interface WorkspaceState {
   demoMode: boolean;
   layoutId: LayoutId;
   primaryRoomId?: string;
+  roomPlacementOrder: string[];
+  primaryRoomRatio: PrimaryRoomRatio;
   audioRoomId?: string;
   globalDanmakuEnabled: boolean;
   globalMuted: boolean;
@@ -69,6 +81,7 @@ export interface WorkspaceState {
   reorderRooms: (sourceRoomId: string, targetRoomId: string) => void;
   setLayout: (layoutId: LayoutId) => void;
   setPrimaryRoom: (roomId: string) => void;
+  setPrimaryRoomRatio: (ratio: PrimaryRoomRatio) => void;
   setAudioRoom: (roomId?: string) => void;
   setQuality: (roomId: string, quality: StreamQuality) => void;
   setVolume: (roomId: string, volume: number) => void;
@@ -141,6 +154,10 @@ export function createWorkspaceStore(
       ? [toSession(room)]
       : [];
   });
+  const initialPlacementOrder = normalizeRoomPlacementOrder(
+    initialSessions.map((room) => room.roomId),
+    persisted?.roomPlacementOrder,
+  );
 
   const hasRoom = (roomId: string | undefined): roomId is string => (
     roomId !== undefined && initialSessions.some((room) => room.roomId === roomId)
@@ -159,6 +176,8 @@ export function createWorkspaceStore(
         activeGroupId: state.activeGroupId,
         layoutId: state.layoutId,
         primaryRoomId: state.primaryRoomId,
+        roomPlacementOrder: state.roomPlacementOrder,
+        primaryRoomRatio: state.primaryRoomRatio,
         audioRoomId: state.audioRoomId,
         globalDanmakuEnabled: state.globalDanmakuEnabled,
         globalMuted: state.globalMuted,
@@ -178,6 +197,8 @@ export function createWorkspaceStore(
     demoMode: options.demoMode ?? false,
     layoutId: persisted?.layoutId ?? 'auto',
     primaryRoomId: hasRoom(persisted?.primaryRoomId) ? persisted?.primaryRoomId : initialSessions[0]?.roomId,
+    roomPlacementOrder: initialPlacementOrder,
+    primaryRoomRatio: persisted?.primaryRoomRatio ?? DEFAULT_PRIMARY_ROOM_RATIO,
     audioRoomId: hasRoom(persisted?.audioRoomId) ? persisted?.audioRoomId : initialSessions[0]?.roomId,
     globalDanmakuEnabled: persisted?.globalDanmakuEnabled ?? true,
     globalMuted: persisted?.globalMuted ?? false,
@@ -204,6 +225,7 @@ export function createWorkspaceStore(
       const session = toSession(libraryRoom);
       set((state) => ({
         rooms: [...state.rooms, session],
+        roomPlacementOrder: [...state.roomPlacementOrder, session.roomId],
         roomLibrary: { ...state.roomLibrary, [libraryRoom.roomId]: libraryRoom },
         history: addHistoryEntry(state.history, libraryRoom.roomId, now().toISOString()),
         activeGroupId: undefined,
@@ -219,12 +241,13 @@ export function createWorkspaceStore(
       if (!registry.remove(roomId)) return;
       set((state) => {
         const rooms = state.rooms.filter((room) => room.roomId !== roomId);
-        const nextRoomId = rooms[0]?.roomId;
+        const nextPrimaryRoomId = nextPrimaryAfterRemoval(state.roomPlacementOrder, roomId);
         return {
           rooms,
+          roomPlacementOrder: state.roomPlacementOrder.filter((id) => id !== roomId),
           activeGroupId: undefined,
-          primaryRoomId: state.primaryRoomId === roomId ? nextRoomId : state.primaryRoomId,
-          audioRoomId: state.audioRoomId === roomId ? nextRoomId : state.audioRoomId,
+          primaryRoomId: state.primaryRoomId === roomId ? nextPrimaryRoomId : state.primaryRoomId,
+          audioRoomId: state.audioRoomId === roomId ? rooms[0]?.roomId : state.audioRoomId,
         };
       });
       persist();
@@ -235,10 +258,15 @@ export function createWorkspaceStore(
         const from = state.rooms.findIndex((room) => room.roomId === roomId);
         const to = from + delta;
         if (from < 0 || to < 0 || to >= state.rooms.length) return state;
+        const targetRoomId = state.rooms[to].roomId;
         const rooms = [...state.rooms];
         const [moved] = rooms.splice(from, 1);
         rooms.splice(to, 0, moved);
-        return { rooms, activeGroupId: undefined };
+        return {
+          rooms,
+          roomPlacementOrder: moveRoomPlacement(state.roomPlacementOrder, roomId, targetRoomId),
+          activeGroupId: undefined,
+        };
       });
       persist();
     },
@@ -251,7 +279,15 @@ export function createWorkspaceStore(
         const rooms = [...state.rooms];
         const [moved] = rooms.splice(from, 1);
         rooms.splice(to, 0, moved);
-        return { rooms, activeGroupId: undefined };
+        return {
+          rooms,
+          roomPlacementOrder: moveRoomPlacement(
+            state.roomPlacementOrder,
+            sourceRoomId,
+            targetRoomId,
+          ),
+          activeGroupId: undefined,
+        };
       });
       persist();
     },
@@ -262,10 +298,21 @@ export function createWorkspaceStore(
     },
 
     setPrimaryRoom(roomId) {
-      if (get().rooms.some((room) => room.roomId === roomId)) {
-        set({ primaryRoomId: roomId });
-        persist();
-      }
+      if (!get().rooms.some((room) => room.roomId === roomId)) return;
+      set((state) => ({
+        primaryRoomId: roomId,
+        roomPlacementOrder: swapPrimaryRoomPlacement(
+          state.roomPlacementOrder,
+          state.primaryRoomId,
+          roomId,
+        ),
+      }));
+      persist();
+    },
+
+    setPrimaryRoomRatio(primaryRoomRatio) {
+      set({ primaryRoomRatio });
+      persist();
     },
 
     setAudioRoom(roomId) {
@@ -449,10 +496,18 @@ export function createWorkspaceStore(
       for (const room of rooms) {
         registry.add({ roomId: room.roomId, anchorName: room.anchorName });
       }
+      const roomPlacementOrder = normalizeRoomPlacementOrder(
+        rooms.map((room) => room.roomId),
+        state.roomPlacementOrder,
+      );
+      const primaryRoomId = state.primaryRoomId && roomPlacementOrder.includes(state.primaryRoomId)
+        ? state.primaryRoomId
+        : roomPlacementOrder[0];
       set({
         rooms,
+        roomPlacementOrder,
         activeGroupId: groupId,
-        primaryRoomId: rooms[0]?.roomId,
+        primaryRoomId,
         audioRoomId: rooms[0]?.roomId,
       });
       persist();
