@@ -37,6 +37,10 @@ describe('ui model metadata', () => {
       'split-vertical',
     ]);
     expect(LAYOUT_OPTIONS.every((option) => option.label && option.shortLabel)).toBe(true);
+    expect(getLayoutOption('primary-two')).toEqual(expect.objectContaining({
+      label: '主画面布局',
+      shortLabel: '主画面',
+    }));
   });
 
   it('describes automatic layout mode as a selectable option', () => {

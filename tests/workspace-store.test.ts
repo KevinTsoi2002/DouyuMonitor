@@ -237,6 +237,7 @@ describe('createWorkspaceStore', () => {
     store.getState().moveRoom('b', -1);
 
     expect(store.getState().rooms.map((room) => room.roomId)).toEqual(['b', 'a', 'c']);
+    expect(store.getState().roomPlacementOrder).toEqual(['b', 'a', 'c']);
     expect(store.getState().rooms[0]).toBe(originalB);
   });
 
@@ -248,6 +249,73 @@ describe('createWorkspaceStore', () => {
     store.getState().reorderRooms('c', 'a');
 
     expect(store.getState().rooms.map((room) => room.roomId)).toEqual(['c', 'a', 'b']);
+  });
+
+  it('swaps only primary and target visual slots across consecutive changes', () => {
+    const store = createWorkspaceStore(createMockDouyuAdapter(), {
+      initialRooms: [candidate('a'), candidate('b'), candidate('c'), candidate('d')],
+    });
+    store.getState().setAudioRoom('b');
+    store.getState().setQuality('c', 'high');
+    store.getState().toggleDanmaku('c');
+    const primarySession = store.getState().rooms.find((room) => room.roomId === 'c');
+
+    store.getState().setPrimaryRoom('c');
+    expect(store.getState().roomPlacementOrder).toEqual(['c', 'b', 'a', 'd']);
+    expect(store.getState().primaryRoomId).toBe('c');
+    expect(store.getState().audioRoomId).toBe('b');
+    expect(store.getState().rooms.find((room) => room.roomId === 'c')).toBe(primarySession);
+    expect(primarySession).toEqual(expect.objectContaining({ quality: 'high', danmakuEnabled: false }));
+
+    store.getState().setPrimaryRoom('b');
+    expect(store.getState().roomPlacementOrder).toEqual(['b', 'c', 'a', 'd']);
+    expect(store.getState().primaryRoomId).toBe('b');
+  });
+
+  it('synchronizes placement order during add, sidebar reorder, and removal', () => {
+    const store = createWorkspaceStore(createMockDouyuAdapter(), {
+      initialRooms: [candidate('a'), candidate('b'), candidate('c')],
+    });
+    store.getState().setPrimaryRoom('c');
+    store.getState().addRoom(candidate('d'));
+    expect(store.getState().roomPlacementOrder).toEqual(['c', 'b', 'a', 'd']);
+
+    store.getState().reorderRooms('d', 'b');
+    expect(store.getState().roomPlacementOrder).toEqual(['c', 'd', 'b', 'a']);
+
+    store.getState().removeRoom('c');
+    expect(store.getState().roomPlacementOrder).toEqual(['d', 'b', 'a']);
+    expect(store.getState().primaryRoomId).toBe('d');
+  });
+
+  it('keeps surviving visual slots while switching groups and appends new rooms', () => {
+    const store = createWorkspaceStore(createMockDouyuAdapter(), {
+      ...deterministicOptions,
+      initialRooms: [candidate('a'), candidate('b'), candidate('c')],
+    });
+    store.getState().setPrimaryRoom('c');
+    const groupId = store.getState().createGroup('event')!;
+    store.getState().addRoomToGroup(groupId, 'b');
+    store.getState().addRoomToGroup(groupId, 'c');
+    store.getState().switchGroup(groupId);
+
+    expect(store.getState().roomPlacementOrder).toEqual(['c', 'b']);
+    expect(store.getState().primaryRoomId).toBe('c');
+  });
+
+  it('persists the selected primary ratio and restores it', () => {
+    const storage = createMemoryStorage();
+    const first = createWorkspaceStore(createMockDouyuAdapter(), {
+      storage,
+      initialRooms: [candidate('a'), candidate('b')],
+    });
+    first.getState().setPrimaryRoom('b');
+    first.getState().setPrimaryRoomRatio(0.67);
+
+    const restored = createWorkspaceStore(createMockDouyuAdapter(), { storage });
+    expect(restored.getState().roomPlacementOrder).toEqual(['b', 'a']);
+    expect(restored.getState().primaryRoomId).toBe('b');
+    expect(restored.getState().primaryRoomRatio).toBe(0.67);
   });
 
   it('updates global controls and clamps room volume', () => {

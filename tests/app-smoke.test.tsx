@@ -45,6 +45,20 @@ describe('App smoke render', () => {
     expect(html).toMatch(/aria-label="全局静音"/);
   });
 
+  it('offers a direct way to enter the resizable primary layout', () => {
+    const html = renderToStaticMarkup(
+      <WorkspaceProvider
+        adapter={createRendererDouyuAdapter()}
+        demoMode
+        initialRooms={MOCK_ROOM_CANDIDATES.slice(0, 2)}
+      >
+        <App />
+      </WorkspaceProvider>,
+    );
+
+    expect(html).toMatch(/aria-label="进入主画面布局并调整大小"/);
+  });
+
   it('resolves automatic layout to a stable CSS layout class', () => {
     const html = renderToStaticMarkup(
       <WorkspaceProvider
@@ -74,6 +88,8 @@ describe('App smoke render', () => {
     expect(html).toContain('星河');
     expect(html).toContain('林深');
     expect(html).toContain('draggable="true"');
+    expect(html).toContain('data-room-id="63136"');
+    expect(html).toContain('data-room-id="270888"');
     expect(html).toMatch(/aria-label="星河 更多操作"[^>]*aria-expanded="false"/);
   });
 

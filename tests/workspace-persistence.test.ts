@@ -6,6 +6,7 @@ import {
   type WorkspaceSnapshot,
 } from '../src/renderer/store/workspace-persistence';
 import { DEFAULT_DANMAKU_SETTINGS } from '../src/renderer/danmaku/danmaku-settings';
+import { DEFAULT_PRIMARY_ROOM_RATIO, PRIMARY_ROOM_RATIOS } from '../src/domain/layout-engine';
 
 function createMemoryStorage() {
   const values = new Map<string, string>();
@@ -49,6 +50,12 @@ const persistedRoom: WorkspaceSnapshot['roomLibrary'][string] = {
   avatarUrl: 'https://example.com/avatar.jpg',
 };
 
+const secondPersistedRoom: WorkspaceSnapshot['roomLibrary'][string] = {
+  ...persistedRoom,
+  roomId: '270888',
+  anchorName: 'second-anchor',
+};
+
 const snapshot: WorkspaceSnapshot = {
   schemaVersion: 3,
   roomLibrary: { '63136': persistedRoom },
@@ -64,6 +71,8 @@ const snapshot: WorkspaceSnapshot = {
   activeGroupId: 'group-1',
   layoutId: legacySnapshot.layoutId as WorkspaceSnapshot['layoutId'],
   primaryRoomId: '63136',
+  roomPlacementOrder: ['63136'],
+  primaryRoomRatio: DEFAULT_PRIMARY_ROOM_RATIO,
   audioRoomId: '63136',
   globalDanmakuEnabled: true,
   globalMuted: false,
@@ -102,6 +111,8 @@ describe('workspace persistence', () => {
       activeGroupId: undefined,
       layoutId: 'primary-two',
       primaryRoomId: '63136',
+      roomPlacementOrder: ['63136'],
+      primaryRoomRatio: DEFAULT_PRIMARY_ROOM_RATIO,
       audioRoomId: '63136',
       globalDanmakuEnabled: true,
       globalMuted: false,
@@ -118,6 +129,8 @@ describe('workspace persistence', () => {
       schemaVersion: 3,
       roomLibrary: { '63136': legacySnapshot.rooms[0] },
       activeRoomIds: ['63136'],
+      roomPlacementOrder: ['63136'],
+      primaryRoomRatio: DEFAULT_PRIMARY_ROOM_RATIO,
       danmakuSettings: DEFAULT_DANMAKU_SETTINGS,
       sidebarOpen: true,
     }));
@@ -185,6 +198,29 @@ describe('workspace persistence', () => {
       favoriteRoomIds: ['63136'],
       groups: [expect.objectContaining({ roomIds: ['63136'] })],
     }));
+  });
+
+  it('normalizes malformed v3 placement data and defaults unsupported primary ratios', () => {
+    const storage = createMemoryStorage();
+    storage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify({
+      ...snapshot,
+      roomLibrary: { '63136': persistedRoom, '270888': secondPersistedRoom },
+      activeRoomIds: ['63136', '270888'],
+      roomPlacementOrder: ['270888', 'missing', '270888'],
+      primaryRoomRatio: 0.63,
+    }));
+
+    expect(loadWorkspaceSnapshot(storage)).toEqual(expect.objectContaining({
+      roomPlacementOrder: ['270888', '63136'],
+      primaryRoomRatio: DEFAULT_PRIMARY_ROOM_RATIO,
+    }));
+  });
+
+  it.each(PRIMARY_ROOM_RATIOS)('round-trips the supported primary room ratio %s', (primaryRoomRatio) => {
+    const storage = createMemoryStorage();
+    saveWorkspaceSnapshot(storage, { ...snapshot, primaryRoomRatio });
+
+    expect(loadWorkspaceSnapshot(storage)?.primaryRoomRatio).toBe(primaryRoomRatio);
   });
 
   it('restores legacy concrete layouts and falls back from unknown layout ids', () => {
