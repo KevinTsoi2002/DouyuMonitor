@@ -4,14 +4,15 @@ DouyuMonitor 是一个基于 Electron 的斗鱼多直播间监看工具。它支
 
 ## 下载
 
-Windows x64 安装包位于 [Releases](https://github.com/KevinTsoi2002/DouyuMonitor/releases/latest)。下载 `DouyuMonitor-Setup-0.1.0-x64.exe` 后运行安装程序即可。
+Windows x64 安装包位于 [Releases](https://github.com/KevinTsoi2002/DouyuMonitor/releases/latest)。下载 `DouyuMonitor-Setup-0.1.1-x64.exe` 后运行安装程序即可。
 
 当前发布包未进行 Windows 代码签名。原因是构建环境没有可用的、带 Code Signing 用途的受信任证书。Windows 可能显示“未知发布者”；请从本项目的 GitHub Release 下载，并在安装前核对 Release 中的 SHA-256 校验值。
 
 ## 功能
 
 - 按直播间号或主播名字搜索并添加房间
-- 多种画面布局：单画面、2x2、3x2、3x3
+- 多种画面布局：单画面、2x2、3x2、3x3、横向、纵向和主画面布局
+- 主画面布局支持拖动分隔线调整画幅，切换主直播间时直接对调位置
 - 每个房间独立显示滚动弹幕，可设置弹幕密度、字号、速度、透明度和颜色
 - 房间列表支持历史记录、收藏和自定义分组
 - 支持设置主直播间、独立音量、全局静音和默认音量 50%
@@ -43,7 +44,7 @@ Electron 主进程会自动查找 `.venv\Scripts\python.exe`。如果使用其�
 npm run dist:win
 ```
 
-安装包输出到 `release\DouyuMonitor-Setup-0.1.0-x64.exe`。`npm run dist:unpacked` 可生成 `release\win-unpacked\DouyuMonitor.exe` 用于本地验证。
+安装包输出到 `release\DouyuMonitor-Setup-0.1.1-x64.exe`。`npm run dist:unpacked` 可生成 `release\win-unpacked\DouyuMonitor.exe` 用于本地验证。
 
 ## 播放源与合规边界
 

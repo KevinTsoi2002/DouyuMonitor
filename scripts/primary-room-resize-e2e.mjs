@@ -79,8 +79,7 @@ try {
   await page.addInitScript(() => localStorage.clear());
   await page.goto(url);
   assert(await page.locator('.primary-room-divider').count() === 0, 'DIVIDER_VISIBLE_OUTSIDE_PRIMARY_LAYOUT');
-  await page.locator('.layout-menu-trigger').click();
-  await page.locator('.layout-option').filter({ hasText: '主画面布局' }).click();
+  await page.getByRole('button', { name: '进入主画面布局并调整大小' }).click();
 
   const divider = page.locator('.primary-room-divider');
   await divider.waitFor({ state: 'visible' });

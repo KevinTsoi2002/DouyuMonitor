@@ -82,7 +82,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .status-dot { display: inline-block; flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
 .status-dot-live { background: var(--green); box-shadow: 0 0 0 3px rgba(101, 211, 145, 0.11); }
 
-.button, .icon-button, .tiny-icon-button, .tile-action-button, .layout-menu-trigger { border: 1px solid transparent; cursor: pointer; transition: background 140ms ease, border-color 140ms ease, color 140ms ease, transform 140ms ease; }
+.button, .icon-button, .tiny-icon-button, .tile-action-button, .layout-menu-trigger, .layout-primary-shortcut { border: 1px solid transparent; cursor: pointer; transition: background 140ms ease, border-color 140ms ease, color 140ms ease, transform 140ms ease; }
 .button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 34px; padding: 0 13px; border-radius: 6px; font-size: 12px; font-weight: 700; }
 .button:active, .icon-button:active, .tiny-icon-button:active, .tile-action-button:active { transform: translateY(1px); }
 .button-primary { border-color: #e85b2d; background: var(--orange); color: #1c120d; }
@@ -229,6 +229,8 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .workspace-empty p { max-width: 340px; margin: 8px 0 18px; color: var(--muted); font-size: 12px; line-height: 1.7; }
 .layout-control { position: relative; display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 0 4px 0 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel-raised); color: var(--muted-strong); font-size: 11px; }
 .layout-control-label { min-width: 29px; text-align: center; }
+.layout-primary-shortcut { display: inline-grid; width: 26px; height: 27px; padding: 0; place-items: center; border-color: #70462f; border-radius: 4px; background: #241b17; color: var(--orange-soft); }
+.layout-primary-shortcut:hover { border-color: #a7613d; background: #302019; color: var(--orange); }
 .layout-menu-wrap { position: relative; }
 .layout-menu-trigger { display: inline-grid; width: 26px; height: 27px; padding: 0; place-items: center; border-color: transparent; border-left-color: var(--border); background: transparent; color: var(--muted); }
 .layout-menu-trigger:hover { color: var(--text); }

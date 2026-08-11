@@ -1,4 +1,4 @@
-import { LayoutGrid, Menu, MessageCircle, MessageCircleOff, Plus, Radio, Settings2, Volume2, VolumeX, X } from 'lucide-react';
+import { LayoutGrid, Menu, MessageCircle, MessageCircleOff, PanelLeftOpen, Plus, Radio, Settings2, Volume2, VolumeX, X } from 'lucide-react';
 import { useState } from 'react';
 import { LayoutMenu } from './LayoutMenu';
 import { DanmakuSettingsPanel } from './DanmakuSettingsPanel';
@@ -14,11 +14,13 @@ interface AppHeaderProps {
 
 export function AppHeader({ onAddRoom, sidebarOpen, onToggleSidebar }: AppHeaderProps) {
   const [danmakuSettingsOpen, setDanmakuSettingsOpen] = useState(false);
+  const roomCount = useWorkspace((state) => state.rooms.length);
   const layoutId = useWorkspace((state) => state.layoutId);
   const globalDanmakuEnabled = useWorkspace((state) => state.globalDanmakuEnabled);
   const globalMuted = useWorkspace((state) => state.globalMuted);
   const setGlobalDanmakuEnabled = useWorkspace((state) => state.setGlobalDanmakuEnabled);
   const setGlobalMuted = useWorkspace((state) => state.setGlobalMuted);
+  const setLayout = useWorkspace((state) => state.setLayout);
 
   return (
     <header className="app-header">
@@ -78,6 +80,17 @@ export function AppHeader({ onAddRoom, sidebarOpen, onToggleSidebar }: AppHeader
         <div className="layout-control">
           <LayoutGrid size={16} aria-hidden="true" />
           <span className="layout-control-label">{getLayoutOption(layoutId).shortLabel}</span>
+          {roomCount > 1 && layoutId !== 'primary-two' ? (
+            <button
+              className="layout-primary-shortcut"
+              type="button"
+              aria-label="进入主画面布局并调整大小"
+              title="进入主画面布局并调整大小"
+              onClick={() => setLayout('primary-two')}
+            >
+              <PanelLeftOpen size={14} aria-hidden="true" />
+            </button>
+          ) : null}
           <LayoutMenu />
         </div>
         <button
