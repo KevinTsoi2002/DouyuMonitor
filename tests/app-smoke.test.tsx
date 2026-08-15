@@ -44,6 +44,7 @@ describe('App smoke render', () => {
     expect(html).toMatch(/aria-label="打开弹幕设置"/);
     expect(html).toMatch(/aria-label="打开监控状态"[^>]*aria-controls="monitoring-status-panel"/);
     expect(html).toMatch(/aria-label="工作区：未保存工作区"[^>]*aria-controls="workspace-presets-panel"/);
+    expect(html).not.toContain('workspace-trigger-label');
     expect(html).toMatch(/aria-label="全局静音"/);
   });
 

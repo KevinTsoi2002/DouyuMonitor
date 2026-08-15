@@ -117,7 +117,6 @@ export function AppHeader({
           onClick={onToggleWorkspace}
           >
             <PanelsTopLeft size={16} />
-            <span className="workspace-trigger-label">{workspaceName}</span>
           </button>
           <WorkspacePresetPanel open={workspaceOpen} onClose={onToggleWorkspace} />
         </div>

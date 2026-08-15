@@ -73,8 +73,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .danmaku-settings-wrap { position: relative; }
 .danmaku-settings-panel { position: absolute; top: calc(100% + 9px); right: 0; z-index: 30; width: 380px; max-width: calc(100vw - 24px); padding: 11px; border: 1px solid var(--border-strong); border-radius: 7px; background: #171a1f; box-shadow: var(--shadow); color: var(--muted-strong); }
 .workspace-presets-wrap { position: relative; }
-.workspace-trigger { width: auto; max-width: 146px; gap: 6px; padding: 0 8px; }
-.workspace-trigger-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
+.workspace-trigger { width: 34px; max-width: 34px; gap: 0; padding: 0; }
 .workspace-presets-panel { position: absolute; top: calc(100% + 9px); right: 0; z-index: 30; display: flex; width: min(420px, calc(100vw - 24px)); max-height: min(680px, calc(100vh - 62px)); flex-direction: column; gap: 11px; padding: 14px; overflow: hidden; border: 1px solid var(--border-strong); border-radius: 7px; background: #171a1f; box-shadow: var(--shadow); color: var(--muted-strong); }
 .workspace-presets-heading, .workspace-presets-current, .workspace-preset-item, .workspace-presets-save > div, .workspace-presets-update { display: flex; align-items: center; }
 .workspace-presets-heading { justify-content: space-between; gap: 12px; }
@@ -508,7 +507,6 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
   body { overflow: auto; }
   .danmaku-settings-panel { position: fixed; top: 71px; left: 12px; right: 12px; width: auto; max-width: none; }
   .workspace-trigger { max-width: 34px; padding: 0; }
-  .workspace-trigger-label { display: none; }
   .mobile-only { display: inline-grid; }
   .header-actions { gap: 6px; }
   .layout-control-label { display: none; }
