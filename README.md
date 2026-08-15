@@ -1,10 +1,10 @@
 # DouyuMonitor
 
-DouyuMonitor 是一个基于 Electron 的斗鱼多直播间监看工具。它支持把多个房间放在同一窗口中查看，并在对应画面上叠加弹幕。
+DouyuMonitor 是一个基于 Electron 的斗鱼多直播间监看工具，面向需要同时关注多个直播间的用户。它把多个房间集中到一个桌面窗口中，并在对应画面上叠加持续滚动的弹幕。
 
 ## 下载
 
-Windows x64 安装包位于 [Releases](https://github.com/KevinTsoi2002/DouyuMonitor/releases/latest)。下载 `DouyuMonitor-Setup-0.1.1-x64.exe` 后运行安装程序即可。
+Windows x64 安装包位于 [Releases](https://github.com/KevinTsoi2002/DouyuMonitor/releases/latest)。下载 `DouyuMonitor-Setup-0.1.2-x64.exe` 后运行安装程序即可。
 
 当前发布包未进行 Windows 代码签名。原因是构建环境没有可用的、带 Code Signing 用途的受信任证书。Windows 可能显示“未知发布者”；请从本项目的 GitHub Release 下载，并在安装前核对 Release 中的 SHA-256 校验值。
 
@@ -15,6 +15,10 @@ Windows x64 安装包位于 [Releases](https://github.com/KevinTsoi2002/DouyuMon
 - 主画面布局支持拖动分隔线调整画幅，切换主直播间时直接对调位置
 - 每个房间独立显示滚动弹幕，可设置弹幕密度、字号、速度、透明度和颜色
 - 房间列表支持历史记录、收藏和自定义分组
+- 支持工作区预设，可保存一组房间、布局、主画面和弹幕设置并一键恢复
+- 支持监控状态面板、播放失败自动恢复、开播/下播与播放状态通知
+- 支持弹幕关键词过滤、重复弹幕抑制、峰值治理和治理统计
+- 支持应用内快捷键；快捷键仅在应用窗口获得焦点时生效
 - 支持设置主直播间、独立音量、全局静音和默认音量 50%
 - 房间资料和开播状态会定时刷新（在线约 60 秒、未开播约 120 秒，失败自动退避）；未开播房间不会请求播放源
 - 仅接受经过 CDN 白名单校验的独立 HTTP/HTTPS FLV 播放地址
@@ -44,7 +48,7 @@ Electron 主进程会自动查找 `.venv\Scripts\python.exe`。如果使用其�
 npm run dist:win
 ```
 
-安装包输出到 `release\DouyuMonitor-Setup-0.1.1-x64.exe`。`npm run dist:unpacked` 可生成 `release\win-unpacked\DouyuMonitor.exe` 用于本地验证。
+安装包输出到 `release\DouyuMonitor-Setup-0.1.2-x64.exe`。`npm run dist:unpacked` 可生成 `release\win-unpacked\DouyuMonitor.exe` 用于本地验证；解包目录适合便携运行和问题复现，不需要安装器。
 
 ## 播放源与合规边界
 
