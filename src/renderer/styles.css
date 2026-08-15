@@ -115,6 +115,14 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .monitor-summary-item span { overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .monitor-summary-item.is-good strong { color: var(--green); }
 .monitor-summary-item.is-danger strong { color: var(--danger); }
+.monitoring-notification-setting { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 11px; border: 1px solid var(--border); border-radius: 6px; background: #151c23; }
+.monitoring-notification-copy { display: grid; min-width: 0; gap: 4px; }
+.monitoring-notification-copy strong { color: var(--text); font-size: 11px; }
+.monitoring-notification-copy span { color: var(--muted); font-size: 10px; line-height: 1.4; }
+.monitoring-checkbox { display: flex; flex: 0 0 auto; align-items: center; gap: 6px; color: var(--muted-strong); cursor: pointer; font-size: 10px; white-space: nowrap; }
+.monitoring-checkbox input { width: 15px; height: 15px; margin: 0; accent-color: var(--orange); cursor: pointer; }
+.monitoring-checkbox.is-disabled { cursor: not-allowed; opacity: 0.55; }
+.monitoring-checkbox input:disabled { cursor: not-allowed; }
 .monitor-room-list { display: grid; min-height: 0; gap: 7px; margin: 0; padding: 0 2px 4px 0; overflow-y: auto; list-style: none; }
 .monitor-room-row { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 7px; background: #151c23; }
 .monitor-room-row .tiny-icon-button { width: 32px; height: 32px; }

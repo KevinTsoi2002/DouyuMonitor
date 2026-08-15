@@ -49,11 +49,12 @@ export function saveAppPreferences(
   storage: WorkspaceStorage | undefined,
   preferences: AppPreferences,
 ): boolean {
-  if (!storage) return false;
+  const resolvedStorage = storage ?? getDefaultStorage();
+  if (!resolvedStorage) return false;
   const normalized = parseAppPreferences(preferences);
   if (!normalized) return false;
   try {
-    storage.setItem(APP_PREFERENCES_STORAGE_KEY, JSON.stringify(normalized));
+    resolvedStorage.setItem(APP_PREFERENCES_STORAGE_KEY, JSON.stringify(normalized));
     return true;
   } catch {
     return false;

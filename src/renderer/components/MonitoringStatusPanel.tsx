@@ -23,6 +23,7 @@ import { PLAYBACK_RECOVERY_MAX_ATTEMPTS } from '../playback-recovery';
 import { useDanmakuControls, useDanmakuIssueCount, useDanmakuStatus } from '../store/danmaku-context';
 import { useWorkspace } from '../store/workspace-context';
 import type { RoomSession } from '../store/workspace-store';
+import { useNotifications } from '../notifications/notification-context';
 
 interface MonitoringStatusPanelProps {
   open: boolean;
@@ -131,6 +132,44 @@ function RoomMonitorRow({
   );
 }
 
+function SystemNotificationSetting() {
+  const {
+    systemNotificationsEnabled,
+    systemNotificationsSupported,
+    systemNotificationSupportChecked,
+    setSystemNotificationsEnabled,
+  } = useNotifications();
+  const checkingSupport = !systemNotificationSupportChecked;
+  const unsupported = systemNotificationSupportChecked && !systemNotificationsSupported;
+  const disabled = checkingSupport || unsupported;
+  const detail = checkingSupport
+    ? '正在检查系统通知支持性'
+    : unsupported
+      ? '当前运行环境不支持系统通知，将使用应用内提示'
+      : systemNotificationsEnabled
+        ? '播放状态变化将发送系统通知'
+        : '系统通知默认关闭';
+
+  return (
+    <div className="monitoring-notification-setting">
+      <div className="monitoring-notification-copy">
+        <strong>系统通知</strong>
+        <span>{detail}</span>
+      </div>
+      <label className={`monitoring-checkbox ${disabled ? 'is-disabled' : ''}`}>
+        <input
+          type="checkbox"
+          aria-label="系统通知"
+          checked={systemNotificationsEnabled}
+          disabled={disabled}
+          onChange={(event) => { setSystemNotificationsEnabled(event.target.checked); }}
+        />
+        <span>启用</span>
+      </label>
+    </div>
+  );
+}
+
 export function MonitoringStatusPanel({ open, onClose }: MonitoringStatusPanelProps) {
   const rooms = useWorkspace((state) => state.rooms);
   const refreshStreamAvailability = useWorkspace((state) => state.refreshStreamAvailability);
@@ -180,6 +219,8 @@ export function MonitoringStatusPanel({ open, onClose }: MonitoringStatusPanelPr
         <div className={`monitor-summary-item ${summary.playbackIssues ? 'is-danger' : ''}`}><strong>{summary.playbackIssues}</strong><span>播放异常</span></div>
         <div className={`monitor-summary-item ${summary.danmakuIssues ? 'is-danger' : ''}`}><strong>{summary.danmakuIssues}</strong><span>弹幕异常</span></div>
       </div>
+
+      <SystemNotificationSetting />
 
       {rooms.length ? (
         <ul className="monitor-room-list">

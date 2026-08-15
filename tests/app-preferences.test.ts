@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   APP_PREFERENCES_SCHEMA_VERSION,
   APP_PREFERENCES_STORAGE_KEY,
@@ -65,5 +65,23 @@ describe('app preferences', () => {
       schemaVersion: APP_PREFERENCES_SCHEMA_VERSION,
       systemNotificationsEnabled: true,
     })).toBe(false);
+  });
+
+  it('uses the default localStorage when save storage is omitted', () => {
+    const storage = createMemoryStorage();
+    vi.stubGlobal('localStorage', storage);
+
+    try {
+      expect(saveAppPreferences(undefined, {
+        schemaVersion: APP_PREFERENCES_SCHEMA_VERSION,
+        systemNotificationsEnabled: true,
+      })).toBe(true);
+      expect(loadAppPreferences()).toEqual({
+        schemaVersion: APP_PREFERENCES_SCHEMA_VERSION,
+        systemNotificationsEnabled: true,
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
