@@ -40,7 +40,10 @@ describe('Electron main configuration', () => {
     expect(source).toContain('createDouyuDanmakuClient');
     expect(source).toContain('createStreamgetDouyuAdapter');
     expect(source).toContain('createStreamgetBridge');
-    expect(source).toContain('registerIpcHandlers(ipcMain, streamgetAdapter, danmakuManager)');
+    expect(source).toContain('registerIpcHandlers(');
+    expect(source).toContain('streamgetAdapter,');
+    expect(source).toContain('danmakuManager,');
+    expect(source).toContain('createSystemNotificationService()');
     expect(source).toContain('danmakuManager.stopOwner(ownerId)');
     expect(source).toContain('danmakuManager.stopAll()');
     expect(source).not.toContain('createMockDouyuAdapter');
