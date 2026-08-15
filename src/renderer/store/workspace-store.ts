@@ -265,7 +265,16 @@ function presetFingerprint(value: WorkspacePresetDraft | WorkspaceState): string
         } = value as WorkspacePreset;
         return presetDraft;
       })();
-  return JSON.stringify(stableValue(draft));
+  const comparableDraft = {
+    ...draft,
+    rooms: draft.rooms.map(({ roomId, quality, volume, danmakuEnabled }) => ({
+      roomId,
+      quality,
+      volume,
+      danmakuEnabled,
+    })),
+  };
+  return JSON.stringify(stableValue(comparableDraft));
 }
 
 function hasWorkspaceChanges(state: WorkspaceState): boolean {

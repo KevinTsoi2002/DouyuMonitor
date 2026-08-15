@@ -130,6 +130,25 @@ describe('createWorkspaceStore', () => {
     expect(await store.getState().loadWorkspacePreset('missing')).toBe(false);
     expect(store.getState().rooms).toEqual([]);
   });
+
+  it('does not mark a preset dirty when runtime online status changes', async () => {
+    let live = true;
+    const adapter: DouyuAdapter = {
+      ...createMockDouyuAdapter(),
+      search: vi.fn(async () => [{ ...candidate('101'), online: live }]),
+    };
+    const store = createWorkspaceStore(adapter, {
+      ...deterministicOptions,
+      initialRooms: [candidate('101')],
+    });
+    store.getState().saveWorkspacePreset('稳定视角');
+    live = false;
+
+    await store.getState().refreshRoomMetadata('101');
+
+    expect(store.getState().rooms[0]?.online).toBe(false);
+    expect(store.getState().hasUnsavedWorkspaceChanges).toBe(false);
+  });
   it('starts new workspaces in automatic layout mode and keeps it after adding rooms', () => {
     const store = createWorkspaceStore(createMockDouyuAdapter());
 
