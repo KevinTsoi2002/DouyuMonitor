@@ -1,8 +1,9 @@
-import { Activity, LayoutGrid, Menu, MessageCircle, MessageCircleOff, PanelLeftOpen, Plus, Radio, Settings2, Volume2, VolumeX, X } from 'lucide-react';
+import { Activity, LayoutGrid, Menu, MessageCircle, MessageCircleOff, PanelLeftOpen, PanelsTopLeft, Plus, Radio, Settings2, Volume2, VolumeX, X } from 'lucide-react';
 import { useState } from 'react';
 import { LayoutMenu } from './LayoutMenu';
 import { DanmakuSettingsPanel } from './DanmakuSettingsPanel';
 import { MonitoringStatusPanel } from './MonitoringStatusPanel';
+import { WorkspacePresetPanel } from './WorkspacePresetPanel';
 import { WindowControls } from './WindowControls';
 import { getMonitoringSummary } from '../monitoring-status';
 import { useDanmakuIssueCount } from '../store/danmaku-context';
@@ -18,6 +19,7 @@ interface AppHeaderProps {
 export function AppHeader({ onAddRoom, sidebarOpen, onToggleSidebar }: AppHeaderProps) {
   const [danmakuSettingsOpen, setDanmakuSettingsOpen] = useState(false);
   const [monitoringOpen, setMonitoringOpen] = useState(false);
+  const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const rooms = useWorkspace((state) => state.rooms);
   const roomCount = rooms.length;
   const roomIdsKey = rooms.map((room) => room.roomId).join('|');
@@ -27,9 +29,12 @@ export function AppHeader({ onAddRoom, sidebarOpen, onToggleSidebar }: AppHeader
   const layoutId = useWorkspace((state) => state.layoutId);
   const globalDanmakuEnabled = useWorkspace((state) => state.globalDanmakuEnabled);
   const globalMuted = useWorkspace((state) => state.globalMuted);
+  const activeWorkspacePresetId = useWorkspace((state) => state.activeWorkspacePresetId);
+  const workspacePresets = useWorkspace((state) => state.workspacePresets);
   const setGlobalDanmakuEnabled = useWorkspace((state) => state.setGlobalDanmakuEnabled);
   const setGlobalMuted = useWorkspace((state) => state.setGlobalMuted);
   const setLayout = useWorkspace((state) => state.setLayout);
+  const workspaceName = workspacePresets.find((preset) => preset.id === activeWorkspacePresetId)?.name ?? '未保存工作区';
 
   return (
     <>
@@ -70,6 +75,7 @@ export function AppHeader({ onAddRoom, sidebarOpen, onToggleSidebar }: AppHeader
             title="弹幕设置"
             onClick={() => {
               setMonitoringOpen(false);
+              setWorkspaceOpen(false);
               setDanmakuSettingsOpen((open) => !open);
             }}
           >
@@ -89,12 +95,32 @@ export function AppHeader({ onAddRoom, sidebarOpen, onToggleSidebar }: AppHeader
           title="监控状态"
           onClick={() => {
             setDanmakuSettingsOpen(false);
+            setWorkspaceOpen(false);
             setMonitoringOpen((open) => !open);
           }}
         >
           <Activity size={16} />
           {monitoringIssueCount ? <span className="monitoring-header-badge" aria-label={`${monitoringIssueCount} 个监控异常`}>{monitoringIssueCount}</span> : null}
         </button>
+        <div className="workspace-presets-wrap">
+          <button
+            className={`icon-button header-toggle workspace-trigger ${workspaceOpen ? 'is-active' : ''}`}
+            type="button"
+            aria-label={`工作区：${workspaceName}`}
+            aria-expanded={workspaceOpen}
+            aria-controls="workspace-presets-panel"
+            title={workspaceName}
+            onClick={() => {
+              setDanmakuSettingsOpen(false);
+              setMonitoringOpen(false);
+              setWorkspaceOpen((open) => !open);
+            }}
+          >
+            <PanelsTopLeft size={16} />
+            <span className="workspace-trigger-label">{workspaceName}</span>
+          </button>
+          <WorkspacePresetPanel open={workspaceOpen} onClose={() => setWorkspaceOpen(false)} />
+        </div>
         <button
           className={`icon-button header-toggle ${globalMuted ? 'is-active' : ''}`}
           type="button"
