@@ -138,6 +138,20 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .monitoring-empty svg { color: var(--orange-soft); }
 .monitoring-empty strong { color: var(--muted-strong); font-size: 13px; }
 .monitoring-empty span { max-width: 250px; font-size: 11px; line-height: 1.6; }
+.toast-viewport { position: fixed; top: calc(var(--app-header-height) + 10px); right: 18px; z-index: 100; display: grid; width: min(380px, calc(100vw - 36px)); gap: 8px; pointer-events: none; }
+.toast-item { display: flex; min-width: 0; align-items: flex-start; gap: 8px; padding: 10px 10px 10px 12px; border: 1px solid var(--border-strong); border-radius: 6px; background: #171d25; box-shadow: var(--shadow); color: var(--muted-strong); font-size: 11px; line-height: 1.45; pointer-events: auto; }
+.toast-item.is-success { border-color: rgba(101, 211, 145, 0.45); }
+.toast-item.is-warning { border-color: rgba(241, 191, 97, 0.5); }
+.toast-item.is-error { border-color: rgba(239, 106, 105, 0.55); }
+.toast-icon { flex: 0 0 auto; margin-top: 1px; color: var(--orange-soft); }
+.toast-item.is-success .toast-icon { color: var(--green); }
+.toast-item.is-warning .toast-icon { color: var(--yellow); }
+.toast-item.is-error .toast-icon { color: var(--danger); }
+.toast-message { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.toast-action { flex: 0 0 auto; padding: 0; border: 0; background: transparent; color: var(--orange-soft); cursor: pointer; font-size: 10px; font-weight: 700; }
+.toast-action:hover { color: var(--orange); }
+.toast-dismiss { width: 23px; height: 23px; flex: 0 0 23px; margin: -2px -2px 0 0; border-color: transparent; background: transparent; }
+.toast-dismiss:hover { border-color: var(--border); }
 .danmaku-setting-slider { display: grid; grid-template-columns: 72px minmax(90px,1fr) 38px; align-items: center; gap: 8px; min-height: 34px; font-size: 12px; }
 .danmaku-setting-slider input { width: 100%; accent-color: var(--orange); cursor: pointer; }
 .danmaku-setting-slider button, .danmaku-setting-options button { padding: 2px 3px; border: 0; background: transparent; color: #b8c0ca; font-size: 11px; cursor: pointer; }
@@ -467,6 +481,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
   .group-member-list { max-height: 300px; }
   .monitoring-status-panel { width: min(420px, calc(100vw - 10px)); padding: 14px; }
   .monitor-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .toast-viewport { top: 54px; right: 12px; left: 12px; width: auto; }
   .workspace-presets-panel { position: fixed; top: 53px; left: 12px; right: 12px; width: auto; max-width: none; max-height: calc(100vh - 65px); }
 }
 

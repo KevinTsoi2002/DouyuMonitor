@@ -61,6 +61,20 @@ describe('App smoke render', () => {
     expect(html).toMatch(/aria-label="进入主画面布局并调整大小"/);
   });
 
+  it('keeps the toast viewport inside the application shell', () => {
+    const html = renderToStaticMarkup(
+      <WorkspaceProvider
+        adapter={createRendererDouyuAdapter()}
+        demoMode
+        initialRooms={MOCK_ROOM_CANDIDATES.slice(0, 1)}
+      >
+        <App />
+      </WorkspaceProvider>,
+    );
+
+    expect(html).toContain('class="toast-viewport"');
+  });
+
   it('resolves automatic layout to a stable CSS layout class', () => {
     const html = renderToStaticMarkup(
       <WorkspaceProvider
