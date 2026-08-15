@@ -4,6 +4,7 @@ import { AddRoomDialog } from './components/AddRoomDialog';
 import { GroupManagerDialog } from './components/GroupManagerDialog';
 import { RoomSidebar } from './components/RoomSidebar';
 import { ToastViewport } from './components/ToastViewport';
+import { NotificationProvider } from './notifications/notification-context';
 import { ToastProvider } from './notifications/toast-context';
 import { WorkspaceGrid } from './components/WorkspaceGrid';
 import { useWorkspace } from './store/workspace-context';
@@ -17,7 +18,9 @@ export function getInitialSidebarOpen(viewportWidth: number) {
 export function App() {
   return (
     <ToastProvider>
-      <AppContent />
+      <NotificationProvider>
+        <AppContent />
+      </NotificationProvider>
     </ToastProvider>
   );
 }
