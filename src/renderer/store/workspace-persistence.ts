@@ -329,7 +329,7 @@ function parsePreset(value: unknown): WorkspacePreset | undefined {
 
   const roomOrder = value.roomOrder as string[];
   if (
-    roomOrder.length !== roomIds.length ||
+    roomOrder.length > roomIds.length ||
     new Set(roomOrder).size !== roomOrder.length ||
     roomOrder.some((roomId) => !roomIds.includes(roomId))
   ) return undefined;

@@ -6,6 +6,8 @@ import type {
 } from '../src/domain/douyu-adapter';
 import { createMockDouyuAdapter } from '../src/infrastructure/mock-douyu-adapter';
 import { createWorkspaceStore } from '../src/renderer/store/workspace-store';
+import { createWorkspacePresetDraft } from '../src/renderer/store/workspace-store';
+import { loadWorkspaceSnapshot } from '../src/renderer/store/workspace-persistence';
 
 function createMemoryStorage() {
   const values = new Map<string, string>();
@@ -55,6 +57,79 @@ const deterministicOptions = {
 };
 
 describe('createWorkspaceStore', () => {
+  it('saves and updates a named workspace preset without runtime diagnostics', () => {
+    const storage = createMemoryStorage();
+    const store = createWorkspaceStore(createMockDouyuAdapter(), {
+      storage,
+      ...deterministicOptions,
+      initialRooms: [candidate('101'), candidate('202')],
+    });
+
+    store.getState().setLayout('split-vertical');
+    store.getState().setQuality('202', 'high');
+    const presetId = store.getState().saveWorkspacePreset('比赛视角');
+
+    expect(presetId).toBeTruthy();
+    expect(store.getState().activeWorkspacePresetId).toBe(presetId);
+    expect(store.getState().workspacePresets[0]).toEqual(expect.objectContaining({
+      name: '比赛视角',
+      layoutId: 'split-vertical',
+      roomOrder: ['101', '202'],
+    }));
+    const { id: _id, name: _name, createdAt: _createdAt, updatedAt: _updatedAt, ...savedDraft } = store.getState().workspacePresets[0];
+    expect(createWorkspacePresetDraft(store.getState())).toEqual(savedDraft);
+    expect(store.getState().hasUnsavedWorkspaceChanges).toBe(false);
+
+    store.getState().setVolume('101', 0.2);
+    expect(store.getState().hasUnsavedWorkspaceChanges).toBe(true);
+    expect(store.getState().updateWorkspacePreset(presetId!)).toBe(true);
+    expect(store.getState().hasUnsavedWorkspaceChanges).toBe(false);
+    expect(loadWorkspaceSnapshot(storage)?.workspacePresets[0]?.rooms[0]?.volume).toBe(0.2);
+  });
+
+  it('loads a preset as the active room set without changing history, favorites, or groups', async () => {
+    const storage = createMemoryStorage();
+    const adapter = createMockDouyuAdapter();
+    const store = createWorkspaceStore(adapter, {
+      storage,
+      ...deterministicOptions,
+      initialRooms: [candidate('101'), candidate('202')],
+    });
+    const groupId = store.getState().createGroup('活动')!;
+    store.getState().addRoomToGroup(groupId, '101');
+    store.getState().toggleFavorite('101');
+    const presetId = store.getState().saveWorkspacePreset('单房间')!;
+    store.getState().removeRoom('101');
+    store.getState().removeRoom('202');
+    store.getState().addRoom(candidate('303'));
+    const historyBeforeLoad = store.getState().history;
+
+    await expect(store.getState().loadWorkspacePreset(presetId)).resolves.toBe(true);
+
+    expect(store.getState().rooms.map((room) => room.roomId)).toEqual(['101', '202']);
+    expect(store.getState().history).toEqual(historyBeforeLoad);
+    expect(store.getState().favoriteRoomIds).toEqual(['101']);
+    expect(store.getState().groups).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: groupId, roomIds: ['101'] }),
+    ]));
+    expect(store.getState().roomLibrary['303']).toBeDefined();
+  });
+
+  it('rejects duplicate or invalid preset names and rolls back failed loads', async () => {
+    const store = createWorkspaceStore(createMockDouyuAdapter(), {
+      ...deterministicOptions,
+      initialRooms: [candidate('101')],
+    });
+    const firstId = store.getState().saveWorkspacePreset('默认')!;
+
+    expect(store.getState().saveWorkspacePreset(' 默认 ')).toBeUndefined();
+    expect(store.getState().saveWorkspacePreset('')).toBeUndefined();
+    expect(store.getState().renameWorkspacePreset(firstId, 'x'.repeat(41))).toBe(false);
+
+    store.getState().removeRoom('101');
+    expect(await store.getState().loadWorkspacePreset('missing')).toBe(false);
+    expect(store.getState().rooms).toEqual([]);
+  });
   it('starts new workspaces in automatic layout mode and keeps it after adding rooms', () => {
     const store = createWorkspaceStore(createMockDouyuAdapter());
 
