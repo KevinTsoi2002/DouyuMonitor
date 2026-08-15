@@ -17,8 +17,60 @@ describe('danmaku settings', () => {
       density: 'normal',
       fontFamily: 'microsoft-yahei',
       rendering: 'native',
+      governance: {
+        enabled: true,
+        keywordBlacklist: [],
+        duplicateWindowSeconds: 3,
+        peakProtectionEnabled: true,
+      },
     });
     expect(parseDanmakuSettings(undefined)).toEqual(DEFAULT_DANMAKU_SETTINGS);
+  });
+
+  it('normalizes governance settings and clamps its numeric window', () => {
+    expect(
+      parseDanmakuSettings({
+        governance: {
+          enabled: 'yes',
+          keywordBlacklist: [' 刷屏 ', '刷屏', '', '  '],
+          duplicateWindowSeconds: 0,
+          peakProtectionEnabled: false,
+        },
+      }).governance,
+    ).toEqual({
+      enabled: true,
+      keywordBlacklist: ['刷屏'],
+      duplicateWindowSeconds: 1,
+      peakProtectionEnabled: false,
+    });
+
+    expect(
+      parseDanmakuSettings({
+        governance: {
+          duplicateWindowSeconds: 99,
+        },
+      }).governance.duplicateWindowSeconds,
+    ).toBe(10);
+  });
+
+  it('limits governance keywords to 40 characters and 50 entries', () => {
+    const longKeyword = 'a'.repeat(45);
+    const keywords = [
+      longKeyword,
+      ...Array.from({ length: 55 }, (_, index) => `关键词${index}`),
+    ];
+
+    const parsed = parseDanmakuSettings({
+      governance: { keywordBlacklist: keywords },
+    }).governance;
+
+    expect(parsed.keywordBlacklist).toHaveLength(50);
+    expect(parsed.keywordBlacklist[0]).toBe('a'.repeat(40));
+    expect(
+      parsed.keywordBlacklist.every(
+        (keyword) => Array.from(keyword).length <= 40,
+      ),
+    ).toBe(true);
   });
 
   it('clamps each numeric setting independently', () => {
@@ -66,6 +118,12 @@ describe('danmaku settings', () => {
       density: 'massive',
       fontFamily: 'simhei',
       rendering: 'advanced',
+      governance: {
+        enabled: true,
+        keywordBlacklist: [],
+        duplicateWindowSeconds: 3,
+        peakProtectionEnabled: true,
+      },
     });
 
     expect(
