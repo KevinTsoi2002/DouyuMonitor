@@ -4,6 +4,7 @@ import type { RoomCandidate, DouyuAdapter } from '../../domain/douyu-adapter';
 import { createWorkspaceStore, type WorkspaceState } from './workspace-store';
 import { createWorkspaceRefreshScheduler } from './workspace-refresh';
 import type { StoreApi } from 'zustand/vanilla';
+import type { WorkspaceStorage } from './workspace-persistence';
 
 const WorkspaceStoreContext = createContext<StoreApi<WorkspaceState> | null>(null);
 
@@ -12,6 +13,7 @@ interface WorkspaceProviderProps extends PropsWithChildren {
   demoMode: boolean;
   initialRooms?: RoomCandidate[];
   initialSidebarOpen?: boolean;
+  storage?: WorkspaceStorage;
 }
 
 export function WorkspaceProvider({
@@ -19,6 +21,7 @@ export function WorkspaceProvider({
   demoMode,
   initialRooms,
   initialSidebarOpen,
+  storage,
   children,
 }: WorkspaceProviderProps) {
   const storeRef = useRef<StoreApi<WorkspaceState> | null>(null);
@@ -27,6 +30,7 @@ export function WorkspaceProvider({
       demoMode,
       initialRooms,
       initialSidebarOpen,
+      storage,
     });
   }
   const store = storeRef.current;
