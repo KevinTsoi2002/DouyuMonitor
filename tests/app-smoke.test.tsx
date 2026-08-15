@@ -42,6 +42,9 @@ describe('App smoke render', () => {
     expect(html).toMatch(/class="button button-primary"[^>]*aria-label="添加直播间"/);
     expect(html).toMatch(/aria-label="关闭全局弹幕"/);
     expect(html).toMatch(/aria-label="打开弹幕设置"/);
+    expect(html).toMatch(/aria-label="打开监控状态"[^>]*aria-controls="monitoring-status-panel"/);
+    expect(html).toMatch(/aria-label="工作区：未保存工作区"[^>]*aria-controls="workspace-presets-panel"/);
+    expect(html).not.toContain('workspace-trigger-label');
     expect(html).toMatch(/aria-label="全局静音"/);
   });
 
@@ -57,6 +60,20 @@ describe('App smoke render', () => {
     );
 
     expect(html).toMatch(/aria-label="进入主画面布局并调整大小"/);
+  });
+
+  it('keeps the toast viewport inside the application shell', () => {
+    const html = renderToStaticMarkup(
+      <WorkspaceProvider
+        adapter={createRendererDouyuAdapter()}
+        demoMode
+        initialRooms={MOCK_ROOM_CANDIDATES.slice(0, 1)}
+      >
+        <App />
+      </WorkspaceProvider>,
+    );
+
+    expect(html).toContain('class="toast-viewport"');
   });
 
   it('resolves automatic layout to a stable CSS layout class', () => {

@@ -4,6 +4,7 @@ import {
   IPC_CHANNELS,
   isValidGetStreamAvailabilityRequest,
   isValidSearchRoomsRequest,
+  isValidSystemNotificationRequest,
   ok,
   toIpcError,
   type SearchRoomsRequest,
@@ -21,7 +22,19 @@ describe('IPC contract', () => {
     expect(IPC_CHANNELS.windowToggleMaximize).toBe('window.toggleMaximize');
     expect(IPC_CHANNELS.windowClose).toBe('window.close');
     expect(IPC_CHANNELS.windowMaximizedChanged).toBe('window.maximizedChanged');
+    expect(IPC_CHANNELS.getSystemNotificationSupport).toBe('notifications.getSupport');
+    expect(IPC_CHANNELS.showSystemNotification).toBe('notifications.show');
     expect(Object.values(IPC_CHANNELS).every((channel) => channel.includes('.'))).toBe(true);
+  });
+
+  it('accepts only bounded non-empty system notification text', () => {
+    expect(isValidSystemNotificationRequest({ title: '斗鱼监控', body: '星河已开播' })).toBe(true);
+    expect(isValidSystemNotificationRequest({ title: '  ', body: 'message' })).toBe(false);
+    expect(isValidSystemNotificationRequest({ title: 'title', body: '  ' })).toBe(false);
+    expect(isValidSystemNotificationRequest({ title: 'a'.repeat(81), body: 'message' })).toBe(false);
+    expect(isValidSystemNotificationRequest({ title: 'title', body: 'a'.repeat(241) })).toBe(false);
+    expect(isValidSystemNotificationRequest({ title: 'title', body: 123 })).toBe(false);
+    expect(isValidSystemNotificationRequest(null)).toBe(false);
   });
 
   it('accepts only one-to-twenty digit availability requests', () => {

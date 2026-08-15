@@ -2,6 +2,7 @@ import type {
   GetStreamAvailabilityResult,
   IpcResult,
   SearchRoomsResult,
+  SystemNotificationSupportResult,
 } from '../shared/ipc-contract';
 import { isDanmakuEvent, type DanmakuEvent } from '../shared/danmaku-contract';
 import { IPC_CHANNELS } from '../shared/ipc-contract';
@@ -25,6 +26,8 @@ export interface AppApi {
   toggleMaximizeWindow(): Promise<void>;
   closeWindow(): Promise<void>;
   onMaximizedChanged(listener: (maximized: boolean) => void): () => void;
+  getSystemNotificationSupport(): Promise<SystemNotificationSupportResult>;
+  showSystemNotification(input: { title: string; body: string }): Promise<IpcResult<void>>;
   ping(): Promise<IpcResult<{ status: 'ok' }>>;
 }
 
@@ -71,6 +74,17 @@ export function createAppApi(ipcRenderer: IpcRendererLike): AppApi {
       };
       ipcRenderer.on(IPC_CHANNELS.windowMaximizedChanged, wrapper);
       return () => ipcRenderer.removeListener(IPC_CHANNELS.windowMaximizedChanged, wrapper);
+    },
+    getSystemNotificationSupport() {
+      return ipcRenderer.invoke(
+        IPC_CHANNELS.getSystemNotificationSupport,
+      ) as Promise<SystemNotificationSupportResult>;
+    },
+    showSystemNotification(input) {
+      return ipcRenderer.invoke(
+        IPC_CHANNELS.showSystemNotification,
+        input,
+      ) as Promise<IpcResult<void>>;
     },
     ping() {
       return ipcRenderer.invoke(IPC_CHANNELS.ping) as Promise<IpcResult<{ status: 'ok' }>>;

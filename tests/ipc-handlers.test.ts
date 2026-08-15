@@ -85,6 +85,72 @@ describe('registerIpcHandlers', () => {
     await expect(handlers.get(IPC_CHANNELS.ping)?.({}, undefined)).resolves.toEqual({ ok: true, data: { status: 'ok' } });
   });
 
+  it('reports and sends system notifications through the injected service', async () => {
+    const { ipcMain, handlers } = createFakeIpcMain();
+    const notifier = {
+      isSupported: vi.fn(() => true),
+      show: vi.fn(async () => undefined),
+    };
+    registerIpcHandlers(ipcMain, createMockDouyuAdapter(), createFakeManager(), notifier);
+
+    await expect(handlers.get(IPC_CHANNELS.getSystemNotificationSupport)?.({}, undefined))
+      .resolves.toEqual({ ok: true, data: { supported: true } });
+    await expect(handlers.get(IPC_CHANNELS.showSystemNotification)?.({}, {
+      title: '斗鱼监控',
+      body: '星河已开播',
+    })).resolves.toEqual({ ok: true, data: undefined });
+    expect(notifier.show).toHaveBeenCalledWith({ title: '斗鱼监控', body: '星河已开播' });
+  });
+
+  it('maps unsupported and failed system notifications to sanitized errors', async () => {
+    const { ipcMain, handlers } = createFakeIpcMain();
+    const notifier = {
+      isSupported: vi.fn(() => false),
+      show: vi.fn(async () => { throw new Error('cookie=secret'); }),
+    };
+    registerIpcHandlers(ipcMain, createMockDouyuAdapter(), createFakeManager(), notifier);
+
+    await expect(handlers.get(IPC_CHANNELS.showSystemNotification)?.({}, {
+      title: '斗鱼监控',
+      body: '星河已开播',
+    })).resolves.toEqual({
+      ok: false,
+      error: { code: 'NOTIFICATION_UNSUPPORTED', message: '当前环境不支持系统通知', retryable: false },
+    });
+    expect(notifier.show).not.toHaveBeenCalled();
+
+    notifier.isSupported.mockReturnValue(true);
+    await expect(handlers.get(IPC_CHANNELS.showSystemNotification)?.({}, {
+      title: '斗鱼监控',
+      body: '星河已开播',
+    })).resolves.toEqual({
+      ok: false,
+      error: { code: 'NOTIFICATION_FAILED', message: '系统通知发送失败', retryable: true },
+    });
+    expect(JSON.stringify(await handlers.get(IPC_CHANNELS.showSystemNotification)?.({}, {
+      title: '斗鱼监控',
+      body: '星河已开播',
+    }))).not.toContain('secret');
+  });
+
+  it('rejects malformed system notification payloads before invoking the service', async () => {
+    const { ipcMain, handlers } = createFakeIpcMain();
+    const notifier = {
+      isSupported: vi.fn(() => true),
+      show: vi.fn(async () => undefined),
+    };
+    registerIpcHandlers(ipcMain, createMockDouyuAdapter(), createFakeManager(), notifier);
+
+    await expect(handlers.get(IPC_CHANNELS.showSystemNotification)?.({}, {
+      title: '',
+      body: 'message',
+    })).resolves.toEqual({
+      ok: false,
+      error: { code: 'INVALID_INPUT', message: '请输入有效的通知标题和内容', retryable: false },
+    });
+    expect(notifier.show).not.toHaveBeenCalled();
+  });
+
   it('registers a typed stream availability handler', async () => {
     const { ipcMain, handlers } = createFakeIpcMain();
     registerIpcHandlers(ipcMain, createMockDouyuAdapter(), createFakeManager());

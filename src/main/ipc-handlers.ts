@@ -5,6 +5,7 @@ import type {
   DanmakuEventTarget,
   DanmakuSessionManager,
 } from './danmaku-session-manager';
+import type { SystemNotificationService } from './system-notifications';
 import {
   IPC_CHANNELS,
   failed,
@@ -12,11 +13,13 @@ import {
   invalidRoomIdError,
   isValidGetStreamAvailabilityRequest,
   isValidSearchRoomsRequest,
+  isValidSystemNotificationRequest,
   ok,
   type GetStreamAvailabilityResult,
   type IpcResult,
   type SearchRoomsRequest,
   type SearchRoomsResult,
+  type SystemNotificationSupportResult,
 } from '../shared/ipc-contract';
 
 export interface IpcEventLike {
@@ -29,10 +32,16 @@ export interface IpcMainLike {
   handle(channel: string, listener: IpcListener): void;
 }
 
+const unavailableSystemNotifications: SystemNotificationService = {
+  isSupported: () => false,
+  show: async () => undefined,
+};
+
 export function registerIpcHandlers(
   ipcMain: IpcMainLike,
   adapter: DouyuAdapter,
   danmakuManager: DanmakuSessionManager,
+  systemNotifications: SystemNotificationService = unavailableSystemNotifications,
 ): void {
   ipcMain.handle(IPC_CHANNELS.searchRooms, async (_event, request): Promise<SearchRoomsResult> => {
     if (!isValidSearchRoomsRequest(request)) return invalidInputError();
@@ -61,6 +70,55 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC_CHANNELS.ping, async (): Promise<IpcResult<{ status: 'ok' }>> => {
     return ok({ status: 'ok' });
   });
+
+  ipcMain.handle(
+    IPC_CHANNELS.getSystemNotificationSupport,
+    async (): Promise<SystemNotificationSupportResult> => {
+      return ok({ supported: systemNotifications.isSupported() });
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.showSystemNotification,
+    async (_event, request): Promise<IpcResult<void>> => {
+      if (!isValidSystemNotificationRequest(request)) {
+        return {
+          ok: false,
+          error: {
+            code: 'INVALID_INPUT',
+            message: '请输入有效的通知标题和内容',
+            retryable: false,
+          },
+        };
+      }
+      if (!systemNotifications.isSupported()) {
+        return {
+          ok: false,
+          error: {
+            code: 'NOTIFICATION_UNSUPPORTED',
+            message: '当前环境不支持系统通知',
+            retryable: false,
+          },
+        };
+      }
+      try {
+        await systemNotifications.show({
+          title: request.title.trim(),
+          body: request.body.trim(),
+        });
+        return ok(undefined);
+      } catch {
+        return {
+          ok: false,
+          error: {
+            code: 'NOTIFICATION_FAILED',
+            message: '系统通知发送失败',
+            retryable: true,
+          },
+        };
+      }
+    },
+  );
 
   ipcMain.handle(
     IPC_CHANNELS.startDanmaku,

@@ -10,7 +10,12 @@ import {
 import { useStore } from 'zustand';
 import type { StoreApi } from 'zustand/vanilla';
 import type { DanmakuSource } from '../../infrastructure/renderer-danmaku-source';
-import type { DanmakuMessage } from '../../shared/danmaku-contract';
+import type { DanmakuMessage, DanmakuStatus } from '../../shared/danmaku-contract';
+import {
+  createDanmakuGovernanceRuntime,
+  type DanmakuGovernanceStats,
+} from '../danmaku/danmaku-governance';
+import { resolveDanmakuGovernance } from '../danmaku/danmaku-settings';
 import { useWorkspace } from './workspace-context';
 import {
   createDanmakuStore,
@@ -21,6 +26,7 @@ import {
 interface DanmakuContextValue {
   store: StoreApi<DanmakuState>;
   retryRoom(roomId: string): Promise<void>;
+  clearGovernanceStats(roomId: string): void;
 }
 
 interface DanmakuProviderProps extends PropsWithChildren {
@@ -30,6 +36,7 @@ interface DanmakuProviderProps extends PropsWithChildren {
 const DanmakuContext = createContext<DanmakuContextValue | null>(null);
 const fallbackStore = createDanmakuStore();
 const fallbackRooms = new Map<string, DanmakuRoomView>();
+const EMPTY_GOVERNANCE_STATS = createDanmakuGovernanceRuntime().stats;
 
 function getFallbackRoom(roomId: string): DanmakuRoomView {
   let room = fallbackRooms.get(roomId);
@@ -40,6 +47,7 @@ function getFallbackRoom(roomId: string): DanmakuRoomView {
       status: Object.freeze({ roomId, state: 'idle' as const }),
       pending: emptyMessages,
       dropped: 0,
+      governanceStats: EMPTY_GOVERNANCE_STATS,
     });
     fallbackRooms.set(roomId, room);
   }
@@ -49,6 +57,8 @@ function getFallbackRoom(roomId: string): DanmakuRoomView {
 export function DanmakuProvider({ source, children }: DanmakuProviderProps) {
   const rooms = useWorkspace((state) => state.rooms);
   const globalDanmakuEnabled = useWorkspace((state) => state.globalDanmakuEnabled);
+  const governanceDefaults = useWorkspace((state) => state.danmakuSettings.governance);
+  const governanceOverrides = useWorkspace((state) => state.danmakuGovernanceOverrides);
   const storeRef = useRef<StoreApi<DanmakuState> | null>(null);
   const trackedRoomsRef = useRef(new Set<string>());
   if (!storeRef.current) storeRef.current = createDanmakuStore();
@@ -88,8 +98,15 @@ export function DanmakuProvider({ source, children }: DanmakuProviderProps) {
     const currentRoomIds = new Set<string>();
     for (const room of rooms) {
       currentRoomIds.add(room.roomId);
-      const shouldTrack = globalDanmakuEnabled && room.danmakuEnabled;
-      store.getState().syncRoom(room.roomId, shouldTrack);
+      const shouldTrack = globalDanmakuEnabled
+        && room.danmakuEnabled
+        && room.online
+        && room.status !== 'offline';
+      store.getState().syncRoom(
+        room.roomId,
+        shouldTrack,
+        resolveDanmakuGovernance(governanceDefaults, governanceOverrides[room.roomId]),
+      );
       if (!shouldTrack) {
         if (trackedRoomsRef.current.has(room.roomId)) {
           trackedRoomsRef.current.delete(room.roomId);
@@ -108,7 +125,7 @@ export function DanmakuProvider({ source, children }: DanmakuProviderProps) {
       void source.stop(roomId).catch(() => undefined);
       store.getState().removeRoom(roomId);
     }
-  }, [globalDanmakuEnabled, rooms, setFailed, source, store]);
+  }, [globalDanmakuEnabled, governanceDefaults, governanceOverrides, rooms, setFailed, source, store]);
 
   const retryRoom = useCallback(
     async (roomId: string) => {
@@ -126,7 +143,14 @@ export function DanmakuProvider({ source, children }: DanmakuProviderProps) {
     [setFailed, source, store],
   );
 
-  const value = useMemo(() => ({ store, retryRoom }), [retryRoom, store]);
+  const clearGovernanceStats = useCallback((roomId: string) => {
+    store.getState().clearGovernanceStats(roomId);
+  }, [store]);
+
+  const value = useMemo(
+    () => ({ store, retryRoom, clearGovernanceStats }),
+    [clearGovernanceStats, retryRoom, store],
+  );
   return <DanmakuContext.Provider value={value}>{children}</DanmakuContext.Provider>;
 }
 
@@ -138,10 +162,83 @@ export function useDanmakuRoom(roomId: string): DanmakuRoomView {
   );
 }
 
-export function useDanmakuControls(): { retryRoom(roomId: string): Promise<void> } {
+export function useDanmakuStatus(roomId: string): DanmakuStatus {
+  const context = useContext(DanmakuContext);
+  return useStore(
+    context?.store ?? fallbackStore,
+    (state) => state.rooms[roomId]?.status ?? getFallbackRoom(roomId).status,
+  );
+}
+
+export function useDanmakuIssueCount(roomIdsKey: string): number {
+  const context = useContext(DanmakuContext);
+  const eligibleRoomIdsKey = useWorkspace((state) => {
+    if (!state.globalDanmakuEnabled) return '';
+    return state.rooms
+      .filter((room) => room.danmakuEnabled && room.online && room.status !== 'offline')
+      .map((room) => room.roomId)
+      .join('|');
+  });
+  const eligibleRoomIds = new Set(eligibleRoomIdsKey ? eligibleRoomIdsKey.split('|') : []);
+  return useStore(
+    context?.store ?? fallbackStore,
+    (state) => roomIdsKey.split('|').reduce((count, roomId) => {
+      const status = state.rooms[roomId]?.status.state;
+      return count + (eligibleRoomIds.has(roomId)
+        && (status === 'failed' || status === 'platform-blocked') ? 1 : 0);
+    }, 0),
+  );
+}
+
+function mergeGovernanceStats(
+  current: DanmakuGovernanceStats,
+  next: DanmakuGovernanceStats,
+): DanmakuGovernanceStats {
+  const level = current.level === 'burst' || next.level === 'burst'
+    ? 'burst'
+    : current.level === 'crowded' || next.level === 'crowded'
+      ? 'crowded'
+      : 'normal';
+  return {
+    level,
+    recentRate: current.recentRate + next.recentRate,
+    peakRate: Math.max(current.peakRate, next.peakRate),
+    filtered: current.filtered + next.filtered,
+    duplicates: current.duplicates + next.duplicates,
+    rateLimited: current.rateLimited + next.rateLimited,
+    queueOverflow: current.queueOverflow + next.queueOverflow,
+    upstreamDropped: current.upstreamDropped + next.upstreamDropped,
+  };
+}
+
+export function useDanmakuGovernanceStats(roomIdsKey: string): DanmakuGovernanceStats {
+  const context = useContext(DanmakuContext);
+  const rooms = useStore(
+    context?.store ?? fallbackStore,
+    (state) => state.rooms,
+  );
+  return useMemo(
+    () => roomIdsKey.split('|').filter(Boolean).reduce(
+      (stats, roomId) => mergeGovernanceStats(
+        stats,
+        rooms[roomId]?.governanceStats ?? EMPTY_GOVERNANCE_STATS,
+      ),
+      EMPTY_GOVERNANCE_STATS,
+    ),
+    [roomIdsKey, rooms],
+  );
+}
+
+export function useDanmakuControls(): {
+  retryRoom(roomId: string): Promise<void>;
+  clearGovernanceStats(roomId: string): void;
+} {
   const context = useContext(DanmakuContext);
   return useMemo(
-    () => ({ retryRoom: context?.retryRoom ?? (async () => {}) }),
+    () => ({
+      retryRoom: context?.retryRoom ?? (async () => {}),
+      clearGovernanceStats: context?.clearGovernanceStats ?? (() => {}),
+    }),
     [context],
   );
 }

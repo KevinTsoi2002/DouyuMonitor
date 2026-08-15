@@ -11,6 +11,7 @@ import {
 import { registerIpcHandlers } from './ipc-handlers';
 import { createBrowserWindowOptions, getRendererLoadTarget } from './main-config';
 import { createStreamgetBridge } from './streamget-bridge';
+import { createSystemNotificationService } from './system-notifications';
 import {
   registerWindowControlHandlers,
   wireMaximizedNotifications,
@@ -56,7 +57,12 @@ async function bootstrap(): Promise<void> {
       resourcesPath: process.resourcesPath,
     }),
   );
-  registerIpcHandlers(ipcMain, streamgetAdapter, danmakuManager);
+  registerIpcHandlers(
+    ipcMain,
+    streamgetAdapter,
+    danmakuManager,
+    createSystemNotificationService(),
+  );
   registerWindowControlHandlers(ipcMain, (sender) => (
     BrowserWindow.fromWebContents(sender as WebContents) ?? undefined
   ));

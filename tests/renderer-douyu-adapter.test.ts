@@ -34,6 +34,8 @@ function createTestAppApi(overrides: Partial<AppApi>): AppApi {
     toggleMaximizeWindow: async () => {},
     closeWindow: async () => {},
     onMaximizedChanged: () => () => {},
+    getSystemNotificationSupport: unavailable,
+    showSystemNotification: unavailable,
     ping: async () => ok({ status: 'ok' as const }),
     ...overrides,
   };

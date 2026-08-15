@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  WORKSPACE_SCHEMA_VERSION,
   WORKSPACE_STORAGE_KEY,
   loadWorkspaceSnapshot,
   saveWorkspaceSnapshot,
@@ -57,7 +58,7 @@ const secondPersistedRoom: WorkspaceSnapshot['roomLibrary'][string] = {
 };
 
 const snapshot: WorkspaceSnapshot = {
-  schemaVersion: 3,
+  schemaVersion: WORKSPACE_SCHEMA_VERSION,
   roomLibrary: { '63136': persistedRoom },
   activeRoomIds: ['63136'],
   history: [{ roomId: '63136', addedAt: '2026-08-10T00:00:00.000Z' }],
@@ -77,6 +78,9 @@ const snapshot: WorkspaceSnapshot = {
   globalDanmakuEnabled: true,
   globalMuted: false,
   danmakuSettings: DEFAULT_DANMAKU_SETTINGS,
+  danmakuGovernanceOverrides: {},
+  workspacePresets: [],
+  activeWorkspacePresetId: undefined,
   sidebarOpen: true,
 };
 
@@ -102,7 +106,7 @@ describe('workspace persistence', () => {
     storage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify(legacySnapshot));
 
     expect(loadWorkspaceSnapshot(storage)).toEqual({
-      schemaVersion: 3,
+      schemaVersion: WORKSPACE_SCHEMA_VERSION,
       roomLibrary: { '63136': legacySnapshot.rooms[0] },
       activeRoomIds: ['63136'],
       history: [],
@@ -117,6 +121,9 @@ describe('workspace persistence', () => {
       globalDanmakuEnabled: true,
       globalMuted: false,
       danmakuSettings: DEFAULT_DANMAKU_SETTINGS,
+      danmakuGovernanceOverrides: {},
+      workspacePresets: [],
+      activeWorkspacePresetId: undefined,
       sidebarOpen: undefined,
     });
   });
@@ -126,12 +133,13 @@ describe('workspace persistence', () => {
     storage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify(legacyV2Snapshot));
 
     expect(loadWorkspaceSnapshot(storage)).toEqual(expect.objectContaining({
-      schemaVersion: 3,
+      schemaVersion: WORKSPACE_SCHEMA_VERSION,
       roomLibrary: { '63136': legacySnapshot.rooms[0] },
       activeRoomIds: ['63136'],
       roomPlacementOrder: ['63136'],
       primaryRoomRatio: DEFAULT_PRIMARY_ROOM_RATIO,
       danmakuSettings: DEFAULT_DANMAKU_SETTINGS,
+      danmakuGovernanceOverrides: {},
       sidebarOpen: true,
     }));
   });
@@ -153,7 +161,7 @@ describe('workspace persistence', () => {
     }));
 
     expect(loadWorkspaceSnapshot(storage)).toEqual(expect.objectContaining({
-      schemaVersion: 3,
+      schemaVersion: WORKSPACE_SCHEMA_VERSION,
       danmakuSettings: {
         durationSeconds: 15,
         fontSize: 30,
@@ -162,9 +170,49 @@ describe('workspace persistence', () => {
         density: 'normal',
         fontFamily: 'simhei',
         rendering: 'advanced',
+        governance: DEFAULT_DANMAKU_SETTINGS.governance,
       },
       sidebarOpen: undefined,
     }));
+  });
+
+  it('migrates a structured v3 snapshot without carrying governance overrides', () => {
+    const storage = createMemoryStorage();
+    storage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify({
+      ...snapshot,
+      schemaVersion: 3,
+      danmakuGovernanceOverrides: {
+        '63136': { duplicateWindowSeconds: 5 },
+      },
+    }));
+
+    expect(loadWorkspaceSnapshot(storage)).toEqual(expect.objectContaining({
+      schemaVersion: WORKSPACE_SCHEMA_VERSION,
+      danmakuGovernanceOverrides: {},
+    }));
+  });
+
+  it('sanitizes v4 governance overrides by room and field', () => {
+    const storage = createMemoryStorage();
+    storage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify({
+      ...snapshot,
+      danmakuGovernanceOverrides: {
+        '63136': {
+          keywordBlacklist: [' 广告 ', '广告'],
+          duplicateWindowSeconds: 99,
+          peakProtectionEnabled: false,
+        },
+        missing: { enabled: false },
+      },
+    }));
+
+    expect(loadWorkspaceSnapshot(storage)?.danmakuGovernanceOverrides).toEqual({
+      '63136': {
+        keywordBlacklist: ['广告'],
+        duplicateWindowSeconds: 10,
+        peakProtectionEnabled: false,
+      },
+    });
   });
 
   it('filters unsafe avatars and dangling or duplicate room references', () => {

@@ -16,6 +16,8 @@ export const IPC_CHANNELS = {
   windowToggleMaximize: 'window.toggleMaximize',
   windowClose: 'window.close',
   windowMaximizedChanged: 'window.maximizedChanged',
+  getSystemNotificationSupport: 'notifications.getSupport',
+  showSystemNotification: 'notifications.show',
 } as const;
 
 export interface SearchRoomsRequest {
@@ -26,8 +28,19 @@ export interface GetStreamAvailabilityRequest {
   roomId: string;
 }
 
+export interface SystemNotificationRequest {
+  title: string;
+  body: string;
+}
+
 export interface IpcError {
-  code: 'INVALID_INPUT' | 'UNKNOWN' | 'ROOM_LIMIT' | DouyuAdapterErrorCode;
+  code:
+    | 'INVALID_INPUT'
+    | 'UNKNOWN'
+    | 'ROOM_LIMIT'
+    | 'NOTIFICATION_UNSUPPORTED'
+    | 'NOTIFICATION_FAILED'
+    | DouyuAdapterErrorCode;
   message: string;
   retryable: boolean;
 }
@@ -36,6 +49,7 @@ export type IpcResult<T> = { ok: true; data: T } | { ok: false; error: IpcError 
 
 export type SearchRoomsResult = IpcResult<RoomCandidate[]>;
 export type GetStreamAvailabilityResult = IpcResult<StreamAvailability>;
+export type SystemNotificationSupportResult = IpcResult<{ supported: boolean }>;
 
 export function isValidSearchRoomsRequest(value: unknown): value is SearchRoomsRequest {
   if (!value || typeof value !== 'object' || !('input' in value)) return false;
@@ -49,6 +63,21 @@ export function isValidGetStreamAvailabilityRequest(
   if (!value || typeof value !== 'object' || !('roomId' in value)) return false;
   const roomId = (value as { roomId?: unknown }).roomId;
   return typeof roomId === 'string' && /^\d{1,20}$/.test(roomId);
+}
+
+export function isValidSystemNotificationRequest(
+  value: unknown,
+): value is SystemNotificationRequest {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as { title?: unknown; body?: unknown };
+  return (
+    typeof candidate.title === 'string'
+    && candidate.title.trim().length > 0
+    && candidate.title.trim().length <= 80
+    && typeof candidate.body === 'string'
+    && candidate.body.trim().length > 0
+    && candidate.body.trim().length <= 240
+  );
 }
 
 export function ok<T>(data: T): IpcResult<T> {

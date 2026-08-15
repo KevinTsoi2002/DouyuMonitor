@@ -3,6 +3,15 @@ export type DanmakuDensity = 'massive' | 'normal' | 'reduced';
 export type DanmakuFontFamily = 'simhei' | 'microsoft-yahei';
 export type DanmakuRendering = 'native' | 'advanced';
 
+export interface DanmakuGovernanceSettings {
+  enabled: boolean;
+  keywordBlacklist: string[];
+  duplicateWindowSeconds: number;
+  peakProtectionEnabled: boolean;
+}
+
+export type DanmakuGovernanceOverride = Partial<DanmakuGovernanceSettings>;
+
 export interface DanmakuSettings {
   durationSeconds: number;
   fontSize: number;
@@ -11,12 +20,20 @@ export interface DanmakuSettings {
   density: DanmakuDensity;
   fontFamily: DanmakuFontFamily;
   rendering: DanmakuRendering;
+  governance: DanmakuGovernanceSettings;
 }
 
 export interface DanmakuDensityProfile {
   laneRatio: number;
   intervalMs: number;
 }
+
+export const DEFAULT_DANMAKU_GOVERNANCE: Readonly<DanmakuGovernanceSettings> = {
+  enabled: true,
+  keywordBlacklist: [],
+  duplicateWindowSeconds: 3,
+  peakProtectionEnabled: true,
+};
 
 export const DEFAULT_DANMAKU_SETTINGS: Readonly<DanmakuSettings> = {
   durationSeconds: 8,
@@ -26,6 +43,7 @@ export const DEFAULT_DANMAKU_SETTINGS: Readonly<DanmakuSettings> = {
   density: 'normal',
   fontFamily: 'microsoft-yahei',
   rendering: 'native',
+  governance: DEFAULT_DANMAKU_GOVERNANCE,
 };
 
 const REGIONS: readonly DanmakuRegion[] = ['full', 'top', 'bottom'];
@@ -35,6 +53,8 @@ const FONT_FAMILIES: readonly DanmakuFontFamily[] = [
   'microsoft-yahei',
 ];
 const RENDERING_MODES: readonly DanmakuRendering[] = ['native', 'advanced'];
+const MAX_GOVERNANCE_KEYWORDS = 50;
+const MAX_GOVERNANCE_KEYWORD_LENGTH = 40;
 
 const DENSITY_PROFILES: Record<DanmakuDensity, DanmakuDensityProfile> = {
   massive: { laneRatio: 1, intervalMs: 80 },
@@ -65,6 +85,68 @@ function parseEnum<T extends string>(
   return typeof value === 'string' && allowedValues.some((item) => item === value)
     ? (value as T)
     : fallback;
+}
+
+function parseBoolean(value: unknown, fallback: boolean): boolean {
+  return typeof value === 'boolean' ? value : fallback;
+}
+
+function parseGovernanceKeywords(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+
+  const keywords: string[] = [];
+  const seen = new Set<string>();
+
+  for (const item of value) {
+    if (typeof item !== 'string') continue;
+
+    const keyword = item.trim().toLocaleLowerCase('zh-CN');
+    if (
+      !keyword ||
+      Array.from(keyword).length > MAX_GOVERNANCE_KEYWORD_LENGTH ||
+      seen.has(keyword)
+    ) continue;
+
+    seen.add(keyword);
+    keywords.push(keyword);
+    if (keywords.length >= MAX_GOVERNANCE_KEYWORDS) break;
+  }
+
+  return keywords;
+}
+
+export function parseDanmakuGovernanceSettings(
+  value: unknown,
+): DanmakuGovernanceSettings {
+  const governance =
+    typeof value === 'object' && value !== null
+      ? (value as Record<string, unknown>)
+      : {};
+
+  return {
+    enabled: parseBoolean(
+      governance.enabled,
+      DEFAULT_DANMAKU_GOVERNANCE.enabled,
+    ),
+    keywordBlacklist: parseGovernanceKeywords(governance.keywordBlacklist),
+    duplicateWindowSeconds: parseNumber(
+      governance.duplicateWindowSeconds,
+      1,
+      10,
+      DEFAULT_DANMAKU_GOVERNANCE.duplicateWindowSeconds,
+    ),
+    peakProtectionEnabled: parseBoolean(
+      governance.peakProtectionEnabled,
+      DEFAULT_DANMAKU_GOVERNANCE.peakProtectionEnabled,
+    ),
+  };
+}
+
+export function resolveDanmakuGovernance(
+  global: DanmakuGovernanceSettings,
+  override: DanmakuGovernanceOverride = {},
+): DanmakuGovernanceSettings {
+  return parseDanmakuGovernanceSettings({ ...global, ...override });
 }
 
 export function parseDanmakuSettings(value: unknown): DanmakuSettings {
@@ -112,6 +194,7 @@ export function parseDanmakuSettings(value: unknown): DanmakuSettings {
       RENDERING_MODES,
       DEFAULT_DANMAKU_SETTINGS.rendering,
     ),
+    governance: parseDanmakuGovernanceSettings(settings.governance),
   };
 }
 

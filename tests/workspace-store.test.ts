@@ -6,6 +6,8 @@ import type {
 } from '../src/domain/douyu-adapter';
 import { createMockDouyuAdapter } from '../src/infrastructure/mock-douyu-adapter';
 import { createWorkspaceStore } from '../src/renderer/store/workspace-store';
+import { createWorkspacePresetDraft } from '../src/renderer/store/workspace-store';
+import { loadWorkspaceSnapshot } from '../src/renderer/store/workspace-persistence';
 
 function createMemoryStorage() {
   const values = new Map<string, string>();
@@ -55,6 +57,98 @@ const deterministicOptions = {
 };
 
 describe('createWorkspaceStore', () => {
+  it('saves and updates a named workspace preset without runtime diagnostics', () => {
+    const storage = createMemoryStorage();
+    const store = createWorkspaceStore(createMockDouyuAdapter(), {
+      storage,
+      ...deterministicOptions,
+      initialRooms: [candidate('101'), candidate('202')],
+    });
+
+    store.getState().setLayout('split-vertical');
+    store.getState().setQuality('202', 'high');
+    const presetId = store.getState().saveWorkspacePreset('比赛视角');
+
+    expect(presetId).toBeTruthy();
+    expect(store.getState().activeWorkspacePresetId).toBe(presetId);
+    expect(store.getState().workspacePresets[0]).toEqual(expect.objectContaining({
+      name: '比赛视角',
+      layoutId: 'split-vertical',
+      roomOrder: ['101', '202'],
+    }));
+    const { id: _id, name: _name, createdAt: _createdAt, updatedAt: _updatedAt, ...savedDraft } = store.getState().workspacePresets[0];
+    expect(createWorkspacePresetDraft(store.getState())).toEqual(savedDraft);
+    expect(store.getState().hasUnsavedWorkspaceChanges).toBe(false);
+
+    store.getState().setVolume('101', 0.2);
+    expect(store.getState().hasUnsavedWorkspaceChanges).toBe(true);
+    expect(store.getState().updateWorkspacePreset(presetId!)).toBe(true);
+    expect(store.getState().hasUnsavedWorkspaceChanges).toBe(false);
+    expect(loadWorkspaceSnapshot(storage)?.workspacePresets[0]?.rooms[0]?.volume).toBe(0.2);
+  });
+
+  it('loads a preset as the active room set without changing history, favorites, or groups', async () => {
+    const storage = createMemoryStorage();
+    const adapter = createMockDouyuAdapter();
+    const store = createWorkspaceStore(adapter, {
+      storage,
+      ...deterministicOptions,
+      initialRooms: [candidate('101'), candidate('202')],
+    });
+    const groupId = store.getState().createGroup('活动')!;
+    store.getState().addRoomToGroup(groupId, '101');
+    store.getState().toggleFavorite('101');
+    const presetId = store.getState().saveWorkspacePreset('单房间')!;
+    store.getState().removeRoom('101');
+    store.getState().removeRoom('202');
+    store.getState().addRoom(candidate('303'));
+    const historyBeforeLoad = store.getState().history;
+
+    await expect(store.getState().loadWorkspacePreset(presetId)).resolves.toBe(true);
+
+    expect(store.getState().rooms.map((room) => room.roomId)).toEqual(['101', '202']);
+    expect(store.getState().history).toEqual(historyBeforeLoad);
+    expect(store.getState().favoriteRoomIds).toEqual(['101']);
+    expect(store.getState().groups).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: groupId, roomIds: ['101'] }),
+    ]));
+    expect(store.getState().roomLibrary['303']).toBeDefined();
+  });
+
+  it('rejects duplicate or invalid preset names and rolls back failed loads', async () => {
+    const store = createWorkspaceStore(createMockDouyuAdapter(), {
+      ...deterministicOptions,
+      initialRooms: [candidate('101')],
+    });
+    const firstId = store.getState().saveWorkspacePreset('默认')!;
+
+    expect(store.getState().saveWorkspacePreset(' 默认 ')).toBeUndefined();
+    expect(store.getState().saveWorkspacePreset('')).toBeUndefined();
+    expect(store.getState().renameWorkspacePreset(firstId, 'x'.repeat(41))).toBe(false);
+
+    store.getState().removeRoom('101');
+    expect(await store.getState().loadWorkspacePreset('missing')).toBe(false);
+    expect(store.getState().rooms).toEqual([]);
+  });
+
+  it('does not mark a preset dirty when runtime online status changes', async () => {
+    let live = true;
+    const adapter: DouyuAdapter = {
+      ...createMockDouyuAdapter(),
+      search: vi.fn(async () => [{ ...candidate('101'), online: live }]),
+    };
+    const store = createWorkspaceStore(adapter, {
+      ...deterministicOptions,
+      initialRooms: [candidate('101')],
+    });
+    store.getState().saveWorkspacePreset('稳定视角');
+    live = false;
+
+    await store.getState().refreshRoomMetadata('101');
+
+    expect(store.getState().rooms[0]?.online).toBe(false);
+    expect(store.getState().hasUnsavedWorkspaceChanges).toBe(false);
+  });
   it('starts new workspaces in automatic layout mode and keeps it after adding rooms', () => {
     const store = createWorkspaceStore(createMockDouyuAdapter());
 
@@ -165,6 +259,26 @@ describe('createWorkspaceStore', () => {
       online: true,
       status: 'playing',
       playbackAvailabilityStatus: 'blocked',
+    }));
+  });
+
+  it('surfaces metadata refresh failures as a current playback diagnostic', async () => {
+    const pending = deferredAvailability();
+    const adapter: DouyuAdapter = {
+      search: vi.fn(async () => { throw new Error('network unavailable'); }),
+      getStreamAvailability: vi.fn(() => pending.promise),
+    };
+    const store = createWorkspaceStore(adapter, {
+      ...deterministicOptions,
+      initialRooms: [candidate('1')],
+    });
+
+    await expect(store.getState().refreshRoomMetadata('1')).resolves.toBe(false);
+
+    expect(store.getState().rooms[0]).toEqual(expect.objectContaining({
+      playbackAvailabilityStatus: 'error',
+      playbackCheckedAt: '2026-08-10T00:00:00.000Z',
+      playbackErrorCode: 'ROOM_METADATA_CHECK_FAILED',
     }));
   });
 
@@ -364,6 +478,36 @@ describe('createWorkspaceStore', () => {
     expect(restored.getState().sidebarOpen).toBe(false);
   });
 
+  it('persists global governance defaults and room overrides independently', () => {
+    const storage = createMemoryStorage();
+    const first = createWorkspaceStore(createMockDouyuAdapter(), {
+      storage,
+      initialRooms: [candidate('63136')],
+    });
+
+    first.getState().setDanmakuGovernance({ keywordBlacklist: ['广告'] });
+    first.getState().setRoomDanmakuGovernanceOverride('63136', {
+      duplicateWindowSeconds: 5,
+    });
+
+    expect(first.getState().danmakuSettings.governance.keywordBlacklist).toEqual(['广告']);
+    expect(first.getState().danmakuGovernanceOverrides['63136']).toEqual({
+      duplicateWindowSeconds: 5,
+    });
+
+    const restored = createWorkspaceStore(createMockDouyuAdapter(), {
+      storage,
+      initialRooms: [candidate('63136')],
+    });
+    expect(restored.getState().danmakuSettings.governance.keywordBlacklist).toEqual(['广告']);
+    expect(restored.getState().danmakuGovernanceOverrides['63136']).toEqual({
+      duplicateWindowSeconds: 5,
+    });
+
+    restored.getState().clearRoomDanmakuGovernanceOverride('63136');
+    expect(restored.getState().danmakuGovernanceOverrides['63136']).toBeUndefined();
+  });
+
   it('resets only the selected danmaku slider', () => {
     const store = createWorkspaceStore(createMockDouyuAdapter());
     store.getState().setDanmakuSettings({
@@ -516,6 +660,45 @@ describe('createWorkspaceStore', () => {
     await store.getState().refreshStreamAvailability('101');
 
     expect(store.getState().rooms[1]).toBe(originalSecondRoom);
+  });
+
+  it('records playback checks and isolates runtime recovery diagnostics by room', async () => {
+    const adapter = createMockDouyuAdapter();
+    const store = createWorkspaceStore(adapter, deterministicOptions);
+    store.getState().addRoom(candidate('101'));
+    store.getState().addRoom(candidate('202'));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    store.getState().reportPlaybackRecovery('101', {
+      attempt: 2,
+      exhausted: false,
+      errorCode: 'NETWORK_ERROR',
+    });
+
+    expect(store.getState().rooms.find((room) => room.roomId === '101')).toEqual(
+      expect.objectContaining({
+        playbackCheckedAt: expect.any(String),
+        playbackRecovery: {
+          attempt: 2,
+          exhausted: false,
+          errorCode: 'NETWORK_ERROR',
+          updatedAt: '2026-08-10T00:00:00.000Z',
+        },
+      }),
+    );
+    expect(store.getState().rooms.find((room) => room.roomId === '202')?.playbackRecovery).toBeUndefined();
+
+    await store.getState().refreshStreamAvailability('101');
+
+    expect(store.getState().rooms.find((room) => room.roomId === '101')).toEqual(
+      expect.objectContaining({
+        playbackCheckedAt: expect.any(String),
+        playbackRecovery: undefined,
+      }),
+    );
+    const refreshedRoom = store.getState().rooms.find((room) => room.roomId === '101');
+    expect(refreshedRoom?.playbackCheckedAt).toBe(refreshedRoom?.streamAvailability?.checkedAt);
   });
 
   it('ignores availability refreshes for unknown room ids', async () => {

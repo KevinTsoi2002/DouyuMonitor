@@ -12,15 +12,25 @@ import type {
   StreamAvailability,
   StreamQuality,
 } from '../../domain/douyu-adapter';
+import { DouyuAdapterError } from '../../domain/douyu-adapter';
 import { RoomRegistry } from '../../domain/room-registry';
 import {
   DEFAULT_DANMAKU_SETTINGS,
+  parseDanmakuGovernanceSettings,
   parseDanmakuSettings,
+  type DanmakuGovernanceOverride,
+  type DanmakuGovernanceSettings,
   type DanmakuSettings,
 } from '../danmaku/danmaku-settings';
 import {
   loadWorkspaceSnapshot,
   saveWorkspaceSnapshot,
+  WORKSPACE_SCHEMA_VERSION,
+  MAX_PRESET_ROOMS,
+  MAX_WORKSPACE_PRESETS,
+  MAX_WORKSPACE_PRESET_NAME_LENGTH,
+  type WorkspacePreset,
+  type WorkspacePresetRoom,
   type WorkspaceSnapshot,
   type WorkspaceStorage,
 } from './workspace-persistence';
@@ -43,6 +53,16 @@ import {
 
 export type PlaybackAvailabilityStatus = 'checking' | 'available' | 'blocked' | 'error';
 
+export interface PlaybackRecoveryReport {
+  attempt: number;
+  exhausted: boolean;
+  errorCode: string;
+}
+
+export interface PlaybackRecoveryDiagnostic extends PlaybackRecoveryReport {
+  updatedAt: string;
+}
+
 export interface RoomSession extends RoomCandidate {
   status: RoomStatus;
   quality: StreamQuality;
@@ -51,6 +71,9 @@ export interface RoomSession extends RoomCandidate {
   playbackAvailabilityStatus: PlaybackAvailabilityStatus;
   streamAvailability?: StreamAvailability;
   playbackError?: string;
+  playbackErrorCode?: string;
+  playbackCheckedAt?: string;
+  playbackRecovery?: PlaybackRecoveryDiagnostic;
 }
 
 export type SearchStatus = 'idle' | 'searching' | 'success' | 'empty' | 'error';
@@ -71,7 +94,11 @@ export interface WorkspaceState {
   globalDanmakuEnabled: boolean;
   globalMuted: boolean;
   danmakuSettings: DanmakuSettings;
+  danmakuGovernanceOverrides: Record<string, DanmakuGovernanceOverride>;
   sidebarOpen: boolean;
+  workspacePresets: WorkspacePreset[];
+  activeWorkspacePresetId?: string;
+  hasUnsavedWorkspaceChanges: boolean;
   searchResults: RoomCandidate[];
   searchStatus: SearchStatus;
   searchError?: string;
@@ -89,6 +116,9 @@ export interface WorkspaceState {
   setGlobalDanmakuEnabled: (enabled: boolean) => void;
   setGlobalMuted: (muted: boolean) => void;
   setDanmakuSettings: (patch: Partial<DanmakuSettings>) => void;
+  setDanmakuGovernance: (patch: DanmakuGovernanceOverride) => void;
+  setRoomDanmakuGovernanceOverride: (roomId: string, patch: DanmakuGovernanceOverride) => void;
+  clearRoomDanmakuGovernanceOverride: (roomId: string) => void;
   resetDanmakuSetting: (key: 'durationSeconds' | 'fontSize' | 'opacity') => void;
   setSidebarOpen: (open: boolean) => void;
   toggleFavorite: (roomId: string) => void;
@@ -102,6 +132,12 @@ export interface WorkspaceState {
   searchRooms: (input: string) => Promise<void>;
   refreshRoomMetadata: (roomId: string) => Promise<boolean>;
   refreshStreamAvailability: (roomId: string) => Promise<void>;
+  reportPlaybackRecovery: (roomId: string, report?: PlaybackRecoveryReport) => void;
+  saveWorkspacePreset: (name: string) => string | undefined;
+  updateWorkspacePreset: (id: string) => boolean;
+  loadWorkspacePreset: (id: string) => Promise<boolean>;
+  renameWorkspacePreset: (id: string, name: string) => boolean;
+  deleteWorkspacePreset: (id: string) => boolean;
 }
 
 export interface WorkspaceOptions {
@@ -111,6 +147,7 @@ export interface WorkspaceOptions {
   initialSidebarOpen?: boolean;
   now?: () => Date;
   createGroupId?: () => string;
+  createPresetId?: () => string;
 }
 
 function toLibraryRoom(candidate: RoomCandidate & Partial<LibraryRoom>): LibraryRoom {
@@ -130,6 +167,128 @@ function toSession(candidate: LibraryRoom): RoomSession {
   };
 }
 
+function normalizeGovernanceOverride(
+  base: DanmakuGovernanceSettings,
+  patch: DanmakuGovernanceOverride,
+): DanmakuGovernanceOverride {
+  const parsed = parseDanmakuGovernanceSettings({ ...base, ...patch });
+  const normalized: DanmakuGovernanceOverride = {};
+  if ('enabled' in patch) normalized.enabled = parsed.enabled;
+  if ('keywordBlacklist' in patch) normalized.keywordBlacklist = parsed.keywordBlacklist;
+  if ('duplicateWindowSeconds' in patch) {
+    normalized.duplicateWindowSeconds = parsed.duplicateWindowSeconds;
+  }
+  if ('peakProtectionEnabled' in patch) {
+    normalized.peakProtectionEnabled = parsed.peakProtectionEnabled;
+  }
+  return normalized;
+}
+
+export type WorkspacePresetDraft = Omit<WorkspacePreset, 'id' | 'name' | 'createdAt' | 'updatedAt'>;
+
+function cloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function stableValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stableValue);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, item]) => [key, stableValue(item)]),
+    );
+  }
+  return value;
+}
+
+function presetRoomFromSession(room: RoomSession): WorkspacePresetRoom {
+  return {
+    roomId: room.roomId,
+    anchorName: room.anchorName,
+    title: room.title,
+    category: room.category,
+    ...(room.avatarUrl ? { avatarUrl: room.avatarUrl } : {}),
+    online: room.online,
+    status: room.status,
+    quality: room.quality,
+    volume: room.volume,
+    danmakuEnabled: room.danmakuEnabled,
+  };
+}
+
+export function createWorkspacePresetDraft(state: WorkspaceState): WorkspacePresetDraft {
+  const roomById = new Map(state.rooms.map((room) => [room.roomId, room]));
+  const roomIds = normalizeRoomPlacementOrder(
+    state.rooms.map((room) => room.roomId),
+    state.roomPlacementOrder,
+  ).slice(0, MAX_PRESET_ROOMS);
+  const rooms = roomIds.flatMap((roomId) => {
+    const room = roomById.get(roomId);
+    return room ? [presetRoomFromSession(room)] : [];
+  });
+  const roomIdSet = new Set(rooms.map((room) => room.roomId));
+  const governanceOverrides = Object.fromEntries(
+    Object.entries(state.danmakuGovernanceOverrides)
+      .filter(([roomId]) => roomIdSet.has(roomId))
+      .map(([roomId, override]) => [roomId, cloneJson(override)]),
+  );
+
+  return {
+    rooms,
+    roomOrder: rooms.map((room) => room.roomId),
+    layoutId: state.layoutId,
+    ...(state.primaryRoomId && roomIdSet.has(state.primaryRoomId)
+      ? { primaryRoomId: state.primaryRoomId }
+      : {}),
+    primaryRoomRatio: state.primaryRoomRatio,
+    ...(state.audioRoomId && roomIdSet.has(state.audioRoomId)
+      ? { audioRoomId: state.audioRoomId }
+      : {}),
+    globalDanmakuEnabled: state.globalDanmakuEnabled,
+    globalMuted: state.globalMuted,
+    danmakuSettings: cloneJson(state.danmakuSettings),
+    danmakuGovernanceOverrides: governanceOverrides,
+  };
+}
+
+function presetFingerprint(value: WorkspacePresetDraft | WorkspaceState): string {
+  const draft = 'roomLibrary' in value
+    ? createWorkspacePresetDraft(value as WorkspaceState)
+    : (() => {
+        const {
+          id: _id,
+          name: _name,
+          createdAt: _createdAt,
+          updatedAt: _updatedAt,
+          ...presetDraft
+        } = value as WorkspacePreset;
+        return presetDraft;
+      })();
+  const comparableDraft = {
+    ...draft,
+    rooms: draft.rooms.map(({ roomId, quality, volume, danmakuEnabled }) => ({
+      roomId,
+      quality,
+      volume,
+      danmakuEnabled,
+    })),
+  };
+  return JSON.stringify(stableValue(comparableDraft));
+}
+
+function hasWorkspaceChanges(state: WorkspaceState): boolean {
+  const active = state.workspacePresets.find((preset) => preset.id === state.activeWorkspacePresetId);
+  if (!active) return state.rooms.length > 0;
+  return presetFingerprint(state) !== presetFingerprint(active);
+}
+
+function normalizePresetName(name: string): string | undefined {
+  const trimmed = name.trim();
+  if (!trimmed || Array.from(trimmed).length > MAX_WORKSPACE_PRESET_NAME_LENGTH) return undefined;
+  return trimmed;
+}
+
 export function createWorkspaceStore(
   adapter: DouyuAdapter,
   options: WorkspaceOptions = {},
@@ -138,6 +297,7 @@ export function createWorkspaceStore(
   const storage = options.storage ?? (typeof globalThis.localStorage === 'undefined' ? undefined : globalThis.localStorage);
   const now = options.now ?? (() => new Date());
   const createGroupId = options.createGroupId ?? (() => globalThis.crypto.randomUUID());
+  const createPresetId = options.createPresetId ?? (() => globalThis.crypto.randomUUID());
   const metadataRefreshInFlight = new Set<string>();
   const persisted = loadWorkspaceSnapshot(storage);
   const initialRoomLibrary: RoomLibrary = persisted?.roomLibrary ?? Object.fromEntries(
@@ -167,7 +327,7 @@ export function createWorkspaceStore(
     const persist = () => {
       const state = get();
       const snapshot: WorkspaceSnapshot = {
-        schemaVersion: 3,
+        schemaVersion: WORKSPACE_SCHEMA_VERSION,
         roomLibrary: state.roomLibrary,
         activeRoomIds: state.rooms.map((room) => room.roomId),
         history: state.history,
@@ -182,9 +342,16 @@ export function createWorkspaceStore(
         globalDanmakuEnabled: state.globalDanmakuEnabled,
         globalMuted: state.globalMuted,
         danmakuSettings: state.danmakuSettings,
+        danmakuGovernanceOverrides: state.danmakuGovernanceOverrides,
+        workspacePresets: state.workspacePresets,
+        activeWorkspacePresetId: state.activeWorkspacePresetId,
         sidebarOpen: state.sidebarOpen,
       };
       saveWorkspaceSnapshot(storage, snapshot);
+      const hasUnsaved = hasWorkspaceChanges(state);
+      if (state.hasUnsavedWorkspaceChanges !== hasUnsaved) {
+        set({ hasUnsavedWorkspaceChanges: hasUnsaved });
+      }
     };
 
     return ({
@@ -203,7 +370,11 @@ export function createWorkspaceStore(
     globalDanmakuEnabled: persisted?.globalDanmakuEnabled ?? true,
     globalMuted: persisted?.globalMuted ?? false,
     danmakuSettings: persisted?.danmakuSettings ?? { ...DEFAULT_DANMAKU_SETTINGS },
+    danmakuGovernanceOverrides: persisted?.danmakuGovernanceOverrides ?? {},
     sidebarOpen: persisted?.sidebarOpen ?? options.initialSidebarOpen ?? true,
+    workspacePresets: persisted?.workspacePresets ?? [],
+    activeWorkspacePresetId: persisted?.activeWorkspacePresetId,
+    hasUnsavedWorkspaceChanges: false,
     searchResults: [],
     searchStatus: 'idle',
     searchError: undefined,
@@ -245,6 +416,10 @@ export function createWorkspaceStore(
         return {
           rooms,
           roomPlacementOrder: state.roomPlacementOrder.filter((id) => id !== roomId),
+          danmakuGovernanceOverrides: Object.fromEntries(
+            Object.entries(state.danmakuGovernanceOverrides)
+              .filter(([id]) => id !== roomId),
+          ),
           activeGroupId: undefined,
           primaryRoomId: state.primaryRoomId === roomId ? nextPrimaryRoomId : state.primaryRoomId,
           audioRoomId: state.audioRoomId === roomId ? rooms[0]?.roomId : state.audioRoomId,
@@ -376,6 +551,47 @@ export function createWorkspaceStore(
       set((state) => ({
         danmakuSettings: parseDanmakuSettings({ ...state.danmakuSettings, ...patch }),
       }));
+      persist();
+    },
+
+    setDanmakuGovernance(patch) {
+      set((state) => ({
+        danmakuSettings: parseDanmakuSettings({
+          ...state.danmakuSettings,
+          governance: {
+            ...state.danmakuSettings.governance,
+            ...patch,
+          },
+        }),
+      }));
+      persist();
+    },
+
+    setRoomDanmakuGovernanceOverride(roomId, patch) {
+      if (!get().roomLibrary[roomId]) return;
+      set((state) => {
+        const normalized = normalizeGovernanceOverride(
+          state.danmakuSettings.governance,
+          patch,
+        );
+        const current = state.danmakuGovernanceOverrides[roomId] ?? {};
+        const next = { ...current, ...normalized };
+        return {
+          danmakuGovernanceOverrides: Object.keys(next).length > 0
+            ? { ...state.danmakuGovernanceOverrides, [roomId]: next }
+            : state.danmakuGovernanceOverrides,
+        };
+      });
+      persist();
+    },
+
+    clearRoomDanmakuGovernanceOverride(roomId) {
+      if (!get().danmakuGovernanceOverrides[roomId]) return;
+      set((state) => {
+        const overrides = { ...state.danmakuGovernanceOverrides };
+        delete overrides[roomId];
+        return { danmakuGovernanceOverrides: overrides };
+      });
       persist();
     },
 
@@ -516,6 +732,175 @@ export function createWorkspaceStore(
       }
     },
 
+    saveWorkspacePreset(name) {
+      const normalizedName = normalizePresetName(name);
+      const state = get();
+      if (
+        !normalizedName ||
+        state.workspacePresets.length >= MAX_WORKSPACE_PRESETS ||
+        state.workspacePresets.some((preset) => preset.name === normalizedName)
+      ) return undefined;
+      const id = createPresetId();
+      if (!id || state.workspacePresets.some((preset) => preset.id === id)) return undefined;
+      const timestamp = now().toISOString();
+      const preset: WorkspacePreset = {
+        id,
+        name: normalizedName,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        ...createWorkspacePresetDraft(state),
+      };
+      set((current) => ({
+        workspacePresets: [...current.workspacePresets, preset],
+        activeWorkspacePresetId: id,
+      }));
+      persist();
+      return id;
+    },
+
+    updateWorkspacePreset(id) {
+      const state = get();
+      const existing = state.workspacePresets.find((preset) => preset.id === id);
+      if (!existing) return false;
+      set((current) => ({
+        workspacePresets: current.workspacePresets.map((preset) => preset.id === id
+          ? {
+              ...preset,
+              ...createWorkspacePresetDraft(current),
+              updatedAt: now().toISOString(),
+            }
+          : preset),
+        activeWorkspacePresetId: id,
+      }));
+      persist();
+      return true;
+    },
+
+    async loadWorkspacePreset(id) {
+      const preset = get().workspacePresets.find((item) => item.id === id);
+      if (!preset) return false;
+
+      const previous = get();
+      const previousRoomIds = previous.rooms.map((room) => room.roomId);
+      const orderedIds = [
+        ...preset.roomOrder,
+        ...preset.rooms.map((room) => room.roomId).filter((roomId) => !preset.roomOrder.includes(roomId)),
+      ].slice(0, MAX_PRESET_ROOMS);
+      const roomsById = new Map(preset.rooms.map((room) => [room.roomId, room]));
+      const targetRooms = orderedIds.flatMap((roomId) => {
+        const presetRoom = roomsById.get(roomId);
+        return presetRoom ? [presetRoom] : [];
+      });
+      if (!targetRooms.length && preset.rooms.length > 0) return false;
+
+      try {
+        const roomLibrary = { ...previous.roomLibrary };
+        const nextRooms = targetRooms.map((presetRoom) => {
+          const libraryRoom = toLibraryRoom({
+            roomId: presetRoom.roomId,
+            anchorName: presetRoom.anchorName,
+            title: presetRoom.title,
+            category: presetRoom.category,
+            avatarUrl: presetRoom.avatarUrl,
+            online: presetRoom.online,
+            viewerLabel: previous.roomLibrary[presetRoom.roomId]?.viewerLabel ?? '未知观众',
+            quality: presetRoom.quality,
+            volume: presetRoom.volume,
+            danmakuEnabled: presetRoom.danmakuEnabled,
+          });
+          roomLibrary[presetRoom.roomId] = libraryRoom;
+          return { ...toSession(libraryRoom), status: presetRoom.online ? presetRoom.status : 'offline' };
+        });
+        for (const roomId of previousRoomIds) registry.remove(roomId);
+        for (const room of nextRooms) {
+          const result = registry.add({ roomId: room.roomId, anchorName: room.anchorName });
+          if (!result.added) throw new Error('无法恢复预设中的直播间');
+        }
+
+        const roomIdSet = new Set(nextRooms.map((room) => room.roomId));
+        const primaryRoomId = preset.primaryRoomId && roomIdSet.has(preset.primaryRoomId)
+          ? preset.primaryRoomId
+          : nextRooms[0]?.roomId;
+        const audioRoomId = preset.audioRoomId && roomIdSet.has(preset.audioRoomId)
+          ? preset.audioRoomId
+          : nextRooms[0]?.roomId;
+        set({
+          rooms: nextRooms,
+          roomLibrary,
+          activeGroupId: undefined,
+          layoutId: preset.layoutId,
+          primaryRoomId,
+          roomPlacementOrder: normalizeRoomPlacementOrder(
+            nextRooms.map((room) => room.roomId),
+            preset.roomOrder,
+          ),
+          primaryRoomRatio: preset.primaryRoomRatio,
+          audioRoomId,
+          globalDanmakuEnabled: preset.globalDanmakuEnabled,
+          globalMuted: preset.globalMuted,
+          danmakuSettings: cloneJson(preset.danmakuSettings),
+          danmakuGovernanceOverrides: cloneJson(preset.danmakuGovernanceOverrides),
+          activeWorkspacePresetId: id,
+        });
+        persist();
+        for (const room of nextRooms.filter((item) => item.online)) {
+          void get().refreshRoomMetadata(room.roomId);
+        }
+        return true;
+      } catch {
+        for (const roomId of get().rooms.map((room) => room.roomId)) registry.remove(roomId);
+        for (const room of previous.rooms) {
+          registry.add({ roomId: room.roomId, anchorName: room.anchorName });
+        }
+        set({
+          rooms: previous.rooms,
+          roomLibrary: previous.roomLibrary,
+          activeGroupId: previous.activeGroupId,
+          layoutId: previous.layoutId,
+          primaryRoomId: previous.primaryRoomId,
+          roomPlacementOrder: previous.roomPlacementOrder,
+          primaryRoomRatio: previous.primaryRoomRatio,
+          audioRoomId: previous.audioRoomId,
+          globalDanmakuEnabled: previous.globalDanmakuEnabled,
+          globalMuted: previous.globalMuted,
+          danmakuSettings: previous.danmakuSettings,
+          danmakuGovernanceOverrides: previous.danmakuGovernanceOverrides,
+          activeWorkspacePresetId: previous.activeWorkspacePresetId,
+          hasUnsavedWorkspaceChanges: previous.hasUnsavedWorkspaceChanges,
+        });
+        return false;
+      }
+    },
+
+    renameWorkspacePreset(id, name) {
+      const normalizedName = normalizePresetName(name);
+      const state = get();
+      if (
+        !normalizedName ||
+        !state.workspacePresets.some((preset) => preset.id === id) ||
+        state.workspacePresets.some((preset) => preset.id !== id && preset.name === normalizedName)
+      ) return false;
+      set((current) => ({
+        workspacePresets: current.workspacePresets.map((preset) => preset.id === id
+          ? { ...preset, name: normalizedName, updatedAt: now().toISOString() }
+          : preset),
+      }));
+      persist();
+      return true;
+    },
+
+    deleteWorkspacePreset(id) {
+      if (!get().workspacePresets.some((preset) => preset.id === id)) return false;
+      set((state) => ({
+        workspacePresets: state.workspacePresets.filter((preset) => preset.id !== id),
+        activeWorkspacePresetId: state.activeWorkspacePresetId === id
+          ? undefined
+          : state.activeWorkspacePresetId,
+      }));
+      persist();
+      return true;
+    },
+
     async searchRooms(rawInput) {
       set({ searchStatus: 'searching', searchResults: [], searchError: undefined });
       try {
@@ -554,7 +939,23 @@ export function createWorkspaceStore(
         persist();
         if (candidate.online) void get().refreshStreamAvailability(roomId);
         return true;
-      } catch {
+      } catch (error) {
+        const checkedAt = now().toISOString();
+        set((state) => ({
+          rooms: state.rooms.map((room) => {
+            if (room.roomId !== roomId || !room.online || room.status === 'offline') return room;
+            return {
+              ...room,
+              playbackAvailabilityStatus: 'error',
+              playbackCheckedAt: checkedAt,
+              playbackRecovery: undefined,
+              playbackError: '直播间状态检查失败',
+              playbackErrorCode: error instanceof DouyuAdapterError
+                ? error.code
+                : 'ROOM_METADATA_CHECK_FAILED',
+            };
+          }),
+        }));
         return false;
       } finally {
         metadataRefreshInFlight.delete(roomId);
@@ -571,6 +972,8 @@ export function createWorkspaceStore(
               ...room,
               playbackAvailabilityStatus: 'checking',
               playbackError: undefined,
+              playbackErrorCode: undefined,
+              playbackRecovery: undefined,
             }
           : room),
       }));
@@ -586,6 +989,9 @@ export function createWorkspaceStore(
                 playbackAvailabilityStatus: availability.kind,
                 streamAvailability: availability,
                 playbackError: undefined,
+                playbackErrorCode: undefined,
+                playbackCheckedAt: availability.checkedAt,
+                playbackRecovery: undefined,
               }
             : room),
         }));
@@ -597,14 +1003,35 @@ export function createWorkspaceStore(
             ? {
                 ...room,
                 playbackAvailabilityStatus: 'error',
+                playbackCheckedAt: now().toISOString(),
+                playbackRecovery: undefined,
                 playbackError: error instanceof Error ? error.message : '播放能力检查失败',
+                playbackErrorCode: error instanceof DouyuAdapterError
+                  ? error.code
+                  : 'PLAYBACK_SOURCE_CHECK_FAILED',
               }
             : room),
         }));
       }
     },
+
+    reportPlaybackRecovery(roomId, report) {
+      if (!get().rooms.some((room) => room.roomId === roomId)) return;
+      set((state) => ({
+        rooms: state.rooms.map((room) => room.roomId === roomId
+          ? {
+              ...room,
+              playbackRecovery: report
+                ? { ...report, updatedAt: now().toISOString() }
+                : undefined,
+            }
+          : room),
+      }));
+    },
     });
   });
+
+  store.setState((state) => ({ hasUnsavedWorkspaceChanges: hasWorkspaceChanges(state) }));
 
   for (const room of initialSessions.filter((item) => item.online)) {
     void store.getState().refreshStreamAvailability(room.roomId);
