@@ -4,6 +4,7 @@ import {
   durationToSliderValue,
   getDanmakuDensityProfile,
   parseDanmakuSettings,
+  resolveDanmakuGovernance,
   sliderValueToDuration,
 } from '../src/renderer/danmaku/danmaku-settings';
 
@@ -71,6 +72,23 @@ describe('danmaku settings', () => {
         (keyword) => Array.from(keyword).length <= 40,
       ),
     ).toBe(true);
+  });
+
+  it('resolves a room override on top of the global governance defaults', () => {
+    expect(resolveDanmakuGovernance(
+      {
+        enabled: true,
+        keywordBlacklist: ['广告'],
+        duplicateWindowSeconds: 3,
+        peakProtectionEnabled: true,
+      },
+      { duplicateWindowSeconds: 5 },
+    )).toEqual({
+      enabled: true,
+      keywordBlacklist: ['广告'],
+      duplicateWindowSeconds: 5,
+      peakProtectionEnabled: true,
+    });
   });
 
   it('clamps each numeric setting independently', () => {

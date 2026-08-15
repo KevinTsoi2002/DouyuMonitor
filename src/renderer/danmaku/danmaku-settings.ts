@@ -142,6 +142,13 @@ export function parseDanmakuGovernanceSettings(
   };
 }
 
+export function resolveDanmakuGovernance(
+  global: DanmakuGovernanceSettings,
+  override: DanmakuGovernanceOverride = {},
+): DanmakuGovernanceSettings {
+  return parseDanmakuGovernanceSettings({ ...global, ...override });
+}
+
 export function parseDanmakuSettings(value: unknown): DanmakuSettings {
   const settings =
     typeof value === 'object' && value !== null
