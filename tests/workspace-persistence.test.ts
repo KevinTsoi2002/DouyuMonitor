@@ -79,6 +79,8 @@ const snapshot: WorkspaceSnapshot = {
   globalMuted: false,
   danmakuSettings: DEFAULT_DANMAKU_SETTINGS,
   danmakuGovernanceOverrides: {},
+  workspacePresets: [],
+  activeWorkspacePresetId: undefined,
   sidebarOpen: true,
 };
 
@@ -120,6 +122,8 @@ describe('workspace persistence', () => {
       globalMuted: false,
       danmakuSettings: DEFAULT_DANMAKU_SETTINGS,
       danmakuGovernanceOverrides: {},
+      workspacePresets: [],
+      activeWorkspacePresetId: undefined,
       sidebarOpen: undefined,
     });
   });

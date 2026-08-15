@@ -25,6 +25,7 @@ import {
 import {
   loadWorkspaceSnapshot,
   saveWorkspaceSnapshot,
+  WORKSPACE_SCHEMA_VERSION,
   type WorkspaceSnapshot,
   type WorkspaceStorage,
 } from './workspace-persistence';
@@ -206,7 +207,7 @@ export function createWorkspaceStore(
     const persist = () => {
       const state = get();
       const snapshot: WorkspaceSnapshot = {
-        schemaVersion: 4,
+        schemaVersion: WORKSPACE_SCHEMA_VERSION,
         roomLibrary: state.roomLibrary,
         activeRoomIds: state.rooms.map((room) => room.roomId),
         history: state.history,
@@ -222,6 +223,8 @@ export function createWorkspaceStore(
         globalMuted: state.globalMuted,
         danmakuSettings: state.danmakuSettings,
         danmakuGovernanceOverrides: state.danmakuGovernanceOverrides,
+        workspacePresets: persisted?.workspacePresets ?? [],
+        activeWorkspacePresetId: persisted?.activeWorkspacePresetId,
         sidebarOpen: state.sidebarOpen,
       };
       saveWorkspaceSnapshot(storage, snapshot);
