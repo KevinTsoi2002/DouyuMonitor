@@ -1,10 +1,16 @@
 import { AlertCircle, CircleSlash2, LoaderCircle } from 'lucide-react';
-import { useCallback, useReducer } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import {
   DEFAULT_DANMAKU_SETTINGS,
   type DanmakuSettings,
 } from '../danmaku/danmaku-settings';
 import type { RoomSession } from '../store/workspace-store';
+import {
+  createPlaybackRecoveryController,
+  PLAYBACK_RECOVERY_MAX_ATTEMPTS,
+  type PlaybackRecoveryController,
+  type PlaybackRecoveryState,
+} from '../playback-recovery';
 import { getPlaybackPresentation, getRoomInitials } from '../ui-model';
 import { DanmakuOverlay } from './DanmakuOverlay';
 import { FlvVideo } from './FlvVideo';
@@ -16,6 +22,7 @@ interface RoomPlaybackSurfaceProps {
   globalDanmakuEnabled?: boolean;
   danmakuSettings?: DanmakuSettings;
   onRetry: () => void;
+  onRecoveryChange?: (state: PlaybackRecoveryState | undefined, errorCode?: string) => void;
   tone?: string;
 }
 
@@ -51,6 +58,7 @@ export function RoomPlaybackSurface({
   globalDanmakuEnabled = true,
   danmakuSettings = DEFAULT_DANMAKU_SETTINGS,
   onRetry,
+  onRecoveryChange,
   tone = 'coral',
 }: RoomPlaybackSurfaceProps) {
   const variant = room.streamAvailability?.kind === 'available'
@@ -59,16 +67,58 @@ export function RoomPlaybackSurface({
     : undefined;
   const playbackUrl = variant?.playbackUrl;
   const [playerError, dispatchPlayerError] = useReducer(reducePlayerError, undefined);
+  const [recovery, setRecovery] = useState<PlaybackRecoveryState | undefined>();
+  const previousPlaybackUrlRef = useRef(playbackUrl);
+  const onRetryRef = useRef(onRetry);
+  const onRecoveryChangeRef = useRef(onRecoveryChange);
+  const playerErrorCodeRef = useRef<string | undefined>(undefined);
+  onRetryRef.current = onRetry;
+  onRecoveryChangeRef.current = onRecoveryChange;
+  const recoveryControllerRef = useRef<PlaybackRecoveryController | undefined>(undefined);
+  if (!recoveryControllerRef.current) {
+    recoveryControllerRef.current = createPlaybackRecoveryController({
+      onRetry: () => onRetryRef.current(),
+      onStateChange: (state) => {
+        setRecovery(state);
+        onRecoveryChangeRef.current?.(state, playerErrorCodeRef.current);
+      },
+    });
+  }
+  const recoveryController = recoveryControllerRef.current;
+  const resetRecovery = useCallback(() => {
+    playerErrorCodeRef.current = undefined;
+    recoveryController.markPlaying();
+    dispatchPlayerError({ type: 'clear' });
+  }, [recoveryController]);
+  const retryNow = useCallback(() => {
+    playerErrorCodeRef.current = undefined;
+    recoveryController.retryNow();
+    dispatchPlayerError({ type: 'clear' });
+  }, [recoveryController]);
   const handlePlayerError = useCallback((code: string) => {
     if (playbackUrl) {
+      playerErrorCodeRef.current = code;
       dispatchPlayerError({ type: 'report', playbackUrl, code });
+      recoveryController.reportFailure();
     }
-  }, [playbackUrl]);
+  }, [playbackUrl, recoveryController]);
   const handleRetry = useCallback(() => {
-    dispatchPlayerError({ type: 'clear' });
-    onRetry();
-  }, [onRetry]);
+    retryNow();
+  }, [retryNow]);
+  const handlePlayerPlaying = useCallback(() => {
+    resetRecovery();
+  }, [resetRecovery]);
   const currentPlayerError = getPlayerErrorForUrl(playerError, playbackUrl);
+
+  useEffect(() => {
+    const previousPlaybackUrl = previousPlaybackUrlRef.current;
+    previousPlaybackUrlRef.current = playbackUrl;
+    if (playbackUrl && previousPlaybackUrl && playbackUrl !== previousPlaybackUrl) {
+      resetRecovery();
+    }
+  }, [playbackUrl, resetRecovery]);
+
+  useEffect(() => () => recoveryController.dispose(), [recoveryController]);
 
   if (demoMode && room.playbackAvailabilityStatus === 'available') {
     return (
@@ -97,14 +147,19 @@ export function RoomPlaybackSurface({
           muted={muted}
           volume={room.volume}
           onError={handlePlayerError}
+          onPlaying={handlePlayerPlaying}
         />
         {currentPlayerError ? (
           <div className="live-video-error" role="alert">
-            <AlertCircle size={24} aria-hidden="true" />
-            <strong>{'\u64ad\u653e\u5931\u8d25'}</strong>
-            <span>{'\u8bf7\u91cd\u65b0\u83b7\u53d6\u76f4\u64ad\u6d41'}</span>
+            {recovery?.exhausted ? <AlertCircle size={24} aria-hidden="true" /> : <LoaderCircle className="spin" size={24} aria-hidden="true" />}
+            <strong>{recovery?.exhausted ? '自动恢复失败' : '正在恢复播放'}</strong>
+            <span>
+              {recovery?.exhausted
+                ? '已达到自动重试上限，请手动重新获取直播流'
+                : `将在 ${Math.ceil((recovery?.delayMs ?? 0) / 1000)} 秒后自动重试（${recovery?.attempt ?? 1}/${PLAYBACK_RECOVERY_MAX_ATTEMPTS}）`}
+            </span>
             <button className="button playback-retry-button" type="button" onClick={handleRetry}>
-              {'\u91cd\u8bd5'}
+              {'\u7acb\u5373\u91cd\u8bd5'}
             </button>
           </div>
         ) : null}
@@ -135,7 +190,7 @@ export function RoomPlaybackSurface({
         <span>{presentation.detail}</span>
       </div>
       {presentation.canRetry ? (
-        <button className="button playback-retry-button" type="button" onClick={onRetry}>
+        <button className="button playback-retry-button" type="button" onClick={handleRetry}>
           重新检查
         </button>
       ) : null}

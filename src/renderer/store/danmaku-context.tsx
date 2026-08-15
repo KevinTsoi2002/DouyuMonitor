@@ -172,11 +172,20 @@ export function useDanmakuStatus(roomId: string): DanmakuStatus {
 
 export function useDanmakuIssueCount(roomIdsKey: string): number {
   const context = useContext(DanmakuContext);
+  const eligibleRoomIdsKey = useWorkspace((state) => {
+    if (!state.globalDanmakuEnabled) return '';
+    return state.rooms
+      .filter((room) => room.danmakuEnabled && room.online && room.status !== 'offline')
+      .map((room) => room.roomId)
+      .join('|');
+  });
+  const eligibleRoomIds = new Set(eligibleRoomIdsKey ? eligibleRoomIdsKey.split('|') : []);
   return useStore(
     context?.store ?? fallbackStore,
     (state) => roomIdsKey.split('|').reduce((count, roomId) => {
       const status = state.rooms[roomId]?.status.state;
-      return count + (status === 'failed' || status === 'platform-blocked' ? 1 : 0);
+      return count + (eligibleRoomIds.has(roomId)
+        && (status === 'failed' || status === 'platform-blocked') ? 1 : 0);
     }, 0),
   );
 }

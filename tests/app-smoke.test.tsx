@@ -42,6 +42,7 @@ describe('App smoke render', () => {
     expect(html).toMatch(/class="button button-primary"[^>]*aria-label="添加直播间"/);
     expect(html).toMatch(/aria-label="关闭全局弹幕"/);
     expect(html).toMatch(/aria-label="打开弹幕设置"/);
+    expect(html).toMatch(/aria-label="打开监控状态"[^>]*aria-controls="monitoring-status-panel"/);
     expect(html).toMatch(/aria-label="全局静音"/);
   });
 

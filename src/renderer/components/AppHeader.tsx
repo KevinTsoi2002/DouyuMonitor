@@ -1,8 +1,11 @@
-import { LayoutGrid, Menu, MessageCircle, MessageCircleOff, PanelLeftOpen, Plus, Radio, Settings2, Volume2, VolumeX, X } from 'lucide-react';
+import { Activity, LayoutGrid, Menu, MessageCircle, MessageCircleOff, PanelLeftOpen, Plus, Radio, Settings2, Volume2, VolumeX, X } from 'lucide-react';
 import { useState } from 'react';
 import { LayoutMenu } from './LayoutMenu';
 import { DanmakuSettingsPanel } from './DanmakuSettingsPanel';
+import { MonitoringStatusPanel } from './MonitoringStatusPanel';
 import { WindowControls } from './WindowControls';
+import { getMonitoringSummary } from '../monitoring-status';
+import { useDanmakuIssueCount } from '../store/danmaku-context';
 import { getLayoutOption } from '../ui-model';
 import { useWorkspace } from '../store/workspace-context';
 
@@ -14,7 +17,13 @@ interface AppHeaderProps {
 
 export function AppHeader({ onAddRoom, sidebarOpen, onToggleSidebar }: AppHeaderProps) {
   const [danmakuSettingsOpen, setDanmakuSettingsOpen] = useState(false);
-  const roomCount = useWorkspace((state) => state.rooms.length);
+  const [monitoringOpen, setMonitoringOpen] = useState(false);
+  const rooms = useWorkspace((state) => state.rooms);
+  const roomCount = rooms.length;
+  const roomIdsKey = rooms.map((room) => room.roomId).join('|');
+  const playbackIssueCount = getMonitoringSummary(rooms).playbackIssues;
+  const danmakuIssueCount = useDanmakuIssueCount(roomIdsKey);
+  const monitoringIssueCount = playbackIssueCount + danmakuIssueCount;
   const layoutId = useWorkspace((state) => state.layoutId);
   const globalDanmakuEnabled = useWorkspace((state) => state.globalDanmakuEnabled);
   const globalMuted = useWorkspace((state) => state.globalMuted);
@@ -23,6 +32,7 @@ export function AppHeader({ onAddRoom, sidebarOpen, onToggleSidebar }: AppHeader
   const setLayout = useWorkspace((state) => state.setLayout);
 
   return (
+    <>
     <header className="app-header">
       <div className="header-leading">
         <button
@@ -58,7 +68,10 @@ export function AppHeader({ onAddRoom, sidebarOpen, onToggleSidebar }: AppHeader
             aria-expanded={danmakuSettingsOpen}
             aria-controls="danmaku-settings-panel"
             title="弹幕设置"
-            onClick={() => setDanmakuSettingsOpen((open) => !open)}
+            onClick={() => {
+              setMonitoringOpen(false);
+              setDanmakuSettingsOpen((open) => !open);
+            }}
           >
             <Settings2 size={16} />
           </button>
@@ -67,6 +80,21 @@ export function AppHeader({ onAddRoom, sidebarOpen, onToggleSidebar }: AppHeader
             onClose={() => setDanmakuSettingsOpen(false)}
           />
         </div>
+        <button
+          className={`icon-button header-toggle ${monitoringOpen ? 'is-active' : ''}`}
+          type="button"
+          aria-label={monitoringOpen ? '关闭监控状态' : '打开监控状态'}
+          aria-expanded={monitoringOpen}
+          aria-controls="monitoring-status-panel"
+          title="监控状态"
+          onClick={() => {
+            setDanmakuSettingsOpen(false);
+            setMonitoringOpen((open) => !open);
+          }}
+        >
+          <Activity size={16} />
+          {monitoringIssueCount ? <span className="monitoring-header-badge" aria-label={`${monitoringIssueCount} 个监控异常`}>{monitoringIssueCount}</span> : null}
+        </button>
         <button
           className={`icon-button header-toggle ${globalMuted ? 'is-active' : ''}`}
           type="button"
@@ -106,5 +134,7 @@ export function AppHeader({ onAddRoom, sidebarOpen, onToggleSidebar }: AppHeader
         <WindowControls />
       </div>
     </header>
+    {monitoringOpen ? <MonitoringStatusPanel open onClose={() => setMonitoringOpen(false)} /> : null}
+    </>
   );
 }

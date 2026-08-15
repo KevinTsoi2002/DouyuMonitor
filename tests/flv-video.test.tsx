@@ -95,6 +95,46 @@ describe('FLV video', () => {
     expect(onError).not.toHaveBeenCalled();
   });
 
+  it('reports media playback recovery when the video starts playing', () => {
+    const videoListeners = new Map<string, () => void>();
+    const player = {
+      attachMediaElement: vi.fn(),
+      load: vi.fn(),
+      play: vi.fn(),
+      on: vi.fn(),
+      off: vi.fn(),
+      unload: vi.fn(),
+      detachMediaElement: vi.fn(),
+      destroy: vi.fn(),
+    };
+    const runtime: FlvRuntime = {
+      isSupported: () => true,
+      errorEvent: 'error',
+      createPlayer: vi.fn(() => player),
+    };
+    const onPlaying = vi.fn();
+    const video = {
+      addEventListener: vi.fn((event: string, listener: () => void) => {
+        videoListeners.set(event, listener);
+      }),
+      removeEventListener: vi.fn(),
+    } as unknown as HTMLVideoElement;
+
+    const detach = attachFlvPlayer({
+      runtime,
+      video,
+      url: 'https://live.douyucdn.cn/live.flv',
+      onError: vi.fn(),
+      onPlaying,
+    });
+
+    videoListeners.get('playing')?.();
+    expect(onPlaying).toHaveBeenCalledOnce();
+
+    detach();
+    expect(video.removeEventListener).toHaveBeenCalledWith('playing', expect.any(Function));
+  });
+
   it('ignores a rejected play promise after cleanup', async () => {
     let rejectPlay!: (reason?: unknown) => void;
     const playPromise = new Promise<void>((_resolve, reject) => {

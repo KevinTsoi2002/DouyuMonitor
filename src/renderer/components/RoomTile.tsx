@@ -36,6 +36,7 @@ export function RoomTile({ room, slot, index, controlsLocked = false }: RoomTile
   const removeRoom = useWorkspace((state) => state.removeRoom);
   const refreshRoomMetadata = useWorkspace((state) => state.refreshRoomMetadata);
   const refreshStreamAvailability = useWorkspace((state) => state.refreshStreamAvailability);
+  const reportPlaybackRecovery = useWorkspace((state) => state.reportPlaybackRecovery);
   const demoMode = useWorkspace((state) => state.demoMode);
   const danmakuView = useDanmakuRoom(room.roomId);
   const { retryRoom } = useDanmakuControls();
@@ -112,6 +113,13 @@ export function RoomTile({ room, slot, index, controlsLocked = false }: RoomTile
         danmakuSettings={danmakuSettings}
         tone={tone}
         onRetry={() => { void refreshStreamAvailability(room.roomId); }}
+        onRecoveryChange={(state, errorCode) => {
+          reportPlaybackRecovery(room.roomId, state ? {
+            attempt: state.attempt,
+            exhausted: state.exhausted === true,
+            errorCode: errorCode ?? 'PLAYER_ERROR',
+          } : undefined);
+        }}
       />
       <div className="tile-topbar">
         <div className="tile-room-meta">

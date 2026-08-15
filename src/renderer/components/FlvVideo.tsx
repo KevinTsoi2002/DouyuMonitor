@@ -26,6 +26,7 @@ export interface AttachFlvPlayerOptions {
   video: HTMLVideoElement;
   url: string;
   onError: (code: string) => void;
+  onPlaying?: () => void;
 }
 
 export function applyVideoAudioState(video: HTMLVideoElement, muted: boolean, volume: number): void {
@@ -38,6 +39,7 @@ export function attachFlvPlayer({
   video,
   url,
   onError,
+  onPlaying,
 }: AttachFlvPlayerOptions): () => void {
   if (!runtime.isSupported()) {
     onError('MSE_UNSUPPORTED');
@@ -63,8 +65,12 @@ export function attachFlvPlayer({
       onError(typeof errorType === 'string' ? errorType : 'PLAYER_ERROR');
     }
   };
+  const handlePlaying = () => {
+    if (active) onPlaying?.();
+  };
 
   player.on(runtime.errorEvent, handleError);
+  video.addEventListener?.('playing', handlePlaying);
   player.attachMediaElement(video);
   player.load();
   const playResult = player.play();
@@ -77,6 +83,7 @@ export function attachFlvPlayer({
   return () => {
     active = false;
     player.off(runtime.errorEvent, handleError);
+    video.removeEventListener?.('playing', handlePlaying);
     player.unload();
     player.detachMediaElement();
     player.destroy();
@@ -88,11 +95,13 @@ export function FlvVideo({
   muted,
   volume = DEFAULT_ROOM_VOLUME,
   onError,
+  onPlaying,
 }: {
   url: string;
   muted: boolean;
   volume?: number;
   onError: (code: string) => void;
+  onPlaying?: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -120,6 +129,7 @@ export function FlvVideo({
           video,
           url,
           onError,
+          onPlaying,
         });
       })
       .catch(() => onError('PLAYER_LOAD_FAILED'));
@@ -128,7 +138,7 @@ export function FlvVideo({
       cancelled = true;
       detach();
     };
-  }, [onError, url]);
+  }, [onError, onPlaying, url]);
 
   return (
     <video
