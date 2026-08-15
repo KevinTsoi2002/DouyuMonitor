@@ -37,7 +37,34 @@ describe('createAppApi', () => {
       'toggleMaximizeWindow',
       'closeWindow',
       'onMaximizedChanged',
+      'getSystemNotificationSupport',
+      'showSystemNotification',
       'ping',
+    ]);
+  });
+
+  it('invokes only the approved system notification channels', async () => {
+    const calls: Array<{ channel: string; payload: unknown }> = [];
+    const api = createAppApi({
+      invoke: async (channel, payload) => {
+        calls.push({ channel, payload });
+        return ok(channel === IPC_CHANNELS.getSystemNotificationSupport
+          ? { supported: true }
+          : undefined);
+      },
+      on: () => {},
+      removeListener: () => {},
+    });
+
+    await expect(api.getSystemNotificationSupport()).resolves.toEqual(ok({ supported: true }));
+    await expect(api.showSystemNotification({ title: '斗鱼监控', body: '星河已开播' }))
+      .resolves.toEqual(ok(undefined));
+    expect(calls).toEqual([
+      { channel: IPC_CHANNELS.getSystemNotificationSupport, payload: undefined },
+      {
+        channel: IPC_CHANNELS.showSystemNotification,
+        payload: { title: '斗鱼监控', body: '星河已开播' },
+      },
     ]);
   });
 
