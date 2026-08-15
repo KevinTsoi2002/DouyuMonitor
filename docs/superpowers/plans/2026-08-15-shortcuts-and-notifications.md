@@ -24,7 +24,7 @@
 - `src/renderer/App.tsx`、`src/renderer/components/AppHeader.tsx`：面板状态提升和快捷键 action 接线。
 - `src/renderer/components/MonitoringStatusPanel.tsx`、`src/renderer/styles.css`：系统通知设置和 Toast 样式。
 - `tests/ipc-contract.test.ts`、`tests/ipc-handlers.test.ts`、`tests/preload-bridge.test.ts`：IPC 回归与安全边界。
-- 新增 `tests/app-preferences.test.ts`、`tests/notification-policy.test.ts`、`tests/notifications.test.tsx`、`tests/shortcuts.test.ts`、`tests/app-shortcuts.test.tsx`、`tests/toast.test.tsx`。
+- 新增 `tests/app-preferences.test.ts`、`tests/notification-policy.test.ts`、`tests/notifications.test.ts`、`tests/shortcuts.test.ts`、`tests/toast.test.ts`；当前 Vitest 使用 `node` 环境，React 交互由 SSR smoke 和 Playwright 覆盖，不额外引入 jsdom。
 
 ## Task 1: 建立系统通知 IPC 边界
 
@@ -65,15 +65,15 @@
 - Create: `src/renderer/notifications/toast-context.tsx`
 - Create: `src/renderer/components/ToastViewport.tsx`
 - Modify: `src/renderer/styles.css`
-- Test: `tests/toast.test.tsx`
+- Test: `tests/toast.test.ts`
 
-- [ ] **Step 1: 写失败测试**：验证 `pushToast` 返回 id、按 FIFO 保持最多 3 条、默认时长（普通 3500ms、错误 6000ms）、手动关闭、action 按钮和 `role=status/alert`。
-- [ ] **Step 2: 运行测试确认失败**：运行 `npm test -- tests/toast.test.tsx`。
-- [ ] **Step 3: 实现 Toast provider**：用 reducer/定时器维护 `ToastItem[]`，暴露 `useToast`，对 action 异常做安全处理；清理卸载时的所有 timer。
+- [ ] **Step 1: 写失败测试**：验证可导出的 Toast reducer/controller 在入队时返回 id、按 FIFO 保持最多 3 条、默认时长（普通 3500ms、错误 6000ms）和手动关闭；组件的 role/按钮由 SSR smoke 与 Playwright 验证。
+- [ ] **Step 2: 运行测试确认失败**：运行 `npm test -- tests/toast.test.ts`。
+- [ ] **Step 3: 实现 Toast provider**：用 reducer/定时器维护 `ToastItem[]`，同时导出纯 reducer/controller 供 node 测试，暴露 `useToast`，对 action 异常做安全处理；清理卸载时的所有 timer。
 - [ ] **Step 4: 实现 ToastViewport**：使用 Lucide 状态图标、可聚焦关闭按钮、可见 action 文本和无障碍 role；不依赖固定宽度，长文本允许换行。
 - [ ] **Step 5: 增加响应式样式**：Toast 固定在标题栏下方右侧，移动端改为左右 12px，最大宽度不造成横向溢出，沿用现有颜色变量和 4px 圆角。
-- [ ] **Step 6: 运行测试确认通过**：运行 `npm test -- tests/toast.test.tsx`。
-- [ ] **Step 7: 提交**：`git add src/renderer/notifications/toast-context.tsx src/renderer/components/ToastViewport.tsx src/renderer/styles.css tests/toast.test.tsx && git commit -m "feat: add in-app toast notifications"`。
+- [ ] **Step 6: 运行测试确认通过**：运行 `npm test -- tests/toast.test.ts`。
+- [ ] **Step 7: 提交**：`git add src/renderer/notifications/toast-context.tsx src/renderer/components/ToastViewport.tsx src/renderer/styles.css tests/toast.test.ts && git commit -m "feat: add in-app toast notifications"`。
 
 ## Task 4: 实现通知策略纯逻辑
 
@@ -91,15 +91,15 @@
 
 **Files:**
 - Create: `src/renderer/notifications/notification-context.tsx`
-- Test: `tests/notifications.test.tsx`
+- Test: `tests/notifications.test.ts`
 - Modify: `src/renderer/App.tsx`
 
-- [ ] **Step 1: 写失败集成测试**：在 fake `window.appApi` 支持、不可用和调用失败三种环境下，验证首次房间快照不通知；状态转移调用系统通知；关闭开关、浏览器模式或 IPC 失败时只对明确失败/恢复动作使用 Toast。
-- [ ] **Step 2: 运行测试确认失败**：运行 `npm test -- tests/notifications.test.tsx`。
+- [ ] **Step 1: 写失败 dispatcher 测试**：使用 fake `AppApi`、Toast callback 和 policy 事件，验证首次房间快照不通知；状态转移调用系统通知；关闭开关、浏览器模式或 IPC 失败时只对明确失败/恢复动作使用 Toast。
+- [ ] **Step 2: 运行测试确认失败**：运行 `npm test -- tests/notifications.test.ts`。
 - [ ] **Step 3: 实现 NotificationProvider**：在 ToastProvider 内部读取 `WorkspaceState.rooms`，初始化 policy 基线；查询系统通知支持性；加载/保存偏好；把策略事件转换为安全标题/正文，执行去重限流后调用 `window.appApi`，并处理 unsupported/异常 fallback。
 - [ ] **Step 4: 接入 App provider 层**：让 `App` 返回 `ToastProvider -> NotificationProvider -> AppShell`，保持所有现有 `WorkspaceProvider` 调用方不需额外包裹；渲染 `ToastViewport` 一次。
-- [ ] **Step 5: 运行集成测试确认通过**：运行 `npm test -- tests/notifications.test.tsx tests/app-smoke.test.tsx`。
-- [ ] **Step 6: 提交**：`git add src/renderer/notifications/notification-context.tsx src/renderer/App.tsx src/renderer/main.tsx tests/notifications.test.tsx && git commit -m "feat: connect room status notifications"`。
+- [ ] **Step 5: 运行 dispatcher 测试确认通过**：运行 `npm test -- tests/notifications.test.ts tests/app-smoke.test.tsx`。
+- [ ] **Step 6: 提交**：`git add src/renderer/notifications/notification-context.tsx src/renderer/App.tsx tests/notifications.test.ts && git commit -m "feat: connect room status notifications"`。
 
 ## Task 6: 实现窗口内快捷键并统一面板状态
 
@@ -108,17 +108,17 @@
 - Create: `src/renderer/hooks/use-app-shortcuts.ts`
 - Modify: `src/renderer/App.tsx`
 - Modify: `src/renderer/components/AppHeader.tsx`
-- Test: `tests/shortcuts.test.ts`, `tests/app-shortcuts.test.tsx`
+- Test: `tests/shortcuts.test.ts`, `tests/app-smoke.test.tsx`
 
 - [ ] **Step 1: 写快捷键纯函数失败测试**：覆盖 6 个组合键、大小写 key、Ctrl/Shift 必须存在、Alt/Meta/repeat 拒绝、input/textarea/select/contenteditable 拒绝和普通按钮接受。
 - [ ] **Step 2: 运行纯函数测试确认失败**：运行 `npm test -- tests/shortcuts.test.ts`。
 - [ ] **Step 3: 实现 matcher**：导出稳定的快捷键表和 `matchesShortcut`/`isEditableTarget`，不注册 Electron global shortcut，不依赖 Zustand。
-- [ ] **Step 4: 写 App 集成失败测试**：渲染 `WorkspaceProvider + App`，派发 keydown，验证添加弹窗、工作区/监控/弹幕面板和侧栏开关；输入控件内派发事件不改变 UI；无主房间刷新显示 Toast。
-- [ ] **Step 5: 运行集成测试确认失败**：运行 `npm test -- tests/app-shortcuts.test.tsx`。
-- [ ] **Step 6: 提升 App 面板状态并实现 hook**：把 `danmakuSettingsOpen`、`monitoringOpen`、`workspaceOpen` 从 `AppHeader` 提升到 `App`；`AppHeader` 接受受控 props 和互斥切换回调；`useAppShortcuts` 挂载一个 keydown listener，调用同一组 UI action，监听器内部捕获 action 异常并推送 Toast。
+- [ ] **Step 4: 扩展纯 listener 失败测试**：使用 fake actions 和 fake `KeyboardEvent`，验证 listener 调用添加弹窗、工作区/监控/弹幕面板和侧栏 action；输入控件内事件不调用 action；无主房间刷新调用 Toast。
+- [ ] **Step 5: 运行 listener 测试确认失败**：运行 `npm test -- tests/shortcuts.test.ts`。
+- [ ] **Step 6: 提升 App 面板状态并实现 hook**：把 `danmakuSettingsOpen`、`monitoringOpen`、`workspaceOpen` 从 `AppHeader` 提升到 `App`；`AppHeader` 接受受控 props 和互斥切换回调；`useAppShortcuts` 挂载一个 keydown listener，调用同一组 UI action，监听器内部捕获 action 异常并推送 Toast；导出 listener 工厂供 node 测试。
 - [ ] **Step 7: 接入主房间刷新**：快捷键读取 `primaryRoomId` 和 `refreshStreamAvailability`；无主房间推送明确 Toast，有主房间调用现有动作，不改变周期刷新策略。
-- [ ] **Step 8: 运行测试确认通过**：运行 `npm test -- tests/shortcuts.test.ts tests/app-shortcuts.test.tsx tests/app-smoke.test.tsx`。
-- [ ] **Step 9: 提交**：`git add src/renderer/shortcuts.ts src/renderer/hooks/use-app-shortcuts.ts src/renderer/App.tsx src/renderer/components/AppHeader.tsx tests/shortcuts.test.ts tests/app-shortcuts.test.tsx tests/app-smoke.test.tsx && git commit -m "feat: add focused app shortcuts"`。
+- [ ] **Step 8: 运行测试确认通过**：运行 `npm test -- tests/shortcuts.test.ts tests/app-smoke.test.tsx`。
+- [ ] **Step 9: 提交**：`git add src/renderer/shortcuts.ts src/renderer/hooks/use-app-shortcuts.ts src/renderer/App.tsx src/renderer/components/AppHeader.tsx tests/shortcuts.test.ts tests/app-smoke.test.tsx && git commit -m "feat: add focused app shortcuts"`。
 
 ## Task 7: 在监控面板加入系统通知开关
 
