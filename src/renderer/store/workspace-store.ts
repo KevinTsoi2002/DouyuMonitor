@@ -12,10 +12,14 @@ import type {
   StreamAvailability,
   StreamQuality,
 } from '../../domain/douyu-adapter';
+import { DouyuAdapterError } from '../../domain/douyu-adapter';
 import { RoomRegistry } from '../../domain/room-registry';
 import {
   DEFAULT_DANMAKU_SETTINGS,
+  parseDanmakuGovernanceSettings,
   parseDanmakuSettings,
+  type DanmakuGovernanceOverride,
+  type DanmakuGovernanceSettings,
   type DanmakuSettings,
 } from '../danmaku/danmaku-settings';
 import {
@@ -43,6 +47,16 @@ import {
 
 export type PlaybackAvailabilityStatus = 'checking' | 'available' | 'blocked' | 'error';
 
+export interface PlaybackRecoveryReport {
+  attempt: number;
+  exhausted: boolean;
+  errorCode: string;
+}
+
+export interface PlaybackRecoveryDiagnostic extends PlaybackRecoveryReport {
+  updatedAt: string;
+}
+
 export interface RoomSession extends RoomCandidate {
   status: RoomStatus;
   quality: StreamQuality;
@@ -51,6 +65,9 @@ export interface RoomSession extends RoomCandidate {
   playbackAvailabilityStatus: PlaybackAvailabilityStatus;
   streamAvailability?: StreamAvailability;
   playbackError?: string;
+  playbackErrorCode?: string;
+  playbackCheckedAt?: string;
+  playbackRecovery?: PlaybackRecoveryDiagnostic;
 }
 
 export type SearchStatus = 'idle' | 'searching' | 'success' | 'empty' | 'error';
@@ -71,6 +88,7 @@ export interface WorkspaceState {
   globalDanmakuEnabled: boolean;
   globalMuted: boolean;
   danmakuSettings: DanmakuSettings;
+  danmakuGovernanceOverrides: Record<string, DanmakuGovernanceOverride>;
   sidebarOpen: boolean;
   searchResults: RoomCandidate[];
   searchStatus: SearchStatus;
@@ -89,6 +107,9 @@ export interface WorkspaceState {
   setGlobalDanmakuEnabled: (enabled: boolean) => void;
   setGlobalMuted: (muted: boolean) => void;
   setDanmakuSettings: (patch: Partial<DanmakuSettings>) => void;
+  setDanmakuGovernance: (patch: DanmakuGovernanceOverride) => void;
+  setRoomDanmakuGovernanceOverride: (roomId: string, patch: DanmakuGovernanceOverride) => void;
+  clearRoomDanmakuGovernanceOverride: (roomId: string) => void;
   resetDanmakuSetting: (key: 'durationSeconds' | 'fontSize' | 'opacity') => void;
   setSidebarOpen: (open: boolean) => void;
   toggleFavorite: (roomId: string) => void;
@@ -102,6 +123,7 @@ export interface WorkspaceState {
   searchRooms: (input: string) => Promise<void>;
   refreshRoomMetadata: (roomId: string) => Promise<boolean>;
   refreshStreamAvailability: (roomId: string) => Promise<void>;
+  reportPlaybackRecovery: (roomId: string, report?: PlaybackRecoveryReport) => void;
 }
 
 export interface WorkspaceOptions {
@@ -128,6 +150,23 @@ function toSession(candidate: LibraryRoom): RoomSession {
     status: candidate.online ? 'playing' : 'offline',
     playbackAvailabilityStatus: 'checking',
   };
+}
+
+function normalizeGovernanceOverride(
+  base: DanmakuGovernanceSettings,
+  patch: DanmakuGovernanceOverride,
+): DanmakuGovernanceOverride {
+  const parsed = parseDanmakuGovernanceSettings({ ...base, ...patch });
+  const normalized: DanmakuGovernanceOverride = {};
+  if ('enabled' in patch) normalized.enabled = parsed.enabled;
+  if ('keywordBlacklist' in patch) normalized.keywordBlacklist = parsed.keywordBlacklist;
+  if ('duplicateWindowSeconds' in patch) {
+    normalized.duplicateWindowSeconds = parsed.duplicateWindowSeconds;
+  }
+  if ('peakProtectionEnabled' in patch) {
+    normalized.peakProtectionEnabled = parsed.peakProtectionEnabled;
+  }
+  return normalized;
 }
 
 export function createWorkspaceStore(
@@ -167,7 +206,7 @@ export function createWorkspaceStore(
     const persist = () => {
       const state = get();
       const snapshot: WorkspaceSnapshot = {
-        schemaVersion: 3,
+        schemaVersion: 4,
         roomLibrary: state.roomLibrary,
         activeRoomIds: state.rooms.map((room) => room.roomId),
         history: state.history,
@@ -182,6 +221,7 @@ export function createWorkspaceStore(
         globalDanmakuEnabled: state.globalDanmakuEnabled,
         globalMuted: state.globalMuted,
         danmakuSettings: state.danmakuSettings,
+        danmakuGovernanceOverrides: state.danmakuGovernanceOverrides,
         sidebarOpen: state.sidebarOpen,
       };
       saveWorkspaceSnapshot(storage, snapshot);
@@ -203,6 +243,7 @@ export function createWorkspaceStore(
     globalDanmakuEnabled: persisted?.globalDanmakuEnabled ?? true,
     globalMuted: persisted?.globalMuted ?? false,
     danmakuSettings: persisted?.danmakuSettings ?? { ...DEFAULT_DANMAKU_SETTINGS },
+    danmakuGovernanceOverrides: persisted?.danmakuGovernanceOverrides ?? {},
     sidebarOpen: persisted?.sidebarOpen ?? options.initialSidebarOpen ?? true,
     searchResults: [],
     searchStatus: 'idle',
@@ -245,6 +286,10 @@ export function createWorkspaceStore(
         return {
           rooms,
           roomPlacementOrder: state.roomPlacementOrder.filter((id) => id !== roomId),
+          danmakuGovernanceOverrides: Object.fromEntries(
+            Object.entries(state.danmakuGovernanceOverrides)
+              .filter(([id]) => id !== roomId),
+          ),
           activeGroupId: undefined,
           primaryRoomId: state.primaryRoomId === roomId ? nextPrimaryRoomId : state.primaryRoomId,
           audioRoomId: state.audioRoomId === roomId ? rooms[0]?.roomId : state.audioRoomId,
@@ -376,6 +421,47 @@ export function createWorkspaceStore(
       set((state) => ({
         danmakuSettings: parseDanmakuSettings({ ...state.danmakuSettings, ...patch }),
       }));
+      persist();
+    },
+
+    setDanmakuGovernance(patch) {
+      set((state) => ({
+        danmakuSettings: parseDanmakuSettings({
+          ...state.danmakuSettings,
+          governance: {
+            ...state.danmakuSettings.governance,
+            ...patch,
+          },
+        }),
+      }));
+      persist();
+    },
+
+    setRoomDanmakuGovernanceOverride(roomId, patch) {
+      if (!get().roomLibrary[roomId]) return;
+      set((state) => {
+        const normalized = normalizeGovernanceOverride(
+          state.danmakuSettings.governance,
+          patch,
+        );
+        const current = state.danmakuGovernanceOverrides[roomId] ?? {};
+        const next = { ...current, ...normalized };
+        return {
+          danmakuGovernanceOverrides: Object.keys(next).length > 0
+            ? { ...state.danmakuGovernanceOverrides, [roomId]: next }
+            : state.danmakuGovernanceOverrides,
+        };
+      });
+      persist();
+    },
+
+    clearRoomDanmakuGovernanceOverride(roomId) {
+      if (!get().danmakuGovernanceOverrides[roomId]) return;
+      set((state) => {
+        const overrides = { ...state.danmakuGovernanceOverrides };
+        delete overrides[roomId];
+        return { danmakuGovernanceOverrides: overrides };
+      });
       persist();
     },
 
@@ -554,7 +640,23 @@ export function createWorkspaceStore(
         persist();
         if (candidate.online) void get().refreshStreamAvailability(roomId);
         return true;
-      } catch {
+      } catch (error) {
+        const checkedAt = now().toISOString();
+        set((state) => ({
+          rooms: state.rooms.map((room) => {
+            if (room.roomId !== roomId || !room.online || room.status === 'offline') return room;
+            return {
+              ...room,
+              playbackAvailabilityStatus: 'error',
+              playbackCheckedAt: checkedAt,
+              playbackRecovery: undefined,
+              playbackError: '直播间状态检查失败',
+              playbackErrorCode: error instanceof DouyuAdapterError
+                ? error.code
+                : 'ROOM_METADATA_CHECK_FAILED',
+            };
+          }),
+        }));
         return false;
       } finally {
         metadataRefreshInFlight.delete(roomId);
@@ -571,6 +673,8 @@ export function createWorkspaceStore(
               ...room,
               playbackAvailabilityStatus: 'checking',
               playbackError: undefined,
+              playbackErrorCode: undefined,
+              playbackRecovery: undefined,
             }
           : room),
       }));
@@ -586,6 +690,9 @@ export function createWorkspaceStore(
                 playbackAvailabilityStatus: availability.kind,
                 streamAvailability: availability,
                 playbackError: undefined,
+                playbackErrorCode: undefined,
+                playbackCheckedAt: availability.checkedAt,
+                playbackRecovery: undefined,
               }
             : room),
         }));
@@ -597,11 +704,30 @@ export function createWorkspaceStore(
             ? {
                 ...room,
                 playbackAvailabilityStatus: 'error',
+                playbackCheckedAt: now().toISOString(),
+                playbackRecovery: undefined,
                 playbackError: error instanceof Error ? error.message : '播放能力检查失败',
+                playbackErrorCode: error instanceof DouyuAdapterError
+                  ? error.code
+                  : 'PLAYBACK_SOURCE_CHECK_FAILED',
               }
             : room),
         }));
       }
+    },
+
+    reportPlaybackRecovery(roomId, report) {
+      if (!get().rooms.some((room) => room.roomId === roomId)) return;
+      set((state) => ({
+        rooms: state.rooms.map((room) => room.roomId === roomId
+          ? {
+              ...room,
+              playbackRecovery: report
+                ? { ...report, updatedAt: now().toISOString() }
+                : undefined,
+            }
+          : room),
+      }));
     },
     });
   });

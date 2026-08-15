@@ -65,7 +65,7 @@ describe('danmaku settings', () => {
     }).governance;
 
     expect(parsed.keywordBlacklist).toHaveLength(50);
-    expect(parsed.keywordBlacklist[0]).toBe('a'.repeat(40));
+    expect(parsed.keywordBlacklist[0]).toBe('关键词0');
     expect(
       parsed.keywordBlacklist.every(
         (keyword) => Array.from(keyword).length <= 40,

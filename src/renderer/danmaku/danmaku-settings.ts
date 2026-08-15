@@ -100,12 +100,12 @@ function parseGovernanceKeywords(value: unknown): string[] {
   for (const item of value) {
     if (typeof item !== 'string') continue;
 
-    const keyword = Array.from(
-      item.trim().toLocaleLowerCase('zh-CN'),
-    )
-      .slice(0, MAX_GOVERNANCE_KEYWORD_LENGTH)
-      .join('');
-    if (!keyword || seen.has(keyword)) continue;
+    const keyword = item.trim().toLocaleLowerCase('zh-CN');
+    if (
+      !keyword ||
+      Array.from(keyword).length > MAX_GOVERNANCE_KEYWORD_LENGTH ||
+      seen.has(keyword)
+    ) continue;
 
     seen.add(keyword);
     keywords.push(keyword);

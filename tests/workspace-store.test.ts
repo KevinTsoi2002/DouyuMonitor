@@ -168,6 +168,26 @@ describe('createWorkspaceStore', () => {
     }));
   });
 
+  it('surfaces metadata refresh failures as a current playback diagnostic', async () => {
+    const pending = deferredAvailability();
+    const adapter: DouyuAdapter = {
+      search: vi.fn(async () => { throw new Error('network unavailable'); }),
+      getStreamAvailability: vi.fn(() => pending.promise),
+    };
+    const store = createWorkspaceStore(adapter, {
+      ...deterministicOptions,
+      initialRooms: [candidate('1')],
+    });
+
+    await expect(store.getState().refreshRoomMetadata('1')).resolves.toBe(false);
+
+    expect(store.getState().rooms[0]).toEqual(expect.objectContaining({
+      playbackAvailabilityStatus: 'error',
+      playbackCheckedAt: '2026-08-10T00:00:00.000Z',
+      playbackErrorCode: 'ROOM_METADATA_CHECK_FAILED',
+    }));
+  });
+
   it('allows a room to belong to multiple groups', () => {
     let nextGroup = 0;
     const store = createWorkspaceStore(createMockDouyuAdapter(), {
@@ -364,6 +384,36 @@ describe('createWorkspaceStore', () => {
     expect(restored.getState().sidebarOpen).toBe(false);
   });
 
+  it('persists global governance defaults and room overrides independently', () => {
+    const storage = createMemoryStorage();
+    const first = createWorkspaceStore(createMockDouyuAdapter(), {
+      storage,
+      initialRooms: [candidate('63136')],
+    });
+
+    first.getState().setDanmakuGovernance({ keywordBlacklist: ['广告'] });
+    first.getState().setRoomDanmakuGovernanceOverride('63136', {
+      duplicateWindowSeconds: 5,
+    });
+
+    expect(first.getState().danmakuSettings.governance.keywordBlacklist).toEqual(['广告']);
+    expect(first.getState().danmakuGovernanceOverrides['63136']).toEqual({
+      duplicateWindowSeconds: 5,
+    });
+
+    const restored = createWorkspaceStore(createMockDouyuAdapter(), {
+      storage,
+      initialRooms: [candidate('63136')],
+    });
+    expect(restored.getState().danmakuSettings.governance.keywordBlacklist).toEqual(['广告']);
+    expect(restored.getState().danmakuGovernanceOverrides['63136']).toEqual({
+      duplicateWindowSeconds: 5,
+    });
+
+    restored.getState().clearRoomDanmakuGovernanceOverride('63136');
+    expect(restored.getState().danmakuGovernanceOverrides['63136']).toBeUndefined();
+  });
+
   it('resets only the selected danmaku slider', () => {
     const store = createWorkspaceStore(createMockDouyuAdapter());
     store.getState().setDanmakuSettings({
@@ -516,6 +566,45 @@ describe('createWorkspaceStore', () => {
     await store.getState().refreshStreamAvailability('101');
 
     expect(store.getState().rooms[1]).toBe(originalSecondRoom);
+  });
+
+  it('records playback checks and isolates runtime recovery diagnostics by room', async () => {
+    const adapter = createMockDouyuAdapter();
+    const store = createWorkspaceStore(adapter, deterministicOptions);
+    store.getState().addRoom(candidate('101'));
+    store.getState().addRoom(candidate('202'));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    store.getState().reportPlaybackRecovery('101', {
+      attempt: 2,
+      exhausted: false,
+      errorCode: 'NETWORK_ERROR',
+    });
+
+    expect(store.getState().rooms.find((room) => room.roomId === '101')).toEqual(
+      expect.objectContaining({
+        playbackCheckedAt: expect.any(String),
+        playbackRecovery: {
+          attempt: 2,
+          exhausted: false,
+          errorCode: 'NETWORK_ERROR',
+          updatedAt: '2026-08-10T00:00:00.000Z',
+        },
+      }),
+    );
+    expect(store.getState().rooms.find((room) => room.roomId === '202')?.playbackRecovery).toBeUndefined();
+
+    await store.getState().refreshStreamAvailability('101');
+
+    expect(store.getState().rooms.find((room) => room.roomId === '101')).toEqual(
+      expect.objectContaining({
+        playbackCheckedAt: expect.any(String),
+        playbackRecovery: undefined,
+      }),
+    );
+    const refreshedRoom = store.getState().rooms.find((room) => room.roomId === '101');
+    expect(refreshedRoom?.playbackCheckedAt).toBe(refreshedRoom?.streamAvailability?.checkedAt);
   });
 
   it('ignores availability refreshes for unknown room ids', async () => {

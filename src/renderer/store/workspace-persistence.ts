@@ -7,6 +7,8 @@ import {
 import type { StreamQuality } from '../../domain/douyu-adapter';
 import {
   parseDanmakuSettings,
+  parseDanmakuGovernanceSettings,
+  type DanmakuGovernanceOverride,
   type DanmakuSettings,
 } from '../danmaku/danmaku-settings';
 import {
@@ -21,7 +23,7 @@ import {
 import { normalizeRoomPlacementOrder } from './room-placement';
 
 export const WORKSPACE_STORAGE_KEY = 'douyu-monitor.workspace.v1';
-export const WORKSPACE_SCHEMA_VERSION = 3;
+export const WORKSPACE_SCHEMA_VERSION = 4;
 
 export interface WorkspaceStorage {
   getItem(key: string): string | null;
@@ -47,6 +49,7 @@ export interface WorkspaceSnapshot {
   globalDanmakuEnabled: boolean;
   globalMuted: boolean;
   danmakuSettings: DanmakuSettings;
+  danmakuGovernanceOverrides: Record<string, DanmakuGovernanceOverride>;
   sidebarOpen?: boolean;
 }
 
@@ -187,6 +190,29 @@ function parseGroups(value: unknown, roomLibrary: RoomLibrary): RoomGroup[] {
   return groups;
 }
 
+function parseGovernanceOverrides(
+  value: unknown,
+  roomLibrary: RoomLibrary,
+): Record<string, DanmakuGovernanceOverride> {
+  if (!isRecord(value)) return {};
+  const overrides: Record<string, DanmakuGovernanceOverride> = {};
+  for (const [roomId, rawOverride] of Object.entries(value)) {
+    if (!roomLibrary[roomId] || !isRecord(rawOverride)) continue;
+    const parsed = parseDanmakuGovernanceSettings(rawOverride);
+    const override: DanmakuGovernanceOverride = {};
+    if ('enabled' in rawOverride) override.enabled = parsed.enabled;
+    if ('keywordBlacklist' in rawOverride) override.keywordBlacklist = parsed.keywordBlacklist;
+    if ('duplicateWindowSeconds' in rawOverride) {
+      override.duplicateWindowSeconds = parsed.duplicateWindowSeconds;
+    }
+    if ('peakProtectionEnabled' in rawOverride) {
+      override.peakProtectionEnabled = parsed.peakProtectionEnabled;
+    }
+    if (Object.keys(override).length > 0) overrides[roomId] = override;
+  }
+  return overrides;
+}
+
 function parseLayoutId(value: unknown): LayoutId {
   return typeof value === 'string' && LAYOUT_VALUES.has(value) ? value as LayoutId : 'single';
 }
@@ -215,11 +241,14 @@ export function loadWorkspaceSnapshot(storage: WorkspaceStorage | undefined = ge
     const raw = storage.getItem(WORKSPACE_STORAGE_KEY);
     if (!raw) return undefined;
     const parsed: unknown = JSON.parse(raw);
-    if (!isRecord(parsed) || ![1, 2, WORKSPACE_SCHEMA_VERSION].includes(Number(parsed.schemaVersion))) {
+    if (!isRecord(parsed)) return undefined;
+    const schemaVersion = Number(parsed.schemaVersion);
+    if (![1, 2, 3, WORKSPACE_SCHEMA_VERSION].includes(schemaVersion)) {
       return undefined;
     }
 
-    const migrated: ParsedWorkspaceData | undefined = parsed.schemaVersion === WORKSPACE_SCHEMA_VERSION
+    const structuredSnapshot = schemaVersion === 3 || schemaVersion === WORKSPACE_SCHEMA_VERSION;
+    const migrated: ParsedWorkspaceData | undefined = structuredSnapshot
       ? (() => {
           const roomLibrary = toRoomLibrary(parsed.roomLibrary);
           if (!roomLibrary || !Array.isArray(parsed.activeRoomIds)) return undefined;
@@ -238,7 +267,7 @@ export function loadWorkspaceSnapshot(storage: WorkspaceStorage | undefined = ge
     if (!migrated) return undefined;
 
     const groups = migrated.groups;
-    const requestedActiveGroupId = parsed.schemaVersion === WORKSPACE_SCHEMA_VERSION
+    const requestedActiveGroupId = structuredSnapshot
       ? readString(parsed.activeGroupId)
       : undefined;
     const activeGroup = groups.find((group) => group.id === requestedActiveGroupId);
@@ -255,16 +284,19 @@ export function loadWorkspaceSnapshot(storage: WorkspaceStorage | undefined = ge
       activeGroupId,
       layoutId: parseLayoutId(parsed.layoutId),
       primaryRoomId: readString(parsed.primaryRoomId),
-      roomPlacementOrder: parsed.schemaVersion === WORKSPACE_SCHEMA_VERSION
+      roomPlacementOrder: structuredSnapshot
         ? normalizeRoomPlacementOrder(migrated.activeRoomIds, parsed.roomPlacementOrder)
         : [...migrated.activeRoomIds],
-      primaryRoomRatio: parsed.schemaVersion === WORKSPACE_SCHEMA_VERSION
+      primaryRoomRatio: structuredSnapshot
         ? parsePrimaryRoomRatio(parsed.primaryRoomRatio)
         : DEFAULT_PRIMARY_ROOM_RATIO,
       audioRoomId: readString(parsed.audioRoomId),
       globalDanmakuEnabled: parsed.globalDanmakuEnabled !== false,
       globalMuted: parsed.globalMuted === true,
       danmakuSettings: parseDanmakuSettings(parsed.danmakuSettings),
+      danmakuGovernanceOverrides: schemaVersion === WORKSPACE_SCHEMA_VERSION
+        ? parseGovernanceOverrides(parsed.danmakuGovernanceOverrides, migrated.roomLibrary)
+        : {},
       sidebarOpen: typeof parsed.sidebarOpen === 'boolean' ? parsed.sidebarOpen : undefined,
     };
   } catch {
