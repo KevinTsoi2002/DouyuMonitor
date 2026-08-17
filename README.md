@@ -4,7 +4,7 @@ DouyuMonitor 是一个基于 Electron 的斗鱼多直播间监看工具，面向
 
 ## 下载
 
-Windows x64 安装包位于 [Releases](https://github.com/KevinTsoi2002/DouyuMonitor/releases/latest)。下载 `DouyuMonitor-Setup-0.1.2-x64.exe` 后运行安装程序即可。
+Windows x64 安装包位于 [Releases](https://github.com/KevinTsoi2002/DouyuMonitor/releases/latest)。下载最新版本安装包后运行安装程序即可。
 
 当前发布包未进行 Windows 代码签名。原因是构建环境没有可用的、带 Code Signing 用途的受信任证书。Windows 可能显示“未知发布者”；请从本项目的 GitHub Release 下载，并在安装前核对 Release 中的 SHA-256 校验值。
 
@@ -48,7 +48,7 @@ Electron 主进程会自动查找 `.venv\Scripts\python.exe`。如果使用其�
 npm run dist:win
 ```
 
-安装包输出到 `release\DouyuMonitor-Setup-0.1.2-x64.exe`。`npm run dist:unpacked` 可生成 `release\win-unpacked\DouyuMonitor.exe` 用于本地验证；解包目录适合便携运行和问题复现，不需要安装器。
+安装包输出到 `release\DouyuMonitor-Setup-<version>-x64.exe`。`npm run dist:unpacked` 可生成 `release\win-unpacked\DouyuMonitor.exe` 用于本地验证；解包目录适合便携运行和问题复现，不需要安装器。
 
 ## 播放源与合规边界
 
