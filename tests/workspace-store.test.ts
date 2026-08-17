@@ -149,6 +149,23 @@ describe('createWorkspaceStore', () => {
     expect(store.getState().rooms[0]?.online).toBe(false);
     expect(store.getState().hasUnsavedWorkspaceChanges).toBe(false);
   });
+
+  it('does not reload an available playback source during a live metadata refresh', async () => {
+    const adapter = createMockDouyuAdapter();
+    const getStreamAvailability = vi.spyOn(adapter, 'getStreamAvailability');
+    const store = createWorkspaceStore(adapter, {
+      ...deterministicOptions,
+      initialRooms: [candidate('101')],
+    });
+
+    await store.getState().refreshStreamAvailability('101');
+    const callsAfterInitialCheck = getStreamAvailability.mock.calls.length;
+
+    await store.getState().refreshRoomMetadata('101');
+
+    expect(getStreamAvailability).toHaveBeenCalledTimes(callsAfterInitialCheck);
+  });
+
   it('starts new workspaces in automatic layout mode and keeps it after adding rooms', () => {
     const store = createWorkspaceStore(createMockDouyuAdapter());
 

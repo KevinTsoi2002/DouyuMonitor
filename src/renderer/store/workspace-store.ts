@@ -919,6 +919,13 @@ export function createWorkspaceStore(
         const [candidate] = await adapter.search({ type: 'room-id', value: roomId });
         const existing = get().roomLibrary[roomId];
         if (!candidate || !existing) return false;
+        const currentRoom = get().rooms.find((room) => room.roomId === roomId);
+        const shouldRefreshStream = candidate.online && (
+          !currentRoom
+          || !currentRoom.online
+          || currentRoom.status === 'offline'
+          || currentRoom.playbackAvailabilityStatus !== 'available'
+        );
 
         const libraryRoom = toLibraryRoom({ ...existing, ...candidate });
         set((state) => ({
@@ -937,7 +944,7 @@ export function createWorkspaceStore(
           roomLibrary: { ...state.roomLibrary, [roomId]: libraryRoom },
         }));
         persist();
-        if (candidate.online) void get().refreshStreamAvailability(roomId);
+        if (shouldRefreshStream) void get().refreshStreamAvailability(roomId);
         return true;
       } catch (error) {
         const checkedAt = now().toISOString();
