@@ -1,6 +1,16 @@
 import type { RoomInput } from './input-resolver';
 
 export type StreamQuality = 'auto' | 'original' | 'super' | 'high' | 'standard';
+export type StreamRequestQuality = StreamQuality | '720p';
+
+export const STREAM_REQUEST_QUALITIES = [
+  'auto',
+  'original',
+  'super',
+  'high',
+  'standard',
+  '720p',
+] as const satisfies readonly StreamRequestQuality[];
 
 export type RoomStatus = 'playing' | 'offline' | 'reconnecting' | 'error';
 
@@ -52,7 +62,8 @@ export type DouyuAdapterErrorCode =
   | 'ROOM_NOT_FOUND'
   | 'NETWORK_UNAVAILABLE'
   | 'PROTOCOL_CHANGED'
-  | 'STREAMGET_UNAVAILABLE';
+  | 'STREAMGET_UNAVAILABLE'
+  | 'LOCAL_STREAM_PROXY_FAILED';
 
 export class DouyuAdapterError extends Error {
   constructor(
@@ -66,5 +77,9 @@ export class DouyuAdapterError extends Error {
 
 export interface DouyuAdapter {
   search(input: RoomInput): Promise<RoomCandidate[]>;
-  getStreamAvailability(roomId: string): Promise<StreamAvailability>;
+  getStreamAvailability(
+    roomId: string,
+    quality?: StreamRequestQuality,
+  ): Promise<StreamAvailability>;
+  releaseStream?(roomId: string): Promise<void>;
 }

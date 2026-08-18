@@ -16,4 +16,18 @@ describe('StreamGet IPC error', () => {
     });
     expect(JSON.stringify(result)).not.toContain('secret');
   });
+
+  it('maps local proxy failures without exposing exception details', () => {
+    const result = toIpcError(new DouyuAdapterError(
+      'LOCAL_STREAM_PROXY_FAILED',
+      'proxyUrl=http://127.0.0.1:9000/?token=secret',
+    ));
+
+    expect(result).toEqual({
+      code: 'LOCAL_STREAM_PROXY_FAILED',
+      message: '无法创建本地播放通道，请重试',
+      retryable: true,
+    });
+    expect(JSON.stringify(result)).not.toContain('secret');
+  });
 });
