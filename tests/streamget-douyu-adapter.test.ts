@@ -42,9 +42,9 @@ function createResolver(result: StreamgetRawResult = {
   };
 }
 
-function deferredResult() {
-  let resolve!: (value: StreamgetRawResult) => void;
-  const promise = new Promise<StreamgetRawResult>((resolvePromise) => { resolve = resolvePromise; });
+function deferredResult<T = StreamgetRawResult>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => { resolve = resolvePromise; });
   return { promise, resolve };
 }
 
@@ -200,5 +200,37 @@ describe('StreamGet Douyu adapter', () => {
 
     expect(proxy.register).not.toHaveBeenCalled();
     expect(proxy.release).toHaveBeenCalledWith('63136');
+  });
+
+  it('does not let an older base-offline result release a newer proxy', async () => {
+    const olderBase = deferredResult<StreamAvailability>();
+    const baseGetAvailability = vi.fn()
+      .mockReturnValueOnce(olderBase.promise)
+      .mockResolvedValueOnce({
+        kind: 'blocked',
+        roomId: '63136',
+        reason: 'SIGNATURE_REQUIRED',
+        observedQualities: [],
+        checkedAt: '2026-08-08T00:00:00.000Z',
+      });
+    const proxy = createProxy();
+    const adapter = createStreamgetDouyuAdapter({
+      ...onlineBaseAdapter(),
+      getStreamAvailability: baseGetAvailability,
+    }, createResolver(), proxy);
+
+    const older = adapter.getStreamAvailability('63136', '720p');
+    await adapter.getStreamAvailability('63136', 'original');
+    olderBase.resolve({
+      kind: 'blocked',
+      roomId: '63136',
+      reason: 'ROOM_OFFLINE',
+      observedQualities: [],
+      checkedAt: '2026-08-08T00:00:01.000Z',
+    });
+    await older.catch(() => undefined);
+
+    expect(proxy.register).toHaveBeenCalledTimes(1);
+    expect(proxy.release).not.toHaveBeenCalled();
   });
 });

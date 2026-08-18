@@ -68,6 +68,14 @@ export function createStreamgetDouyuAdapter(
     return result;
   };
 
+  const publishOffline = async (roomId: string, generation: number) => {
+    try {
+      await publish(roomId, generation, () => proxyManager.release(roomId));
+    } catch {
+      throw new DouyuAdapterError('STREAMGET_UNAVAILABLE', 'Stale offline result');
+    }
+  };
+
   return {
     search: (input) => baseAdapter.search(input),
 
@@ -78,8 +86,7 @@ export function createStreamgetDouyuAdapter(
       const generation = nextGeneration(roomId);
       const observed = await baseAdapter.getStreamAvailability(roomId, quality);
       if (observed.kind === 'blocked' && observed.reason === 'ROOM_OFFLINE') {
-        await publicationByRoom.get(roomId);
-        await proxyManager.release(roomId);
+        await publishOffline(roomId, generation);
         return observed;
       }
 
@@ -91,11 +98,7 @@ export function createStreamgetDouyuAdapter(
       }
 
       if (!stream.isLive || !stream.flvUrl) {
-        try {
-          await publish(roomId, generation, () => proxyManager.release(roomId));
-        } catch {
-          throw new DouyuAdapterError('STREAMGET_UNAVAILABLE', 'Stale StreamGet result');
-        }
+        await publishOffline(roomId, generation);
         return {
           kind: 'blocked',
           roomId,
