@@ -38,9 +38,10 @@ export function createStreamgetDouyuAdapter(
 ): DouyuAdapter {
   const generationByRoom = new Map<string, number>();
   const publicationByRoom = new Map<string, Promise<void>>();
+  let generationSequence = 0;
 
   const nextGeneration = (roomId: string) => {
-    const generation = (generationByRoom.get(roomId) ?? 0) + 1;
+    const generation = ++generationSequence;
     generationByRoom.set(roomId, generation);
     return generation;
   };
@@ -122,9 +123,10 @@ export function createStreamgetDouyuAdapter(
     },
 
     async releaseStream(roomId) {
-      nextGeneration(roomId);
+      const releaseGeneration = nextGeneration(roomId);
       await publicationByRoom.get(roomId);
       await proxyManager.release(roomId);
+      if (generationByRoom.get(roomId) === releaseGeneration) generationByRoom.delete(roomId);
     },
   };
 }

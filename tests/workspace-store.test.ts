@@ -907,4 +907,26 @@ describe('createWorkspaceStore', () => {
     expect(store.getState().rooms[0]).toBe(existingSession);
     expect(store.getState().rooms[0]?.playbackAvailabilityStatus).toBe('available');
   });
+
+  it('ignores an older same-quality failure after a newer refresh succeeds', async () => {
+    const older = deferredAvailability();
+    const newer = deferredAvailability();
+    const getStreamAvailability = vi.fn()
+      .mockReturnValueOnce(older.promise)
+      .mockReturnValueOnce(newer.promise);
+    const store = createWorkspaceStore({ ...createMockDouyuAdapter(), getStreamAvailability });
+    store.getState().addRoom(candidate('1'));
+    const secondRefresh = store.getState().refreshStreamAvailability('1');
+
+    newer.resolve(blockedAvailability('1'));
+    await secondRefresh;
+    older.reject(new Error('stale request failed'));
+    await older.promise.catch(() => undefined);
+    await Promise.resolve();
+
+    expect(store.getState().rooms[0]).toEqual(expect.objectContaining({
+      playbackAvailabilityStatus: 'blocked',
+      playbackError: undefined,
+    }));
+  });
 });

@@ -313,6 +313,8 @@ export function createWorkspaceStore(
   const createGroupId = options.createGroupId ?? (() => globalThis.crypto.randomUUID());
   const createPresetId = options.createPresetId ?? (() => globalThis.crypto.randomUUID());
   const metadataRefreshInFlight = new Set<string>();
+  const streamRefreshGeneration = new Map<string, number>();
+  let streamRefreshSequence = 0;
   const persisted = loadWorkspaceSnapshot(storage);
   const initialRoomLibrary: RoomLibrary = persisted?.roomLibrary ?? Object.fromEntries(
     (options.initialRooms ?? []).slice(0, RoomRegistry.MAX_ROOMS).map((room) => {
@@ -471,6 +473,7 @@ export function createWorkspaceStore(
         };
       });
       void adapter.releaseStream?.(roomId);
+      streamRefreshGeneration.delete(roomId);
       applyEffectiveQualityTransition(beforeRooms);
       persist();
     },
@@ -799,6 +802,7 @@ export function createWorkspaceStore(
       for (const room of state.rooms) {
         if (!rooms.some((nextRoom) => nextRoom.roomId === room.roomId)) {
           void adapter.releaseStream?.(room.roomId);
+          streamRefreshGeneration.delete(room.roomId);
         }
       }
       applyEffectiveQualityTransition(state.rooms);
@@ -920,6 +924,7 @@ export function createWorkspaceStore(
         for (const roomId of previousRoomIds) {
           if (!nextRooms.some((room) => room.roomId === roomId)) {
             void adapter.releaseStream?.(roomId);
+            streamRefreshGeneration.delete(roomId);
           }
         }
         applyEffectiveQualityTransition([]);
@@ -1062,6 +1067,8 @@ export function createWorkspaceStore(
       const room = get().rooms.find((item) => item.roomId === roomId);
       if (!room || !room.online || room.status === 'offline') return;
       const requestedQuality = room.effectiveQuality;
+      const requestGeneration = ++streamRefreshSequence;
+      streamRefreshGeneration.set(roomId, requestGeneration);
 
       set((state) => ({
         rooms: state.rooms.map((room) => room.roomId === roomId
@@ -1080,6 +1087,7 @@ export function createWorkspaceStore(
         const currentRoom = get().rooms.find((room) => room.roomId === roomId);
         if (
           !currentRoom
+          || streamRefreshGeneration.get(roomId) !== requestGeneration
           || currentRoom.effectiveQuality !== requestedQuality
           || !currentRoom.online
           || currentRoom.status === 'offline'
@@ -1102,6 +1110,7 @@ export function createWorkspaceStore(
         const currentRoom = get().rooms.find((room) => room.roomId === roomId);
         if (
           !currentRoom
+          || streamRefreshGeneration.get(roomId) !== requestGeneration
           || currentRoom.effectiveQuality !== requestedQuality
           || !currentRoom.online
           || currentRoom.status === 'offline'

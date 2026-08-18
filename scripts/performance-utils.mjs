@@ -59,6 +59,16 @@ export function profileLayoutForRoomCount(roomCount) {
   return { id: 'grid-3x3', shortLabel: '3×3' };
 }
 
+export function roomQualityPolicySatisfied(rooms) {
+  if (!Array.isArray(rooms) || rooms.length <= 4) return true;
+  return rooms.slice(1).every((room) => (
+    Number.isFinite(room.videoWidth)
+    && Number.isFinite(room.videoHeight)
+    && room.videoWidth <= 1280
+    && room.videoHeight <= 720
+  ));
+}
+
 export function summarizeMetricSamples(samples) {
   if (!Array.isArray(samples) || samples.length === 0) {
     throw new Error('Metric samples are required');

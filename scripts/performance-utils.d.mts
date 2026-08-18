@@ -18,12 +18,18 @@ export interface PerformanceProfileLayout {
   shortLabel: '单' | '2×2' | '3×2' | '3×3';
 }
 
+export interface PlaybackResolutionMetric {
+  videoWidth: number | null;
+  videoHeight: number | null;
+}
+
 export const SCREENSHOT_PRIVACY_STYLE: string;
 
 export function parseRoomIds(value: string | undefined): string[];
 export function parseProfileCounts(value: string | undefined): number[];
 export function parseSampleDurationMs(value: string | undefined): number;
 export function profileLayoutForRoomCount(roomCount: number): PerformanceProfileLayout;
+export function roomQualityPolicySatisfied(rooms: PlaybackResolutionMetric[]): boolean;
 export function summarizeMetricSamples(
   samples: PerformanceMetricSample[],
 ): PerformanceMetricSummary;

@@ -10,6 +10,7 @@ import {
   parseRoomIds,
   parseSampleDurationMs,
   profileLayoutForRoomCount,
+  roomQualityPolicySatisfied,
   summarizeMetricSamples,
 } from './performance-utils.mjs';
 
@@ -315,6 +316,7 @@ function evaluateProfile(profile) {
     && profile.roomIds.length === profile.requestedRoomCount
     && profile.rooms.every((room) => room.playable)
     && profile.rooms.every((room) => room.continuedPlayback)
+    && roomQualityPolicySatisfied(profile.rooms)
     && profile.renderer.tileCount === profile.requestedRoomCount
     && profile.renderer.videoCount === profile.requestedRoomCount
     && profile.renderer.playingCount === profile.requestedRoomCount
