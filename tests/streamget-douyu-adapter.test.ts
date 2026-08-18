@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { DouyuAdapter, StreamAvailability } from '../src/domain/douyu-adapter';
 import { createStreamgetDouyuAdapter } from '../src/infrastructure/streamget-douyu-adapter';
-import type { StreamgetBridge } from '../src/main/streamget-bridge';
+import type { StreamgetRawResult } from '../src/main/streamget-bridge';
+import type { StreamgetResolutionQueue } from '../src/main/streamget-resolution-queue';
+import type { StreamProxyManager } from '../src/main/stream-proxy-manager';
 
 function onlineBaseAdapter(): DouyuAdapter {
   const availability: StreamAvailability = {
@@ -17,30 +19,76 @@ function onlineBaseAdapter(): DouyuAdapter {
   };
 }
 
-describe('StreamGet Douyu adapter', () => {
-  it('maps a live app-path FLV to an available variant', async () => {
-    const bridge: StreamgetBridge = {
-      resolve: vi.fn(async () => ({
-        roomId: '63136',
-        isLive: true,
-        flvUrl: 'https://openflv-hw.douyucdn2.cn/live/63136_demo.flv?wsAuth=redacted',
-      })),
-    };
-    const adapter = createStreamgetDouyuAdapter(onlineBaseAdapter(), bridge);
+function createProxy(overrides: Partial<StreamProxyManager> = {}): StreamProxyManager {
+  return {
+    register: vi.fn(async () => 'http://127.0.0.1:41001/stream/token.flv'),
+    release: vi.fn(async () => undefined),
+    closeAll: vi.fn(async () => undefined),
+    ...overrides,
+  };
+}
 
-    await expect(adapter.getStreamAvailability('63136')).resolves.toEqual(expect.objectContaining({
+function createResolver(result: StreamgetRawResult = {
+  roomId: '63136',
+  isLive: true,
+  flvUrl: 'https://openflv-hw.douyucdn2.cn/live/63136_demo.flv?wsAuth=redacted',
+  resolvedQuality: '720p' as const,
+  source: 'web-h5' as const,
+}): StreamgetResolutionQueue {
+  return {
+    resolve: vi.fn(async () => result),
+    cancel: vi.fn(),
+    cancelAll: vi.fn(),
+  };
+}
+
+describe('StreamGet Douyu adapter', () => {
+  it('maps a live H5 FLV to a local 720p variant', async () => {
+    const resolver = createResolver();
+    const proxy = createProxy();
+    const adapter = createStreamgetDouyuAdapter(onlineBaseAdapter(), resolver, proxy);
+
+    const availability = await adapter.getStreamAvailability('63136', '720p');
+
+    expect(resolver.resolve).toHaveBeenCalledWith('63136', '720p');
+    expect(proxy.register).toHaveBeenCalledWith(
+      '63136',
+      'https://openflv-hw.douyucdn2.cn/live/63136_demo.flv?wsAuth=redacted',
+    );
+    expect(availability).toMatchObject({
       kind: 'available',
       roomId: '63136',
-      variants: [expect.objectContaining({
-        quality: 'auto',
+      variants: [{
+        quality: 'high',
+        label: '720p',
         container: 'flv',
-        playbackUrl: expect.stringContaining('openflv-hw.douyucdn2.cn'),
-      })],
-    }));
+        playbackUrl: 'http://127.0.0.1:41001/stream/token.flv',
+      }],
+    });
+    expect(JSON.stringify(availability)).not.toContain('wsAuth');
   });
 
-  it('does not invoke StreamGet for an offline room', async () => {
-    const bridge: StreamgetBridge = { resolve: vi.fn() };
+  it('labels an App fallback as original without exposing its upstream URL', async () => {
+    const resolver = createResolver({
+      roomId: '63136',
+      isLive: true,
+      flvUrl: 'https://live.douyucdn.cn/live/63136_app.flv?token=redacted',
+      resolvedQuality: 'original',
+      source: 'app-fallback',
+    });
+    const proxy = createProxy();
+    const adapter = createStreamgetDouyuAdapter(onlineBaseAdapter(), resolver, proxy);
+
+    await expect(adapter.getStreamAvailability('63136', '720p')).resolves.toMatchObject({
+      variants: [{ quality: 'original', label: '原画' }],
+    });
+    expect(JSON.stringify(await adapter.getStreamAvailability('63136', '720p')))
+      .not.toContain('token=redacted');
+  });
+
+  it('does not invoke resolution or proxy for an offline room', async () => {
+    const resolver = createResolver();
+    const proxy = createProxy();
     const adapter = createStreamgetDouyuAdapter({
       ...onlineBaseAdapter(),
       getStreamAvailability: async () => ({
@@ -50,12 +98,37 @@ describe('StreamGet Douyu adapter', () => {
         observedQualities: [],
         checkedAt: '2026-08-08T00:00:00.000Z',
       }),
-    }, bridge);
+    }, resolver, proxy);
 
-    await expect(adapter.getStreamAvailability('63136')).resolves.toMatchObject({
+    await expect(adapter.getStreamAvailability('63136', '720p')).resolves.toMatchObject({
       kind: 'blocked',
       reason: 'ROOM_OFFLINE',
     });
-    expect(bridge.resolve).not.toHaveBeenCalled();
+    expect(resolver.resolve).not.toHaveBeenCalled();
+    expect(proxy.register).not.toHaveBeenCalled();
+  });
+
+  it('maps resolver and proxy failures to safe domain errors', async () => {
+    const resolver = createResolver();
+    vi.mocked(resolver.resolve).mockRejectedValueOnce(new Error('sidecar secret'));
+    const adapter = createStreamgetDouyuAdapter(onlineBaseAdapter(), resolver, createProxy());
+    await expect(adapter.getStreamAvailability('63136', 'original'))
+      .rejects.toMatchObject({ code: 'STREAMGET_UNAVAILABLE' });
+
+    const proxy = createProxy({
+      register: vi.fn(async () => { throw new Error('bind secret'); }),
+    });
+    const second = createStreamgetDouyuAdapter(onlineBaseAdapter(), createResolver(), proxy);
+    await expect(second.getStreamAvailability('63136', 'original'))
+      .rejects.toMatchObject({ code: 'LOCAL_STREAM_PROXY_FAILED' });
+  });
+
+  it('releases the room proxy through the adapter lifecycle', async () => {
+    const proxy = createProxy();
+    const adapter = createStreamgetDouyuAdapter(onlineBaseAdapter(), createResolver(), proxy);
+
+    await adapter.releaseStream?.('63136');
+
+    expect(proxy.release).toHaveBeenCalledWith('63136');
   });
 });

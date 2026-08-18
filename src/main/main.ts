@@ -11,6 +11,8 @@ import {
 import { registerIpcHandlers } from './ipc-handlers';
 import { createBrowserWindowOptions, getRendererLoadTarget } from './main-config';
 import { createStreamgetBridge } from './streamget-bridge';
+import { createStreamgetResolutionQueue } from './streamget-resolution-queue';
+import { createStreamProxyManager } from './stream-proxy-manager';
 import { createSystemNotificationService } from './system-notifications';
 import {
   registerWindowControlHandlers,
@@ -50,18 +52,32 @@ async function bootstrap(): Promise<void> {
   const danmakuManager = createDanmakuSessionManager((roomId, emit) =>
     createDouyuDanmakuClient(roomId, emit),
   );
+  const proxyManager = createStreamProxyManager();
+  const streamgetBridge = createStreamgetBridge({
+    isPackaged: app.isPackaged,
+    resourcesPath: process.resourcesPath,
+    timeoutMs: 30_000,
+  });
+  const resolutionQueue = createStreamgetResolutionQueue(
+    (roomId, quality) => streamgetBridge.resolve(roomId, quality),
+    { concurrency: 2 },
+  );
   const streamgetAdapter = createStreamgetDouyuAdapter(
     createDouyuHttpAdapter(),
-    createStreamgetBridge({
-      isPackaged: app.isPackaged,
-      resourcesPath: process.resourcesPath,
-    }),
+    resolutionQueue,
+    proxyManager,
   );
   registerIpcHandlers(
     ipcMain,
     streamgetAdapter,
     danmakuManager,
     createSystemNotificationService(),
+    {
+      async release(roomId) {
+        resolutionQueue.cancel(roomId);
+        await proxyManager.release(roomId);
+      },
+    },
   );
   registerWindowControlHandlers(ipcMain, (sender) => (
     BrowserWindow.fromWebContents(sender as WebContents) ?? undefined
@@ -70,6 +86,8 @@ async function bootstrap(): Promise<void> {
 
   app.on('before-quit', () => {
     danmakuManager.stopAll();
+    resolutionQueue.cancelAll();
+    void proxyManager.closeAll();
   });
 
   app.on('activate', () => {
