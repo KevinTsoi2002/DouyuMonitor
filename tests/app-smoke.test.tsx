@@ -46,6 +46,9 @@ describe('App smoke render', () => {
     expect(html).toMatch(/aria-label="工作区：未保存工作区"[^>]*aria-controls="workspace-presets-panel"/);
     expect(html).not.toContain('workspace-trigger-label');
     expect(html).toMatch(/aria-label="全局静音"/);
+    expect(html).toMatch(/role="group" aria-label="声音播放模式"/);
+    expect(html).toMatch(/aria-label="单声道"[^>]*aria-pressed="true"/);
+    expect(html).toMatch(/aria-label="多声道"[^>]*aria-pressed="false"/);
   });
 
   it('offers a direct way to enter the resizable primary layout', () => {

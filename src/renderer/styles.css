@@ -205,6 +205,10 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .icon-button:hover { border-color: var(--border-strong); background: var(--panel-hover); color: var(--text); }
 .header-toggle { position: relative; }
 .header-toggle.is-active { border-color: #85502f; background: #2a1d18; color: var(--orange-soft); }
+.audio-mode-control { display: inline-flex; align-items: stretch; height: 32px; padding: 2px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel-raised); }
+.audio-mode-button { min-width: 43px; padding: 0 6px; border: 0; border-radius: 4px; background: transparent; color: var(--muted); cursor: pointer; font-size: 10px; line-height: 1; }
+.audio-mode-button:hover { color: var(--text); }
+.audio-mode-button.is-active { background: #2a1d18; color: var(--orange-soft); }
 .icon-button-muted { border-color: transparent; background: transparent; }
 .icon-button-muted:hover { border-color: var(--border); }
 .mobile-only { display: none; }
@@ -509,6 +513,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
   .workspace-trigger { max-width: 34px; padding: 0; }
   .mobile-only { display: inline-grid; }
   .header-actions { gap: 6px; }
+  .audio-mode-button { min-width: 38px; padding: 0 4px; }
   .layout-control-label { display: none; }
   .layout-control { padding-left: 8px; }
   .app-body { position: relative; min-height: calc(100vh - 44px); }

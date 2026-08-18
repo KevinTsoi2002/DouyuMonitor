@@ -98,6 +98,7 @@ describe('createWorkspaceStore', () => {
     const groupId = store.getState().createGroup('活动')!;
     store.getState().addRoomToGroup(groupId, '101');
     store.getState().toggleFavorite('101');
+    store.getState().setAudioMode('multi');
     const presetId = store.getState().saveWorkspacePreset('单房间')!;
     store.getState().removeRoom('101');
     store.getState().removeRoom('202');
@@ -107,6 +108,7 @@ describe('createWorkspaceStore', () => {
     await expect(store.getState().loadWorkspacePreset(presetId)).resolves.toBe(true);
 
     expect(store.getState().rooms.map((room) => room.roomId)).toEqual(['101', '202']);
+    expect(store.getState().audioMode).toBe('multi');
     expect(store.getState().history).toEqual(historyBeforeLoad);
     expect(store.getState().favoriteRoomIds).toEqual(['101']);
     expect(store.getState().groups).toEqual(expect.arrayContaining([
@@ -174,6 +176,21 @@ describe('createWorkspaceStore', () => {
     store.getState().addRoom(candidate('202'));
 
     expect(store.getState().layoutId).toBe('auto');
+  });
+
+  it('defaults to single audio mode and changes only the selected mode', () => {
+    const store = createWorkspaceStore(createMockDouyuAdapter(), {
+      initialRooms: [candidate('101'), candidate('202')],
+    });
+    const before = store.getState();
+
+    expect(before.audioMode).toBe('single');
+    store.getState().setAudioMode('multi');
+
+    expect(store.getState().audioMode).toBe('multi');
+    expect(store.getState().audioRoomId).toBe(before.audioRoomId);
+    expect(store.getState().rooms.map((room) => room.roomId)).toEqual(['101', '202']);
+    expect(store.getState().rooms.map((room) => room.volume)).toEqual(before.rooms.map((room) => room.volume));
   });
 
   it('preserves a manually locked layout when a room is added', () => {

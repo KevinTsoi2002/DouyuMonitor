@@ -41,10 +41,12 @@ export function AppHeader({
   const layoutId = useWorkspace((state) => state.layoutId);
   const globalDanmakuEnabled = useWorkspace((state) => state.globalDanmakuEnabled);
   const globalMuted = useWorkspace((state) => state.globalMuted);
+  const audioMode = useWorkspace((state) => state.audioMode);
   const activeWorkspacePresetId = useWorkspace((state) => state.activeWorkspacePresetId);
   const workspacePresets = useWorkspace((state) => state.workspacePresets);
   const setGlobalDanmakuEnabled = useWorkspace((state) => state.setGlobalDanmakuEnabled);
   const setGlobalMuted = useWorkspace((state) => state.setGlobalMuted);
+  const setAudioMode = useWorkspace((state) => state.setAudioMode);
   const setLayout = useWorkspace((state) => state.setLayout);
   const workspaceName = workspacePresets.find((preset) => preset.id === activeWorkspacePresetId)?.name ?? '未保存工作区';
 
@@ -130,6 +132,28 @@ export function AppHeader({
         >
           {globalMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
         </button>
+        <div className="audio-mode-control" role="group" aria-label="声音播放模式">
+          <button
+            className={`audio-mode-button ${audioMode === 'single' ? 'is-active' : ''}`}
+            type="button"
+            aria-label="单声道"
+            aria-pressed={audioMode === 'single'}
+            title="单声道：只播放选中房间"
+            onClick={() => setAudioMode('single')}
+          >
+            单声道
+          </button>
+          <button
+            className={`audio-mode-button ${audioMode === 'multi' ? 'is-active' : ''}`}
+            type="button"
+            aria-label="多声道"
+            aria-pressed={audioMode === 'multi'}
+            title="多声道：同时播放可用房间"
+            onClick={() => setAudioMode('multi')}
+          >
+            多声道
+          </button>
+        </div>
         <div className="layout-control">
           <LayoutGrid size={16} aria-hidden="true" />
           <span className="layout-control-label">{getLayoutOption(layoutId).shortLabel}</span>

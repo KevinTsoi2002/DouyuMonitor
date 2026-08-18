@@ -28,6 +28,8 @@ export const MAX_WORKSPACE_PRESETS = 20;
 export const MAX_PRESET_ROOMS = 9;
 export const MAX_WORKSPACE_PRESET_NAME_LENGTH = 40;
 
+export type AudioMode = 'single' | 'multi';
+
 export interface WorkspaceStorage {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
@@ -60,6 +62,7 @@ export interface WorkspacePreset {
   primaryRoomId?: string;
   primaryRoomRatio: PrimaryRoomRatio;
   audioRoomId?: string;
+  audioMode: AudioMode;
   globalDanmakuEnabled: boolean;
   globalMuted: boolean;
   danmakuSettings: DanmakuSettings;
@@ -79,6 +82,7 @@ export interface WorkspaceSnapshot {
   roomPlacementOrder: string[];
   primaryRoomRatio: PrimaryRoomRatio;
   audioRoomId?: string;
+  audioMode: AudioMode;
   globalDanmakuEnabled: boolean;
   globalMuted: boolean;
   danmakuSettings: DanmakuSettings;
@@ -90,6 +94,7 @@ export interface WorkspaceSnapshot {
 
 const QUALITY_VALUES = new Set<StreamQuality>(['auto', 'original', 'super', 'high', 'standard']);
 const STATUS_VALUES = new Set<RoomStatus>(['playing', 'offline', 'reconnecting', 'error']);
+const AUDIO_MODE_VALUES = new Set<AudioMode>(['single', 'multi']);
 const LAYOUT_VALUES = new Set([
   'auto',
   'single',
@@ -361,6 +366,7 @@ function parsePreset(value: unknown): WorkspacePreset | undefined {
     ...(value.primaryRoomId !== undefined ? { primaryRoomId: value.primaryRoomId } : {}),
     primaryRoomRatio: value.primaryRoomRatio as PrimaryRoomRatio,
     ...(value.audioRoomId !== undefined ? { audioRoomId: value.audioRoomId } : {}),
+    audioMode: parseAudioMode(value.audioMode),
     globalDanmakuEnabled: value.globalDanmakuEnabled,
     globalMuted: value.globalMuted,
     danmakuSettings: parseDanmakuSettings(value.danmakuSettings),
@@ -392,6 +398,10 @@ function parsePrimaryRoomRatio(value: unknown): PrimaryRoomRatio {
   return typeof value === 'number' && PRIMARY_ROOM_RATIOS.includes(value as PrimaryRoomRatio)
     ? value as PrimaryRoomRatio
     : DEFAULT_PRIMARY_ROOM_RATIO;
+}
+
+function parseAudioMode(value: unknown): AudioMode {
+  return AUDIO_MODE_VALUES.has(value as AudioMode) ? value as AudioMode : 'single';
 }
 
 function sameRoomIds(left: string[], right: string[]): boolean {
@@ -463,6 +473,7 @@ export function loadWorkspaceSnapshot(storage: WorkspaceStorage | undefined = ge
         ? parsePrimaryRoomRatio(parsed.primaryRoomRatio)
         : DEFAULT_PRIMARY_ROOM_RATIO,
       audioRoomId: readString(parsed.audioRoomId),
+      audioMode: parseAudioMode(parsed.audioMode),
       globalDanmakuEnabled: parsed.globalDanmakuEnabled !== false,
       globalMuted: parsed.globalMuted === true,
       danmakuSettings: parseDanmakuSettings(parsed.danmakuSettings),

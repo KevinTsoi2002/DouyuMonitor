@@ -2,6 +2,7 @@ import { Crown, LoaderCircle, MessageCircle, MessageCircleOff, MoreHorizontal, R
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import type { LayoutSlot } from '../../domain/layout-engine';
 import type { RoomSession } from '../store/workspace-store';
+import type { AudioMode } from '../store/workspace-persistence';
 import { useWorkspace } from '../store/workspace-context';
 import { useDanmakuControls, useDanmakuRoom } from '../store/danmaku-context';
 import { getPlaybackPresentation, getRoomActionSummary, getRoomTone } from '../ui-model';
@@ -22,9 +23,23 @@ const STATUS_LABELS = {
   error: '信号异常',
 } as const;
 
+export function getRoomMuted(
+  room: RoomSession,
+  audioMode: AudioMode,
+  audioRoomId: string | undefined,
+  globalMuted: boolean,
+): boolean {
+  if (globalMuted) return true;
+  if (!room.online || room.status === 'offline' || room.playbackAvailabilityStatus !== 'available') {
+    return true;
+  }
+  return audioMode === 'single' && room.roomId !== audioRoomId;
+}
+
 export function RoomTile({ room, slot, index, controlsLocked = false }: RoomTileProps) {
   const primaryRoomId = useWorkspace((state) => state.primaryRoomId);
   const audioRoomId = useWorkspace((state) => state.audioRoomId);
+  const audioMode = useWorkspace((state) => state.audioMode);
   const globalDanmakuEnabled = useWorkspace((state) => state.globalDanmakuEnabled);
   const danmakuSettings = useWorkspace((state) => state.danmakuSettings);
   const globalMuted = useWorkspace((state) => state.globalMuted);
@@ -64,6 +79,7 @@ export function RoomTile({ room, slot, index, controlsLocked = false }: RoomTile
       ?? room.quality
     : disabledQualityOptions[0].value;
   const hasAudioFocus = isAudio && !presentation.audioDisabled;
+  const roomMuted = getRoomMuted(room, audioMode, audioRoomId, globalMuted);
   const tone = getRoomTone(index);
   const tileStyle = {
     gridColumn: `${slot.column} / span ${slot.columnSpan}`,
@@ -108,7 +124,7 @@ export function RoomTile({ room, slot, index, controlsLocked = false }: RoomTile
       <RoomPlaybackSurface
         room={room}
         demoMode={demoMode}
-        muted={!hasAudioFocus || globalMuted}
+        muted={roomMuted}
         globalDanmakuEnabled={globalDanmakuEnabled}
         danmakuSettings={danmakuSettings}
         tone={tone}

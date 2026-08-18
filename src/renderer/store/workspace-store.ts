@@ -33,6 +33,7 @@ import {
   type WorkspacePresetRoom,
   type WorkspaceSnapshot,
   type WorkspaceStorage,
+  type AudioMode,
 } from './workspace-persistence';
 import {
   addHistoryEntry,
@@ -91,6 +92,7 @@ export interface WorkspaceState {
   roomPlacementOrder: string[];
   primaryRoomRatio: PrimaryRoomRatio;
   audioRoomId?: string;
+  audioMode: AudioMode;
   globalDanmakuEnabled: boolean;
   globalMuted: boolean;
   danmakuSettings: DanmakuSettings;
@@ -110,6 +112,7 @@ export interface WorkspaceState {
   setPrimaryRoom: (roomId: string) => void;
   setPrimaryRoomRatio: (ratio: PrimaryRoomRatio) => void;
   setAudioRoom: (roomId?: string) => void;
+  setAudioMode: (mode: AudioMode) => void;
   setQuality: (roomId: string, quality: StreamQuality) => void;
   setVolume: (roomId: string, volume: number) => void;
   toggleDanmaku: (roomId: string) => void;
@@ -245,6 +248,7 @@ export function createWorkspacePresetDraft(state: WorkspaceState): WorkspacePres
     ...(state.audioRoomId && roomIdSet.has(state.audioRoomId)
       ? { audioRoomId: state.audioRoomId }
       : {}),
+    audioMode: state.audioMode,
     globalDanmakuEnabled: state.globalDanmakuEnabled,
     globalMuted: state.globalMuted,
     danmakuSettings: cloneJson(state.danmakuSettings),
@@ -339,6 +343,7 @@ export function createWorkspaceStore(
         roomPlacementOrder: state.roomPlacementOrder,
         primaryRoomRatio: state.primaryRoomRatio,
         audioRoomId: state.audioRoomId,
+        audioMode: state.audioMode,
         globalDanmakuEnabled: state.globalDanmakuEnabled,
         globalMuted: state.globalMuted,
         danmakuSettings: state.danmakuSettings,
@@ -367,6 +372,7 @@ export function createWorkspaceStore(
     roomPlacementOrder: initialPlacementOrder,
     primaryRoomRatio: persisted?.primaryRoomRatio ?? DEFAULT_PRIMARY_ROOM_RATIO,
     audioRoomId: hasRoom(persisted?.audioRoomId) ? persisted?.audioRoomId : initialSessions[0]?.roomId,
+    audioMode: persisted?.audioMode ?? 'single',
     globalDanmakuEnabled: persisted?.globalDanmakuEnabled ?? true,
     globalMuted: persisted?.globalMuted ?? false,
     danmakuSettings: persisted?.danmakuSettings ?? { ...DEFAULT_DANMAKU_SETTINGS },
@@ -495,6 +501,12 @@ export function createWorkspaceStore(
         set({ audioRoomId: roomId });
         persist();
       }
+    },
+
+    setAudioMode(mode) {
+      if (mode !== 'single' && mode !== 'multi') return;
+      set({ audioMode: mode });
+      persist();
     },
 
     setQuality(roomId, quality) {
@@ -836,6 +848,7 @@ export function createWorkspaceStore(
           ),
           primaryRoomRatio: preset.primaryRoomRatio,
           audioRoomId,
+          audioMode: preset.audioMode,
           globalDanmakuEnabled: preset.globalDanmakuEnabled,
           globalMuted: preset.globalMuted,
           danmakuSettings: cloneJson(preset.danmakuSettings),
@@ -861,6 +874,7 @@ export function createWorkspaceStore(
           roomPlacementOrder: previous.roomPlacementOrder,
           primaryRoomRatio: previous.primaryRoomRatio,
           audioRoomId: previous.audioRoomId,
+          audioMode: previous.audioMode,
           globalDanmakuEnabled: previous.globalDanmakuEnabled,
           globalMuted: previous.globalMuted,
           danmakuSettings: previous.danmakuSettings,
