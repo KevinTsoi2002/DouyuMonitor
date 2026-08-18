@@ -149,20 +149,19 @@ export function parseStreamgetResponse(
   const resolvedQuality = value.resolvedQuality;
   const source = value.source;
   if (
-    resolvedQuality !== undefined
-    && !['auto', 'original', 'super', 'high', 'standard', '720p'].includes(resolvedQuality as string)
+    !['auto', 'original', 'super', 'high', 'standard', '720p'].includes(resolvedQuality as string)
   ) {
     throw new StreamgetBridgeError('INVALID_RESPONSE');
   }
-  if (source !== undefined && source !== 'web-h5' && source !== 'app-fallback') {
+  if (source !== 'web-h5' && source !== 'app-fallback') {
     throw new StreamgetBridgeError('INVALID_RESPONSE');
   }
   return {
     roomId,
     isLive: true,
     flvUrl: validateFlvUrl(value.flvUrl),
-    resolvedQuality: (resolvedQuality as StreamRequestQuality | undefined) ?? requestedQuality,
-    source: source ?? 'app-fallback',
+    resolvedQuality: resolvedQuality as StreamRequestQuality,
+    source,
   };
 }
 

@@ -114,6 +114,18 @@ describe('StreamGet Douyu adapter', () => {
     expect(proxy.register).not.toHaveBeenCalled();
   });
 
+  it('releases an existing proxy when StreamGet confirms the room is offline', async () => {
+    const resolver = createResolver({ roomId: '63136', isLive: false });
+    const proxy = createProxy();
+    const adapter = createStreamgetDouyuAdapter(onlineBaseAdapter(), resolver, proxy);
+
+    await expect(adapter.getStreamAvailability('63136', 'original')).resolves.toMatchObject({
+      kind: 'blocked',
+      reason: 'ROOM_OFFLINE',
+    });
+    expect(proxy.release).toHaveBeenCalledWith('63136');
+  });
+
   it('maps resolver and proxy failures to safe domain errors', async () => {
     const resolver = createResolver();
     vi.mocked(resolver.resolve).mockRejectedValueOnce(new Error('sidecar secret'));

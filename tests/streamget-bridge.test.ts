@@ -22,12 +22,14 @@ describe('streamget bridge', () => {
       roomId: '63136',
       isLive: true,
       flvUrl,
+      resolvedQuality: 'auto',
+      source: 'web-h5',
     }), 'auto')).toEqual({
       roomId: '63136',
       isLive: true,
       flvUrl,
       resolvedQuality: 'auto',
-      source: 'app-fallback',
+      source: 'web-h5',
     });
   });
 
@@ -102,6 +104,18 @@ describe('streamget bridge', () => {
       .toThrowError(expect.objectContaining({ code: 'INVALID_RESPONSE' }));
   });
 
+  it.each([
+    { resolvedQuality: '720p' },
+    { source: 'web-h5' },
+  ])('rejects a live response with incomplete quality metadata', (metadata) => {
+    expect(() => parseStreamgetResponse('63136', JSON.stringify({
+      roomId: '63136',
+      isLive: true,
+      flvUrl: 'https://live.douyucdn.cn/live/63136.flv',
+      ...metadata,
+    }), '720p')).toThrowError(expect.objectContaining({ code: 'INVALID_RESPONSE' }));
+  });
+
   it('prefers a project-local Python environment', () => {
     const command = findStreamgetPython({
       cwd: 'C:\\DouyuMonitor',
@@ -159,5 +173,6 @@ describe('streamget bridge', () => {
     expect(source).toContain('fetch_stream_url');
     expect(source).toContain('fetch_app_stream_data');
     expect(source).toContain('"720p": "HD"');
+    expect(source).toContain('raise RuntimeError("STREAMGET_UNAVAILABLE")');
   });
 });

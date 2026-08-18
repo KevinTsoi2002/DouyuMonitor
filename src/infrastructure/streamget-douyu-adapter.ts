@@ -46,18 +46,18 @@ export function createStreamgetDouyuAdapter(
     return generation;
   };
 
-  const publishStream = async (
+  const publish = async <T>(
     roomId: string,
     generation: number,
-    upstreamUrl: string,
-  ): Promise<string> => {
+    action: () => Promise<T>,
+  ): Promise<T> => {
     const preceding = publicationByRoom.get(roomId) ?? Promise.resolve();
-    let playbackUrl = '';
+    let result!: T;
     const publication = preceding.then(async () => {
       if (generationByRoom.get(roomId) !== generation) {
         throw new Error('Stale stream resolution');
       }
-      playbackUrl = await proxyManager.register(roomId, upstreamUrl);
+      result = await action();
     });
     const settled = publication.then(() => undefined, () => undefined);
     publicationByRoom.set(roomId, settled);
@@ -65,7 +65,7 @@ export function createStreamgetDouyuAdapter(
       if (publicationByRoom.get(roomId) === settled) publicationByRoom.delete(roomId);
     });
     await publication;
-    return playbackUrl;
+    return result;
   };
 
   return {
@@ -91,6 +91,11 @@ export function createStreamgetDouyuAdapter(
       }
 
       if (!stream.isLive || !stream.flvUrl) {
+        try {
+          await publish(roomId, generation, () => proxyManager.release(roomId));
+        } catch {
+          throw new DouyuAdapterError('STREAMGET_UNAVAILABLE', 'Stale StreamGet result');
+        }
         return {
           kind: 'blocked',
           roomId,
@@ -102,7 +107,11 @@ export function createStreamgetDouyuAdapter(
 
       let playbackUrl: string;
       try {
-        playbackUrl = await publishStream(roomId, generation, stream.flvUrl);
+        playbackUrl = await publish(
+          roomId,
+          generation,
+          () => proxyManager.register(roomId, stream.flvUrl!),
+        );
       } catch {
         throw new DouyuAdapterError('LOCAL_STREAM_PROXY_FAILED', 'Local stream proxy failed');
       }

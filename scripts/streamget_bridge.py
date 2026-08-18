@@ -57,7 +57,7 @@ async def resolve_live(live, room_url: str, room_id: str, quality: str) -> dict:
             "resolvedQuality": "original",
             "source": "app-fallback",
         }
-    return {"roomId": room_id, "isLive": False}
+    raise RuntimeError("STREAMGET_UNAVAILABLE")
 
 
 def resolve(room_id: str, quality: str) -> None:
