@@ -49,41 +49,68 @@ export function attachFlvPlayer({
   const player = runtime.createPlayer(
     { type: 'flv', isLive: true, url, cors: true, withCredentials: false },
     {
-      enableStashBuffer: false,
+      // Electron's packaged file:// renderer cannot execute mpegts.js's
+      // blob-backed worker reliably (the worker fails before demuxing starts),
+      // so keep demuxing and MSE on the renderer thread for a real first frame.
+      enableWorker: false,
+      enableWorkerForMSE: false,
+      enableStashBuffer: true,
+      stashInitialSize: 128 * 1024,
       lazyLoad: false,
       liveSync: true,
-      liveSyncMaxLatency: 1.5,
-      liveSyncTargetLatency: 0.8,
+      liveSyncMaxLatency: 3,
+      liveSyncTargetLatency: 1.5,
       autoCleanupSourceBuffer: true,
       autoCleanupMaxBackwardDuration: 30,
       autoCleanupMinBackwardDuration: 15,
     },
   );
   let active = true;
-  const handleError = (errorType: unknown) => {
-    if (active) {
-      onError(typeof errorType === 'string' ? errorType : 'PLAYER_ERROR');
+  let playbackReady = false;
+  let failureReported = false;
+  let firstFrameTimer: ReturnType<typeof setTimeout> | undefined;
+  const reportError = (code: string) => {
+    if (!active || failureReported) return;
+    failureReported = true;
+    if (firstFrameTimer) {
+      clearTimeout(firstFrameTimer);
+      firstFrameTimer = undefined;
     }
+    onError(code);
+  };
+  const handleError = (errorType: unknown) => {
+    reportError(typeof errorType === 'string' ? errorType : 'PLAYER_ERROR');
   };
   const handlePlaying = () => {
-    if (active) onPlaying?.();
+    if (!active || playbackReady) return;
+    playbackReady = true;
+    if (firstFrameTimer) {
+      clearTimeout(firstFrameTimer);
+      firstFrameTimer = undefined;
+    }
+    onPlaying?.();
   };
 
   player.on(runtime.errorEvent, handleError);
-  video.addEventListener?.('playing', handlePlaying);
+  // `playing` can fire once the media pipeline starts, before a decoded frame
+  // reaches the surface. Recovery must wait for `loadeddata` so a black tile
+  // is not incorrectly considered healthy.
+  video.addEventListener?.('loadeddata', handlePlaying);
   player.attachMediaElement(video);
   player.load();
+  firstFrameTimer = setTimeout(() => reportError('FIRST_FRAME_TIMEOUT'), 10_000);
   const playResult = player.play();
   if (playResult && typeof playResult.catch === 'function') {
     void playResult.catch(() => {
-      if (active) onError('PLAYBACK_START_FAILED');
+      reportError('PLAYBACK_START_FAILED');
     });
   }
 
   return () => {
     active = false;
+    if (firstFrameTimer) clearTimeout(firstFrameTimer);
     player.off(runtime.errorEvent, handleError);
-    video.removeEventListener?.('playing', handlePlaying);
+    video.removeEventListener?.('loadeddata', handlePlaying);
     player.unload();
     player.detachMediaElement();
     player.destroy();

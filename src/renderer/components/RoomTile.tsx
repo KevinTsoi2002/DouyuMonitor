@@ -1,5 +1,6 @@
 import { Crown, LoaderCircle, MessageCircle, MessageCircleOff, MoreHorizontal, RotateCw, ShieldAlert, Volume2, VolumeX } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import { createPortal } from 'react-dom';
 import type { LayoutSlot } from '../../domain/layout-engine';
 import type { StreamRequestQuality } from '../../domain/douyu-adapter';
 import type { RoomSession } from '../store/workspace-store';
@@ -8,6 +9,7 @@ import { useWorkspace } from '../store/workspace-context';
 import { useDanmakuControls, useDanmakuRoom } from '../store/danmaku-context';
 import { getPlaybackPresentation, getRoomActionSummary, getRoomTone } from '../ui-model';
 import { scheduleControlsHide } from '../player-controls-visibility';
+import { resolveTileMenuPosition } from '../tile-menu-position';
 import { RoomPlaybackSurface } from './RoomPlaybackSurface';
 
 interface RoomTileProps {
@@ -68,9 +70,12 @@ export function RoomTile({ room, slot, index, controlsLocked = false }: RoomTile
   const danmakuView = useDanmakuRoom(room.roomId);
   const { retryRoom } = useDanmakuControls();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState<{ left: number; top: number }>();
   const [controlsVisible, setControlsVisible] = useState(true);
   const [focusWithin, setFocusWithin] = useState(false);
   const hideCleanupRef = useRef<() => void>(() => {});
+  const menuTriggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const isPrimary = room.roomId === primaryRoomId;
   const isAudio = room.roomId === audioRoomId;
   const presentation = getPlaybackPresentation(room);
@@ -118,6 +123,20 @@ export function RoomTile({ room, slot, index, controlsLocked = false }: RoomTile
     setControlsVisible(true);
     resetControlsHide();
   }, [resetControlsHide]);
+  const updateMenuPosition = useCallback(() => {
+    const trigger = menuTriggerRef.current;
+    const menu = menuRef.current;
+    if (!trigger || !menu) return;
+
+    const triggerRect = trigger.getBoundingClientRect();
+    const menuRect = menu.getBoundingClientRect();
+    const position = resolveTileMenuPosition(
+      triggerRect,
+      { width: menuRect.width, height: menuRect.height },
+      { width: window.innerWidth, height: window.innerHeight },
+    );
+    setMenuPosition({ left: position.left, top: position.top });
+  }, []);
 
   useEffect(() => {
     if (controlsLocked) setControlsVisible(true);
@@ -127,6 +146,40 @@ export function RoomTile({ room, slot, index, controlsLocked = false }: RoomTile
     resetControlsHide();
     return () => hideCleanupRef.current();
   }, [resetControlsHide, room.roomId]);
+
+  useLayoutEffect(() => {
+    if (!menuOpen) return undefined;
+
+    updateMenuPosition();
+    window.addEventListener('resize', updateMenuPosition);
+    window.addEventListener('scroll', updateMenuPosition, true);
+    return () => {
+      window.removeEventListener('resize', updateMenuPosition);
+      window.removeEventListener('scroll', updateMenuPosition, true);
+    };
+  }, [menuOpen, updateMenuPosition]);
+
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (menuTriggerRef.current?.contains(target) || menuRef.current?.contains(target)) return;
+      setMenuOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setMenuOpen(false);
+        menuTriggerRef.current?.focus();
+      }
+    };
+    document.addEventListener('pointerdown', closeOnOutsidePointer);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsidePointer);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [menuOpen]);
 
   return (
     <article
@@ -165,6 +218,7 @@ export function RoomTile({ room, slot, index, controlsLocked = false }: RoomTile
         </div>
         <div className="tile-menu-wrap">
           <button
+            ref={menuTriggerRef}
             className="tiny-icon-button tile-more"
             type="button"
             aria-label={`${room.anchorName} 更多操作`}
@@ -174,8 +228,16 @@ export function RoomTile({ room, slot, index, controlsLocked = false }: RoomTile
           >
             <MoreHorizontal size={16} />
           </button>
-          {menuOpen ? (
-            <div className="tile-menu" role="menu" aria-label={`${room.anchorName} 操作菜单`}>
+          {menuOpen && typeof document !== 'undefined' ? createPortal(
+            <div
+              ref={menuRef}
+              className="tile-menu"
+              role="menu"
+              aria-label={`${room.anchorName} 操作菜单`}
+              style={menuPosition
+                ? { left: menuPosition.left, top: menuPosition.top }
+                : { left: 0, top: 0, visibility: 'hidden' }}
+            >
               <div className="tile-menu-status" role="status">
                 <strong>{actionSummary.playbackLabel}</strong>
                 <span>{actionSummary.playbackDetail}</span>
@@ -226,7 +288,8 @@ export function RoomTile({ room, slot, index, controlsLocked = false }: RoomTile
                 <ShieldAlert size={14} />
                 <span>移除房间</span>
               </button>
-            </div>
+            </div>,
+            document.body,
           ) : null}
         </div>
       </div>

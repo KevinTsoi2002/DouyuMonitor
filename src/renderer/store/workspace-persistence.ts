@@ -63,6 +63,7 @@ export interface WorkspacePreset {
   primaryRoomRatio: PrimaryRoomRatio;
   audioRoomId?: string;
   audioMode: AudioMode;
+  mutedRoomIds: string[];
   globalDanmakuEnabled: boolean;
   globalMuted: boolean;
   danmakuSettings: DanmakuSettings;
@@ -83,6 +84,7 @@ export interface WorkspaceSnapshot {
   primaryRoomRatio: PrimaryRoomRatio;
   audioRoomId?: string;
   audioMode: AudioMode;
+  mutedRoomIds: string[];
   globalDanmakuEnabled: boolean;
   globalMuted: boolean;
   danmakuSettings: DanmakuSettings;
@@ -202,6 +204,18 @@ function validRoomIds(value: unknown, roomLibrary: RoomLibrary, limit = Number.P
     if (!roomId || !roomLibrary[roomId] || roomIds.includes(roomId)) continue;
     roomIds.push(roomId);
     if (roomIds.length >= limit) break;
+  }
+  return roomIds;
+}
+
+function validRoomIdSubset(value: unknown, allowedRoomIds: readonly string[]): string[] {
+  if (!Array.isArray(value)) return [];
+  const allowed = new Set(allowedRoomIds);
+  const roomIds: string[] = [];
+  for (const item of value) {
+    const roomId = readString(item);
+    if (!roomId || !allowed.has(roomId) || roomIds.includes(roomId)) continue;
+    roomIds.push(roomId);
   }
   return roomIds;
 }
@@ -367,6 +381,7 @@ function parsePreset(value: unknown): WorkspacePreset | undefined {
     primaryRoomRatio: value.primaryRoomRatio as PrimaryRoomRatio,
     ...(value.audioRoomId !== undefined ? { audioRoomId: value.audioRoomId } : {}),
     audioMode: parseAudioMode(value.audioMode),
+    mutedRoomIds: validRoomIdSubset(value.mutedRoomIds, roomIds),
     globalDanmakuEnabled: value.globalDanmakuEnabled,
     globalMuted: value.globalMuted,
     danmakuSettings: parseDanmakuSettings(value.danmakuSettings),
@@ -474,6 +489,7 @@ export function loadWorkspaceSnapshot(storage: WorkspaceStorage | undefined = ge
         : DEFAULT_PRIMARY_ROOM_RATIO,
       audioRoomId: readString(parsed.audioRoomId),
       audioMode: parseAudioMode(parsed.audioMode),
+      mutedRoomIds: validRoomIdSubset(parsed.mutedRoomIds, migrated.activeRoomIds),
       globalDanmakuEnabled: parsed.globalDanmakuEnabled !== false,
       globalMuted: parsed.globalMuted === true,
       danmakuSettings: parseDanmakuSettings(parsed.danmakuSettings),

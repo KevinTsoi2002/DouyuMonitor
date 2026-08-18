@@ -46,7 +46,15 @@ describe('FLV video', () => {
 
     expect(runtime.createPlayer).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'flv', isLive: true }),
-      expect.objectContaining({ enableStashBuffer: false, liveSync: true }),
+      expect.objectContaining({
+        enableWorker: false,
+        enableWorkerForMSE: false,
+        enableStashBuffer: true,
+        stashInitialSize: 128 * 1024,
+        liveSync: true,
+        liveSyncMaxLatency: 3,
+        liveSyncTargetLatency: 1.5,
+      }),
     );
     expect(player.attachMediaElement).toHaveBeenCalledWith(video);
     expect(player.load).toHaveBeenCalledOnce();
@@ -59,6 +67,40 @@ describe('FLV video', () => {
     expect(player.unload).toHaveBeenCalledOnce();
     expect(player.detachMediaElement).toHaveBeenCalledOnce();
     expect(player.destroy).toHaveBeenCalledOnce();
+  });
+
+  it('keeps MediaSource on the renderer thread for Electron multi-room playback', () => {
+    const player = {
+      attachMediaElement: vi.fn(),
+      load: vi.fn(),
+      play: vi.fn(),
+      on: vi.fn(),
+      off: vi.fn(),
+      unload: vi.fn(),
+      detachMediaElement: vi.fn(),
+      destroy: vi.fn(),
+    };
+    const runtime: FlvRuntime = {
+      isSupported: () => true,
+      errorEvent: 'error',
+      createPlayer: vi.fn(() => player),
+    };
+
+    const detach = attachFlvPlayer({
+      runtime,
+      video: {} as HTMLVideoElement,
+      url: 'https://live.douyucdn.cn/live.flv',
+      onError: vi.fn(),
+    });
+
+    expect(runtime.createPlayer).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'flv', isLive: true }),
+      expect.objectContaining({
+        enableWorker: false,
+        enableWorkerForMSE: false,
+      }),
+    );
+    detach();
   });
 
   it('ignores player errors fired after cleanup', () => {
@@ -95,7 +137,7 @@ describe('FLV video', () => {
     expect(onError).not.toHaveBeenCalled();
   });
 
-  it('reports media playback recovery when the video starts playing', () => {
+  it('reports media playback recovery only after the first decoded frame is available', () => {
     const videoListeners = new Map<string, () => void>();
     const player = {
       attachMediaElement: vi.fn(),
@@ -129,10 +171,46 @@ describe('FLV video', () => {
     });
 
     videoListeners.get('playing')?.();
+    expect(onPlaying).not.toHaveBeenCalled();
+
+    videoListeners.get('loadeddata')?.();
     expect(onPlaying).toHaveBeenCalledOnce();
 
     detach();
-    expect(video.removeEventListener).toHaveBeenCalledWith('playing', expect.any(Function));
+    expect(video.removeEventListener).toHaveBeenCalledWith('loadeddata', expect.any(Function));
+  });
+
+  it('reports a failure when no decoded frame arrives after player startup', () => {
+    vi.useFakeTimers();
+    const player = {
+      attachMediaElement: vi.fn(),
+      load: vi.fn(),
+      play: vi.fn(),
+      on: vi.fn(),
+      off: vi.fn(),
+      unload: vi.fn(),
+      detachMediaElement: vi.fn(),
+      destroy: vi.fn(),
+    };
+    const runtime: FlvRuntime = {
+      isSupported: () => true,
+      errorEvent: 'error',
+      createPlayer: vi.fn(() => player),
+    };
+    const onError = vi.fn();
+
+    const detach = attachFlvPlayer({
+      runtime,
+      video: {} as HTMLVideoElement,
+      url: 'https://live.douyucdn.cn/live.flv',
+      onError,
+    });
+
+    vi.advanceTimersByTime(10_000);
+    expect(onError).toHaveBeenCalledWith('FIRST_FRAME_TIMEOUT');
+
+    detach();
+    vi.useRealTimers();
   });
 
   it('ignores a rejected play promise after cleanup', async () => {

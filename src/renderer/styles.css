@@ -304,12 +304,12 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .signal-center-mark small { color: rgba(255,255,255,0.58); font-size: 10px; }
 .tile-topbar, .tile-bottom-bar { position: absolute; right: 0; left: 0; z-index: 2; justify-content: space-between; }
 .tile-topbar { top: 0; display: flex; align-items: center; padding: 11px 11px 8px; background: rgba(9, 12, 16, 0.42); }
-.tile-room-meta { gap: 8px; min-width: 0; }
+.tile-room-meta { min-width: 0; flex: 1 1 auto; gap: 8px; overflow: hidden; }
 .live-pill { display: inline-flex; align-items: center; gap: 5px; padding: 4px 6px; border: 1px solid rgba(101, 211, 145, 0.26); border-radius: 4px; background: rgba(9, 17, 14, 0.48); color: #c6f1d4; font-size: 10px; font-weight: 700; white-space: nowrap; }
 .tile-category { overflow: hidden; color: rgba(255,255,255,0.64); font-size: 10px; white-space: nowrap; text-overflow: ellipsis; }
-.tile-more { color: rgba(255,255,255,0.72); }
-.tile-menu-wrap { position: relative; }
-.tile-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 8; display: flex; width: 205px; flex-direction: column; gap: 3px; padding: 7px; border: 1px solid var(--border-strong); border-radius: 7px; background: #141a21; box-shadow: var(--shadow); }
+.tile-more { width: 27px; height: 27px; flex: 0 0 27px; color: rgba(255,255,255,0.72); }
+.tile-menu-wrap { position: relative; flex: 0 0 auto; }
+.tile-menu { position: fixed; z-index: 50; display: flex; width: 205px; flex-direction: column; gap: 3px; padding: 7px; border: 1px solid var(--border-strong); border-radius: 7px; background: #141a21; box-shadow: var(--shadow); }
 .tile-menu-status { display: flex; flex-direction: column; gap: 3px; padding: 6px 7px 7px; border-bottom: 1px solid var(--border); }
 .tile-menu-status strong { overflow: hidden; color: var(--text); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .tile-menu-status span { overflow: hidden; color: var(--muted); font-size: 10px; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
