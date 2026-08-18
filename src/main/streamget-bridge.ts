@@ -2,14 +2,19 @@ import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { promisify } from 'node:util';
 import { join, posix, win32 } from 'node:path';
+import type { StreamRequestQuality } from '../domain/douyu-adapter';
+import {
+  DouyuStreamUrlError,
+  parseAllowedDouyuFlvUrl,
+} from './douyu-stream-url';
 
 const execFileAsync = promisify(execFile);
-const ALLOWED_HOST_SUFFIXES = ['.douyucdn.cn', '.douyucdn2.cn', '.edgesrv.com'];
-
 export type StreamgetRawResult = {
   roomId: string;
   isLive: boolean;
   flvUrl?: string;
+  resolvedQuality?: StreamRequestQuality;
+  source?: 'web-h5' | 'app-fallback';
 };
 
 export type StreamgetBridgeErrorCode =
@@ -28,11 +33,11 @@ export class StreamgetBridgeError extends Error {
 }
 
 export interface StreamgetBridge {
-  resolve(roomId: string): Promise<StreamgetRawResult>;
+  resolve(roomId: string, quality?: StreamRequestQuality): Promise<StreamgetRawResult>;
 }
 
 export interface StreamgetBridgeOptions {
-  run?: (roomId: string) => Promise<string>;
+  run?: (roomId: string, quality: StreamRequestQuality) => Promise<string>;
   command?: string;
   scriptPath?: string;
   cwd?: string;
@@ -70,8 +75,11 @@ export function findStreamgetPython(options: FindStreamgetPythonOptions = {}): s
 
 export function resolveStreamgetLaunch(
   roomId: string,
-  options: StreamgetBridgeOptions = {},
+  qualityOrOptions: StreamRequestQuality | StreamgetBridgeOptions = 'auto',
+  maybeOptions: StreamgetBridgeOptions = {},
 ): StreamgetLaunch {
+  const quality = typeof qualityOrOptions === 'string' ? qualityOrOptions : 'auto';
+  const options = typeof qualityOrOptions === 'string' ? maybeOptions : qualityOrOptions;
   const platform = options.platform ?? process.platform;
   const pathApi = platform === 'win32' ? win32 : posix;
   const cwd = options.cwd ?? process.cwd();
@@ -84,7 +92,7 @@ export function resolveStreamgetLaunch(
     const executableName = platform === 'win32' ? 'streamget_bridge.exe' : 'streamget_bridge';
     return {
       command: pathApi.join(sidecarDir, executableName),
-      args: [roomId],
+      args: [roomId, quality],
       cwd: sidecarDir,
     };
   }
@@ -96,35 +104,27 @@ export function resolveStreamgetLaunch(
       explicit: process.env.STREAMGET_PYTHON,
       exists: options.exists,
     }),
-    args: [options.scriptPath ?? pathApi.join(cwd, 'scripts', 'streamget_bridge.py'), roomId],
+    args: [options.scriptPath ?? pathApi.join(cwd, 'scripts', 'streamget_bridge.py'), roomId, quality],
     cwd,
   };
 }
 
-function isAllowedHost(hostname: string): boolean {
-  const normalized = hostname.toLowerCase();
-  return ALLOWED_HOST_SUFFIXES.some((suffix) => normalized.endsWith(suffix));
-}
-
 function validateFlvUrl(value: unknown): string {
-  if (typeof value !== 'string' || !value) {
-    throw new StreamgetBridgeError('INVALID_RESPONSE');
-  }
-
-  let url: URL;
   try {
-    url = new URL(value);
-  } catch {
+    return parseAllowedDouyuFlvUrl(value).toString();
+  } catch (error) {
+    if (error instanceof DouyuStreamUrlError && error.code === 'INVALID_RESPONSE') {
+      throw new StreamgetBridgeError('INVALID_RESPONSE');
+    }
     throw new StreamgetBridgeError('UNSAFE_STREAM_URL');
   }
-
-  if (!['http:', 'https:'].includes(url.protocol) || !isAllowedHost(url.hostname)) {
-    throw new StreamgetBridgeError('UNSAFE_STREAM_URL');
-  }
-  return url.toString();
 }
 
-export function parseStreamgetResponse(roomId: string, output: string): StreamgetRawResult {
+export function parseStreamgetResponse(
+  roomId: string,
+  output: string,
+  requestedQuality: StreamRequestQuality = 'auto',
+): StreamgetRawResult {
   let parsed: unknown;
   try {
     parsed = JSON.parse(output);
@@ -135,20 +135,45 @@ export function parseStreamgetResponse(roomId: string, output: string): Streamge
   if (!parsed || typeof parsed !== 'object') {
     throw new StreamgetBridgeError('INVALID_RESPONSE');
   }
-  const value = parsed as { roomId?: unknown; isLive?: unknown; flvUrl?: unknown };
+  const value = parsed as {
+    roomId?: unknown;
+    isLive?: unknown;
+    flvUrl?: unknown;
+    resolvedQuality?: unknown;
+    source?: unknown;
+  };
   if (value.roomId !== roomId || typeof value.isLive !== 'boolean') {
     throw new StreamgetBridgeError('INVALID_RESPONSE');
   }
   if (!value.isLive) return { roomId, isLive: false };
-  return { roomId, isLive: true, flvUrl: validateFlvUrl(value.flvUrl) };
+  const resolvedQuality = value.resolvedQuality;
+  const source = value.source;
+  if (
+    resolvedQuality !== undefined
+    && !['auto', 'original', 'super', 'high', 'standard', '720p'].includes(resolvedQuality as string)
+  ) {
+    throw new StreamgetBridgeError('INVALID_RESPONSE');
+  }
+  if (source !== undefined && source !== 'web-h5' && source !== 'app-fallback') {
+    throw new StreamgetBridgeError('INVALID_RESPONSE');
+  }
+  return {
+    roomId,
+    isLive: true,
+    flvUrl: validateFlvUrl(value.flvUrl),
+    resolvedQuality: (resolvedQuality as StreamRequestQuality | undefined) ?? requestedQuality,
+    source: source ?? 'app-fallback',
+  };
 }
 
-function createDefaultRunner(options: StreamgetBridgeOptions): (roomId: string) => Promise<string> {
-  const timeoutMs = options.timeoutMs ?? 20_000;
+function createDefaultRunner(
+  options: StreamgetBridgeOptions,
+): (roomId: string, quality: StreamRequestQuality) => Promise<string> {
+  const timeoutMs = options.timeoutMs ?? 30_000;
 
-  return async (roomId) => {
+  return async (roomId, quality) => {
     try {
-      const launch = resolveStreamgetLaunch(roomId, options);
+      const launch = resolveStreamgetLaunch(roomId, quality, options);
       const result = await execFileAsync(launch.command, launch.args, {
         cwd: launch.cwd,
         timeout: timeoutMs,
@@ -166,9 +191,9 @@ function createDefaultRunner(options: StreamgetBridgeOptions): (roomId: string) 
 export function createStreamgetBridge(options: StreamgetBridgeOptions = {}): StreamgetBridge {
   const run = options.run ?? createDefaultRunner(options);
   return {
-    async resolve(roomId) {
-      const output = await run(roomId);
-      return parseStreamgetResponse(roomId, output);
+    async resolve(roomId, quality = 'auto') {
+      const output = await run(roomId, quality);
+      return parseStreamgetResponse(roomId, output, quality);
     },
   };
 }
