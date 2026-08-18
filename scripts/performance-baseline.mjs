@@ -75,6 +75,13 @@ function createProfile(requestedRoomCount, availableRoomIds) {
       roomId,
       playable: false,
       firstFrameMs: null,
+      initialCurrentTime: null,
+      finalCurrentTime: null,
+      initialDecodedFrames: null,
+      finalDecodedFrames: null,
+      videoWidth: null,
+      videoHeight: null,
+      continuedPlayback: false,
     })),
     renderer: emptyRendererMetrics(),
     processes: emptyProcessMetrics(),
@@ -262,12 +269,52 @@ async function readRendererMetrics(page, counters) {
   };
 }
 
+async function readPlaybackMetrics(page, roomCount) {
+  return page.evaluate((expectedCount) => [...document.querySelectorAll('video')]
+    .slice(0, expectedCount)
+    .map((video) => {
+      const quality = typeof video.getVideoPlaybackQuality === 'function'
+        ? video.getVideoPlaybackQuality()
+        : undefined;
+      const decoded = Number.isFinite(quality?.totalVideoFrames)
+        ? quality.totalVideoFrames
+        : Number.isFinite(video.webkitDecodedFrameCount) ? video.webkitDecodedFrameCount : null;
+      return {
+        currentTime: Number.isFinite(video.currentTime) ? video.currentTime : null,
+        decodedFrames: decoded,
+        videoWidth: video.videoWidth || null,
+        videoHeight: video.videoHeight || null,
+      };
+    }), roomCount);
+}
+
+function applyPlaybackMetrics(profile, initial, final) {
+  profile.rooms.forEach((room, index) => {
+    const before = initial[index] ?? {};
+    const after = final[index] ?? {};
+    room.initialCurrentTime = before.currentTime ?? null;
+    room.finalCurrentTime = after.currentTime ?? null;
+    room.initialDecodedFrames = before.decodedFrames ?? null;
+    room.finalDecodedFrames = after.decodedFrames ?? null;
+    room.videoWidth = after.videoWidth ?? before.videoWidth ?? null;
+    room.videoHeight = after.videoHeight ?? before.videoHeight ?? null;
+    room.continuedPlayback = room.playable
+      && room.initialCurrentTime !== null
+      && room.finalCurrentTime !== null
+      && room.finalCurrentTime > room.initialCurrentTime + 0.05
+      && room.initialDecodedFrames !== null
+      && room.finalDecodedFrames !== null
+      && room.finalDecodedFrames > room.initialDecodedFrames;
+  });
+}
+
 function evaluateProfile(profile) {
   return profile.launchSucceeded
     && profile.isolatedUserData
     && profile.layoutSelected
     && profile.roomIds.length === profile.requestedRoomCount
     && profile.rooms.every((room) => room.playable)
+    && profile.rooms.every((room) => room.continuedPlayback)
     && profile.renderer.tileCount === profile.requestedRoomCount
     && profile.renderer.videoCount === profile.requestedRoomCount
     && profile.renderer.playingCount === profile.requestedRoomCount
@@ -350,7 +397,14 @@ async function runProfile({
     }
 
     try {
-      profile.processes = await sampleProcessMetrics(electronApp, sampleDurationMs);
+      const initialPlayback = await readPlaybackMetrics(page, requestedRoomCount);
+      const [processes] = await Promise.all([
+        sampleProcessMetrics(electronApp, sampleDurationMs),
+        delay(sampleDurationMs),
+      ]);
+      profile.processes = processes;
+      const finalPlayback = await readPlaybackMetrics(page, requestedRoomCount);
+      applyPlaybackMetrics(profile, initialPlayback, finalPlayback);
     } catch {
       setFailure(profile, 'sampling', 'PROCESS_SAMPLING_FAILED');
     }
