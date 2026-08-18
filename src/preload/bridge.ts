@@ -4,6 +4,7 @@ import type {
   SearchRoomsResult,
   SystemNotificationSupportResult,
 } from '../shared/ipc-contract';
+import type { StreamRequestQuality } from '../domain/douyu-adapter';
 import { isDanmakuEvent, type DanmakuEvent } from '../shared/danmaku-contract';
 import { IPC_CHANNELS } from '../shared/ipc-contract';
 
@@ -18,7 +19,11 @@ export interface IpcRendererLike {
 
 export interface AppApi {
   searchRooms(input: string): Promise<SearchRoomsResult>;
-  getStreamAvailability(roomId: string): Promise<GetStreamAvailabilityResult>;
+  getStreamAvailability(
+    roomId: string,
+    quality: StreamRequestQuality,
+  ): Promise<GetStreamAvailabilityResult>;
+  releaseStreamProxy(roomId: string): Promise<IpcResult<void>>;
   startDanmaku(roomId: string): Promise<IpcResult<void>>;
   stopDanmaku(roomId: string): Promise<IpcResult<void>>;
   onDanmakuEvent(listener: (event: DanmakuEvent) => void): () => void;
@@ -36,11 +41,17 @@ export function createAppApi(ipcRenderer: IpcRendererLike): AppApi {
     searchRooms(input) {
       return ipcRenderer.invoke(IPC_CHANNELS.searchRooms, { input }) as Promise<SearchRoomsResult>;
     },
-    getStreamAvailability(roomId) {
+    getStreamAvailability(roomId, quality) {
       return ipcRenderer.invoke(
         IPC_CHANNELS.getStreamAvailability,
-        { roomId },
+        { roomId, quality },
       ) as Promise<GetStreamAvailabilityResult>;
+    },
+    releaseStreamProxy(roomId) {
+      return ipcRenderer.invoke(
+        IPC_CHANNELS.releaseStreamProxy,
+        { roomId },
+      ) as Promise<IpcResult<void>>;
     },
     startDanmaku(roomId) {
       return ipcRenderer.invoke(IPC_CHANNELS.startDanmaku, {

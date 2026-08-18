@@ -30,6 +30,7 @@ describe('createAppApi', () => {
     expect(Object.keys(api)).toEqual([
       'searchRooms',
       'getStreamAvailability',
+      'releaseStreamProxy',
       'startDanmaku',
       'stopDanmaku',
       'onDanmakuEvent',
@@ -80,10 +81,15 @@ describe('createAppApi', () => {
     };
     const api = createAppApi(ipcRenderer);
 
-    await api.getStreamAvailability('63136');
+    await api.getStreamAvailability('63136', '720p');
+    await api.releaseStreamProxy('63136');
 
     expect(calls).toContainEqual({
       channel: IPC_CHANNELS.getStreamAvailability,
+      payload: { roomId: '63136', quality: '720p' },
+    });
+    expect(calls).toContainEqual({
+      channel: IPC_CHANNELS.releaseStreamProxy,
       payload: { roomId: '63136' },
     });
   });

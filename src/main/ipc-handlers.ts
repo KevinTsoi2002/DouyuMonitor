@@ -12,6 +12,7 @@ import {
   invalidInputError,
   invalidRoomIdError,
   isValidGetStreamAvailabilityRequest,
+  isValidReleaseStreamProxyRequest,
   isValidSearchRoomsRequest,
   isValidSystemNotificationRequest,
   ok,
@@ -37,11 +38,20 @@ const unavailableSystemNotifications: SystemNotificationService = {
   show: async () => undefined,
 };
 
+export interface PlaybackProxyLifecycle {
+  release(roomId: string): Promise<void>;
+}
+
+const unavailablePlaybackProxyLifecycle: PlaybackProxyLifecycle = {
+  release: async () => undefined,
+};
+
 export function registerIpcHandlers(
   ipcMain: IpcMainLike,
   adapter: DouyuAdapter,
   danmakuManager: DanmakuSessionManager,
   systemNotifications: SystemNotificationService = unavailableSystemNotifications,
+  playbackLifecycle: PlaybackProxyLifecycle = unavailablePlaybackProxyLifecycle,
 ): void {
   ipcMain.handle(IPC_CHANNELS.searchRooms, async (_event, request): Promise<SearchRoomsResult> => {
     if (!isValidSearchRoomsRequest(request)) return invalidInputError();
@@ -60,7 +70,20 @@ export function registerIpcHandlers(
       if (!isValidGetStreamAvailabilityRequest(request)) return invalidRoomIdError();
 
       try {
-        return ok(await adapter.getStreamAvailability(request.roomId));
+        return ok(await adapter.getStreamAvailability(request.roomId, request.quality));
+      } catch (error) {
+        return failed(error);
+      }
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.releaseStreamProxy,
+    async (_event, request): Promise<IpcResult<void>> => {
+      if (!isValidReleaseStreamProxyRequest(request)) return invalidRoomIdError();
+      try {
+        await playbackLifecycle.release(request.roomId);
+        return ok(undefined);
       } catch (error) {
         return failed(error);
       }
