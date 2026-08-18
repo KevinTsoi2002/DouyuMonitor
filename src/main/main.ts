@@ -75,7 +75,7 @@ async function bootstrap(): Promise<void> {
     {
       async release(roomId) {
         resolutionQueue.cancel(roomId);
-        await proxyManager.release(roomId);
+        await streamgetAdapter.releaseStream?.(roomId);
       },
     },
   );

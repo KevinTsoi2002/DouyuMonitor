@@ -1,6 +1,7 @@
 import { Crown, LoaderCircle, MessageCircle, MessageCircleOff, MoreHorizontal, RotateCw, ShieldAlert, Volume2, VolumeX } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import type { LayoutSlot } from '../../domain/layout-engine';
+import type { StreamRequestQuality } from '../../domain/douyu-adapter';
 import type { RoomSession } from '../store/workspace-store';
 import type { AudioMode } from '../store/workspace-persistence';
 import { useWorkspace } from '../store/workspace-context';
@@ -28,23 +29,34 @@ export function getRoomMuted(
   audioMode: AudioMode,
   audioRoomId: string | undefined,
   globalMuted: boolean,
+  roomMuted: boolean,
 ): boolean {
   if (globalMuted) return true;
   if (!room.online || room.status === 'offline' || room.playbackAvailabilityStatus !== 'available') {
     return true;
   }
-  return audioMode === 'single' && room.roomId !== audioRoomId;
+  return audioMode === 'single' ? room.roomId !== audioRoomId : roomMuted;
+}
+
+export function getDisplayedRoomQuality(
+  effectiveQuality: StreamRequestQuality | undefined,
+  storedQuality: RoomSession['quality'],
+): RoomSession['quality'] {
+  const quality = effectiveQuality ?? storedQuality;
+  return quality === '720p' ? 'high' : quality;
 }
 
 export function RoomTile({ room, slot, index, controlsLocked = false }: RoomTileProps) {
   const primaryRoomId = useWorkspace((state) => state.primaryRoomId);
   const audioRoomId = useWorkspace((state) => state.audioRoomId);
   const audioMode = useWorkspace((state) => state.audioMode);
+  const mutedRoomIds = useWorkspace((state) => state.mutedRoomIds);
   const globalDanmakuEnabled = useWorkspace((state) => state.globalDanmakuEnabled);
   const danmakuSettings = useWorkspace((state) => state.danmakuSettings);
   const globalMuted = useWorkspace((state) => state.globalMuted);
   const setPrimaryRoom = useWorkspace((state) => state.setPrimaryRoom);
   const setAudioRoom = useWorkspace((state) => state.setAudioRoom);
+  const toggleRoomMuted = useWorkspace((state) => state.toggleRoomMuted);
   const setQuality = useWorkspace((state) => state.setQuality);
   const setVolume = useWorkspace((state) => state.setVolume);
   const toggleDanmaku = useWorkspace((state) => state.toggleDanmaku);
@@ -73,13 +85,22 @@ export function RoomTile({ room, slot, index, controlsLocked = false }: RoomTile
   const qualityOptions = room.streamAvailability?.kind === 'available'
     ? presentation.qualityOptions
     : disabledQualityOptions;
+  const displayedQuality = getDisplayedRoomQuality(room.effectiveQuality, room.quality);
   const selectedQuality = room.streamAvailability?.kind === 'available'
-    ? qualityOptions.find((option) => option.value === room.quality)?.value
+    ? qualityOptions.find((option) => option.value === displayedQuality)?.value
       ?? qualityOptions[0]?.value
-      ?? room.quality
+      ?? displayedQuality
     : disabledQualityOptions[0].value;
+  const isIndividuallyMuted = mutedRoomIds.includes(room.roomId);
   const hasAudioFocus = isAudio && !presentation.audioDisabled;
-  const roomMuted = getRoomMuted(room, audioMode, audioRoomId, globalMuted);
+  const roomMuted = getRoomMuted(
+    room,
+    audioMode,
+    audioRoomId,
+    globalMuted,
+    isIndividuallyMuted,
+  );
+  const hasActiveAudio = !roomMuted && !presentation.audioDisabled;
   const tone = getRoomTone(index);
   const tileStyle = {
     gridColumn: `${slot.column} / span ${slot.columnSpan}`,
@@ -217,14 +238,28 @@ export function RoomTile({ room, slot, index, controlsLocked = false }: RoomTile
         <div className="tile-actions">
           <button className={`tile-action-button ${isPrimary ? 'is-active' : ''}`} type="button" aria-label={isPrimary ? '当前主画面' : `设 ${room.anchorName} 为主画面`} title={isPrimary ? '当前主画面' : '设为主画面'} onClick={() => setPrimaryRoom(room.roomId)}><Crown size={15} /></button>
           <button
-            className={`tile-action-button ${hasAudioFocus ? 'is-active is-audio' : ''}`}
+            className={`tile-action-button ${hasActiveAudio ? 'is-active is-audio' : ''}`}
             type="button"
-            aria-label={presentation.audioDisabled ? '暂无可用音频' : hasAudioFocus ? '关闭声音焦点' : `播放 ${room.anchorName} 声音`}
-            title={presentation.audioDisabled ? '暂无可用音频' : hasAudioFocus ? '关闭声音' : '播放声音'}
+            aria-label={presentation.audioDisabled
+              ? '暂无可用音频'
+              : audioMode === 'multi'
+                ? isIndividuallyMuted ? `打开 ${room.anchorName} 声音` : `静音 ${room.anchorName}`
+                : hasAudioFocus ? '关闭声音焦点' : `播放 ${room.anchorName} 声音`}
+            title={presentation.audioDisabled
+              ? '暂无可用音频'
+              : audioMode === 'multi'
+                ? isIndividuallyMuted ? '打开声音' : '静音'
+                : hasAudioFocus ? '关闭声音' : '播放声音'}
             disabled={presentation.audioDisabled}
-            onClick={() => setAudioRoom(hasAudioFocus ? undefined : room.roomId)}
+            onClick={() => {
+              if (audioMode === 'multi') {
+                toggleRoomMuted(room.roomId);
+              } else {
+                setAudioRoom(hasAudioFocus ? undefined : room.roomId);
+              }
+            }}
           >
-            {hasAudioFocus ? <Volume2 size={15} /> : <VolumeX size={15} />}
+            {hasActiveAudio ? <Volume2 size={15} /> : <VolumeX size={15} />}
           </button>
           {danmakuView.status.state === 'connecting' || danmakuView.status.state === 'reconnecting' ? (
             <span

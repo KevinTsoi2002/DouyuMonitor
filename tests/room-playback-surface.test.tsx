@@ -14,6 +14,7 @@ const baseRoom: RoomSession = {
   viewerLabel: '1 万',
   status: 'playing',
   quality: 'auto',
+  effectiveQuality: 'auto',
   volume: 1,
   danmakuEnabled: true,
   playbackAvailabilityStatus: 'checking',
@@ -21,21 +22,23 @@ const baseRoom: RoomSession = {
 
 describe('RoomPlaybackSurface', () => {
   it('computes single and multi room audio mute policy', () => {
-    expect(getRoomMuted({ ...baseRoom, playbackAvailabilityStatus: 'available' }, 'single', '63136', false))
+    expect(getRoomMuted({ ...baseRoom, playbackAvailabilityStatus: 'available' }, 'single', '63136', false, false))
       .toBe(false);
-    expect(getRoomMuted({ ...baseRoom, roomId: '270888', playbackAvailabilityStatus: 'available' }, 'single', '63136', false))
+    expect(getRoomMuted({ ...baseRoom, roomId: '270888', playbackAvailabilityStatus: 'available' }, 'single', '63136', false, false))
       .toBe(true);
-    expect(getRoomMuted({ ...baseRoom, playbackAvailabilityStatus: 'available' }, 'multi', '270888', false))
+    expect(getRoomMuted({ ...baseRoom, playbackAvailabilityStatus: 'available' }, 'multi', '270888', false, false))
       .toBe(false);
-    expect(getRoomMuted({ ...baseRoom, roomId: '270888', playbackAvailabilityStatus: 'available' }, 'multi', '63136', false))
+    expect(getRoomMuted({ ...baseRoom, roomId: '270888', playbackAvailabilityStatus: 'available' }, 'multi', '63136', false, false))
       .toBe(false);
-    expect(getRoomMuted({ ...baseRoom, online: false, status: 'offline', playbackAvailabilityStatus: 'available' }, 'multi', '63136', false))
+    expect(getRoomMuted({ ...baseRoom, playbackAvailabilityStatus: 'available' }, 'multi', '63136', false, true))
+      .toBe(true);
+    expect(getRoomMuted({ ...baseRoom, online: false, status: 'offline', playbackAvailabilityStatus: 'available' }, 'multi', '63136', false, false))
       .toBe(true);
     for (const status of ['checking', 'blocked', 'error'] as const) {
-      expect(getRoomMuted({ ...baseRoom, playbackAvailabilityStatus: status }, 'multi', '63136', false))
+      expect(getRoomMuted({ ...baseRoom, playbackAvailabilityStatus: status }, 'multi', '63136', false, false))
         .toBe(true);
     }
-    expect(getRoomMuted({ ...baseRoom, playbackAvailabilityStatus: 'available' }, 'multi', '63136', true))
+    expect(getRoomMuted({ ...baseRoom, playbackAvailabilityStatus: 'available' }, 'multi', '63136', true, false))
       .toBe(true);
   });
 

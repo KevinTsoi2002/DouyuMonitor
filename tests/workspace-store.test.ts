@@ -193,6 +193,24 @@ describe('createWorkspaceStore', () => {
     expect(store.getState().rooms.map((room) => room.volume)).toEqual(before.rooms.map((room) => room.volume));
   });
 
+  it('toggles one room mute in multi audio mode without changing the audio focus or volume', () => {
+    const store = createWorkspaceStore(createMockDouyuAdapter(), {
+      initialRooms: [candidate('101'), candidate('202')],
+    });
+    const audioRoomId = store.getState().audioRoomId;
+    const volumes = store.getState().rooms.map((room) => room.volume);
+
+    store.getState().setAudioMode('multi');
+    store.getState().toggleRoomMuted('202');
+
+    expect(store.getState().mutedRoomIds).toEqual(['202']);
+    expect(store.getState().audioRoomId).toBe(audioRoomId);
+    expect(store.getState().rooms.map((room) => room.volume)).toEqual(volumes);
+
+    store.getState().toggleRoomMuted('202');
+    expect(store.getState().mutedRoomIds).toEqual([]);
+  });
+
   it('preserves a manually locked layout when a room is added', () => {
     const store = createWorkspaceStore(createMockDouyuAdapter(), {
       initialRooms: [candidate('101')],
@@ -283,7 +301,7 @@ describe('createWorkspaceStore', () => {
     const store = createWorkspaceStore(adapter, { initialRooms: [offlineRoom] });
 
     await expect(store.getState().refreshRoomMetadata('1')).resolves.toBe(true);
-    expect(getStreamAvailability).toHaveBeenCalledWith('1');
+    expect(getStreamAvailability).toHaveBeenCalledWith('1', 'auto');
 
     pending.resolve(blockedAvailability('1'));
     await pending.promise;
@@ -777,5 +795,116 @@ describe('createWorkspaceStore', () => {
     expect(search).toHaveBeenCalledWith({ type: 'room-id', value: '1' });
     expect(store.getState().rooms[0]).toEqual(expect.objectContaining({ avatarUrl }));
     expect(store.getState().roomLibrary['1']).toEqual(expect.objectContaining({ avatarUrl }));
+  });
+
+  it('downgrades secondary rooms when the fifth online room is added', async () => {
+    const getStreamAvailability = vi.fn(async (roomId: string, quality = 'auto'): Promise<StreamAvailability> => ({
+      kind: 'blocked',
+      roomId,
+      reason: quality === '720p' ? 'NO_PUBLIC_SOURCE' : 'SIGNATURE_REQUIRED',
+      observedQualities: [],
+      checkedAt: '2026-08-10T00:00:00.000Z',
+    }));
+    const store = createWorkspaceStore({ ...createMockDouyuAdapter(), getStreamAvailability });
+    for (const roomId of ['1', '2', '3', '4']) store.getState().addRoom(candidate(roomId));
+    await vi.waitFor(() => expect(getStreamAvailability).toHaveBeenCalledTimes(4));
+    getStreamAvailability.mockClear();
+
+    store.getState().addRoom(candidate('5'));
+    await vi.waitFor(() => expect(getStreamAvailability).toHaveBeenCalledTimes(5));
+
+    expect(getStreamAvailability.mock.calls).toEqual(expect.arrayContaining([
+      ['1', 'original'],
+      ['2', '720p'],
+      ['3', '720p'],
+      ['4', '720p'],
+      ['5', '720p'],
+    ]));
+    expect(store.getState().rooms.find((room) => room.roomId === '2')?.quality).toBe('auto');
+    expect(store.getState().rooms.find((room) => room.roomId === '2')?.effectiveQuality).toBe('720p');
+  });
+
+  it('refreshes only old and new primary when switching above the adaptive threshold', async () => {
+    const getStreamAvailability = vi.fn(async (roomId: string, quality = 'auto'): Promise<StreamAvailability> => ({
+      kind: 'blocked',
+      roomId,
+      reason: 'SIGNATURE_REQUIRED',
+      observedQualities: [],
+      checkedAt: '2026-08-10T00:00:00.000Z',
+    }));
+    const store = createWorkspaceStore({ ...createMockDouyuAdapter(), getStreamAvailability });
+    for (const roomId of ['1', '2', '3', '4', '5']) store.getState().addRoom(candidate(roomId));
+    await vi.waitFor(() => expect(getStreamAvailability).toHaveBeenCalledTimes(9));
+    getStreamAvailability.mockClear();
+
+    store.getState().setPrimaryRoom('3');
+    await vi.waitFor(() => expect(getStreamAvailability).toHaveBeenCalledTimes(2));
+    expect(getStreamAvailability.mock.calls).toEqual(expect.arrayContaining([
+      ['1', '720p'],
+      ['3', 'original'],
+    ]));
+  });
+
+  it('releases a removed room proxy and restores survivors to their stored quality', async () => {
+    const releaseStream = vi.fn(async () => undefined);
+    const getStreamAvailability = vi.fn(async (roomId: string, quality = 'auto'): Promise<StreamAvailability> => ({
+      kind: 'blocked',
+      roomId,
+      reason: 'SIGNATURE_REQUIRED',
+      observedQualities: [],
+      checkedAt: '2026-08-10T00:00:00.000Z',
+    }));
+    const store = createWorkspaceStore({ ...createMockDouyuAdapter(), getStreamAvailability, releaseStream });
+    for (const roomId of ['1', '2', '3', '4', '5']) store.getState().addRoom(candidate(roomId));
+    await vi.waitFor(() => expect(getStreamAvailability).toHaveBeenCalledTimes(9));
+    getStreamAvailability.mockClear();
+
+    store.getState().removeRoom('5');
+    await vi.waitFor(() => expect(getStreamAvailability).toHaveBeenCalledTimes(4));
+    expect(releaseStream).toHaveBeenCalledWith('5');
+    expect(getStreamAvailability.mock.calls.every(([, quality]) => quality === 'auto')).toBe(true);
+  });
+
+  it('ignores a late secondary result after the room becomes primary', async () => {
+    const pending720 = deferredAvailability();
+    const pendingOriginal = deferredAvailability();
+    const getStreamAvailability = vi.fn((roomId: string, quality = 'auto') => {
+      if (roomId === '3' && quality === '720p') return pending720.promise;
+      if (roomId === '3' && quality === 'original') return pendingOriginal.promise;
+      return Promise.resolve(blockedAvailability(roomId));
+    });
+    const store = createWorkspaceStore({ ...createMockDouyuAdapter(), getStreamAvailability });
+    for (const roomId of ['1', '2', '3', '4', '5']) store.getState().addRoom(candidate(roomId));
+    await vi.waitFor(() => expect(getStreamAvailability).toHaveBeenCalledWith('3', '720p'));
+
+    store.getState().setPrimaryRoom('3');
+    await vi.waitFor(() => expect(getStreamAvailability).toHaveBeenCalledWith('3', 'original'));
+    pendingOriginal.resolve(blockedAvailability('3'));
+    await pendingOriginal.promise;
+    await Promise.resolve();
+    const freshCheckedAt = store.getState().rooms.find((room) => room.roomId === '3')?.playbackCheckedAt;
+
+    pending720.resolve({ ...blockedAvailability('3'), checkedAt: '2026-08-01T00:00:00.000Z' });
+    await pending720.promise;
+    await Promise.resolve();
+
+    expect(store.getState().rooms.find((room) => room.roomId === '3')?.playbackCheckedAt)
+      .toBe(freshCheckedAt);
+  });
+
+  it('keeps an active common room session when switching groups', async () => {
+    const store = createWorkspaceStore(createMockDouyuAdapter(), {
+      ...deterministicOptions,
+      initialRooms: [candidate('1'), candidate('2')],
+    });
+    await vi.waitFor(() => expect(store.getState().rooms[0]?.playbackAvailabilityStatus).toBe('available'));
+    const existingSession = store.getState().rooms[0];
+    const groupId = store.getState().createGroup('常用')!;
+    store.getState().addRoomToGroup(groupId, '1');
+
+    store.getState().switchGroup(groupId);
+
+    expect(store.getState().rooms[0]).toBe(existingSession);
+    expect(store.getState().rooms[0]?.playbackAvailabilityStatus).toBe('available');
   });
 });

@@ -42,6 +42,12 @@ function createResolver(result: StreamgetRawResult = {
   };
 }
 
+function deferredResult() {
+  let resolve!: (value: StreamgetRawResult) => void;
+  const promise = new Promise<StreamgetRawResult>((resolvePromise) => { resolve = resolvePromise; });
+  return { promise, resolve };
+}
+
 describe('StreamGet Douyu adapter', () => {
   it('maps a live H5 FLV to a local 720p variant', async () => {
     const resolver = createResolver();
@@ -129,6 +135,58 @@ describe('StreamGet Douyu adapter', () => {
 
     await adapter.releaseStream?.('63136');
 
+    expect(proxy.release).toHaveBeenCalledWith('63136');
+  });
+
+  it('does not publish a late older quality over a newer request', async () => {
+    const oldRequest = deferredResult();
+    const resolver = createResolver();
+    vi.mocked(resolver.resolve)
+      .mockReturnValueOnce(oldRequest.promise)
+      .mockResolvedValueOnce({
+        roomId: '63136',
+        isLive: true,
+        flvUrl: 'https://live.douyucdn.cn/live/new.flv',
+        resolvedQuality: 'original',
+        source: 'web-h5',
+      });
+    const proxy = createProxy();
+    const adapter = createStreamgetDouyuAdapter(onlineBaseAdapter(), resolver, proxy);
+
+    const older = adapter.getStreamAvailability('63136', '720p');
+    await adapter.getStreamAvailability('63136', 'original');
+    oldRequest.resolve({
+      roomId: '63136',
+      isLive: true,
+      flvUrl: 'https://live.douyucdn.cn/live/old.flv',
+      resolvedQuality: '720p',
+      source: 'web-h5',
+    });
+    await older.catch(() => undefined);
+
+    expect(proxy.register).toHaveBeenCalledTimes(1);
+    expect(proxy.register).toHaveBeenCalledWith('63136', expect.stringContaining('/new.flv'));
+  });
+
+  it('does not recreate a proxy when an active resolution finishes after release', async () => {
+    const pending = deferredResult();
+    const resolver = createResolver();
+    vi.mocked(resolver.resolve).mockReturnValueOnce(pending.promise);
+    const proxy = createProxy();
+    const adapter = createStreamgetDouyuAdapter(onlineBaseAdapter(), resolver, proxy);
+
+    const availability = adapter.getStreamAvailability('63136', 'original');
+    await adapter.releaseStream?.('63136');
+    pending.resolve({
+      roomId: '63136',
+      isLive: true,
+      flvUrl: 'https://live.douyucdn.cn/live/late.flv',
+      resolvedQuality: 'original',
+      source: 'web-h5',
+    });
+    await availability.catch(() => undefined);
+
+    expect(proxy.register).not.toHaveBeenCalled();
     expect(proxy.release).toHaveBeenCalledWith('63136');
   });
 });

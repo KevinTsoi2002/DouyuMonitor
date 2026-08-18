@@ -36,6 +36,37 @@ export function createStreamgetDouyuAdapter(
     closeAll: async () => undefined,
   },
 ): DouyuAdapter {
+  const generationByRoom = new Map<string, number>();
+  const publicationByRoom = new Map<string, Promise<void>>();
+
+  const nextGeneration = (roomId: string) => {
+    const generation = (generationByRoom.get(roomId) ?? 0) + 1;
+    generationByRoom.set(roomId, generation);
+    return generation;
+  };
+
+  const publishStream = async (
+    roomId: string,
+    generation: number,
+    upstreamUrl: string,
+  ): Promise<string> => {
+    const preceding = publicationByRoom.get(roomId) ?? Promise.resolve();
+    let playbackUrl = '';
+    const publication = preceding.then(async () => {
+      if (generationByRoom.get(roomId) !== generation) {
+        throw new Error('Stale stream resolution');
+      }
+      playbackUrl = await proxyManager.register(roomId, upstreamUrl);
+    });
+    const settled = publication.then(() => undefined, () => undefined);
+    publicationByRoom.set(roomId, settled);
+    void settled.then(() => {
+      if (publicationByRoom.get(roomId) === settled) publicationByRoom.delete(roomId);
+    });
+    await publication;
+    return playbackUrl;
+  };
+
   return {
     search: (input) => baseAdapter.search(input),
 
@@ -43,8 +74,11 @@ export function createStreamgetDouyuAdapter(
       roomId,
       quality: StreamRequestQuality = 'auto',
     ): Promise<StreamAvailability> {
+      const generation = nextGeneration(roomId);
       const observed = await baseAdapter.getStreamAvailability(roomId, quality);
       if (observed.kind === 'blocked' && observed.reason === 'ROOM_OFFLINE') {
+        await publicationByRoom.get(roomId);
+        await proxyManager.release(roomId);
         return observed;
       }
 
@@ -67,7 +101,7 @@ export function createStreamgetDouyuAdapter(
 
       let playbackUrl: string;
       try {
-        playbackUrl = await proxyManager.register(roomId, stream.flvUrl);
+        playbackUrl = await publishStream(roomId, generation, stream.flvUrl);
       } catch {
         throw new DouyuAdapterError('LOCAL_STREAM_PROXY_FAILED', 'Local stream proxy failed');
       }
@@ -88,6 +122,8 @@ export function createStreamgetDouyuAdapter(
     },
 
     async releaseStream(roomId) {
+      nextGeneration(roomId);
+      await publicationByRoom.get(roomId);
       await proxyManager.release(roomId);
     },
   };
