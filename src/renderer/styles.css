@@ -214,7 +214,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .mobile-only { display: none; }
 
 .app-body { display: flex; min-height: 0; flex: 1; }
-.room-sidebar { display: flex; width: 280px; flex: 0 0 280px; flex-direction: column; border-right: 1px solid var(--border); background: var(--panel); transition: width 180ms ease, flex-basis 180ms ease; }
+.room-sidebar { display: flex; width: 280px; min-height: 0; flex: 0 0 280px; flex-direction: column; border-right: 1px solid var(--border); background: var(--panel); transition: width 180ms ease, flex-basis 180ms ease; }
 .room-sidebar.is-closed { width: 0; flex-basis: 0; border-right: 0; overflow: hidden; visibility: hidden; }
 .sidebar-heading { display: flex; align-items: flex-start; justify-content: space-between; padding: 24px 18px 15px; }
 .sidebar-heading h1, .dialog-heading h2 { margin: 4px 0 0; font-size: 18px; line-height: 1.25; letter-spacing: 0; }
@@ -428,11 +428,11 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .group-more-menu button:hover { background: var(--panel-hover); color: var(--text); }
 .library-tabs { display: flex; gap: 4px; padding: 8px 10px 6px; }
 .library-tab { flex: 1; border-color: var(--border); background: #151c23; }
-.room-library-view { min-height: 0; flex: 1; overflow-y: auto; padding: 0 10px 12px; }
+.room-library-view { display: flex; min-height: 0; flex: 1; flex-direction: column; overflow: hidden; padding: 0 10px 12px; }
 .room-library-heading { display: flex; align-items: center; gap: 6px; min-height: 32px; color: var(--muted-strong); font-size: 12px; }
 .room-library-heading strong { flex: 1; }
 .room-library-heading > span { color: var(--muted); font-size: 10px; }
-.room-library-list { display: grid; gap: 5px; }
+.room-library-list { display: grid; min-height: 0; flex: 1 1 0; grid-auto-rows: max-content; align-content: start; gap: 5px; overflow-y: auto; padding-right: 2px; }
 .library-room-row { display: flex; align-items: center; gap: 7px; min-height: 46px; padding: 5px; border: 1px solid transparent; border-radius: 5px; }
 .library-room-row:hover { border-color: var(--border); background: #161c23; }
 .library-room-copy { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 3px; }

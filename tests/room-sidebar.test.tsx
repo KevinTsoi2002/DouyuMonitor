@@ -4,6 +4,8 @@ import type { RoomCandidate } from '../src/domain/douyu-adapter';
 import { createMockDouyuAdapter } from '../src/infrastructure/mock-douyu-adapter';
 import { RoomSidebar } from '../src/renderer/components/RoomSidebar';
 import { WorkspaceProvider } from '../src/renderer/store/workspace-context';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 function renderSidebar(initialRooms: RoomCandidate[]) {
   return renderToStaticMarkup(
@@ -14,6 +16,13 @@ function renderSidebar(initialRooms: RoomCandidate[]) {
 }
 
 describe('RoomSidebar', () => {
+  it('keeps library rows content-sized inside a scrollable list', () => {
+    const styles = readFileSync(resolve(process.cwd(), 'src/renderer/styles.css'), 'utf8');
+    expect(styles).toContain('.room-library-list { display: grid; min-height: 0; flex: 1 1 0;');
+    expect(styles).toContain('grid-auto-rows: max-content;');
+    expect(styles).toContain('align-content: start;');
+  });
+
   it('renders the room library navigation without legacy monitoring copy', () => {
     const html = renderSidebar([{
       roomId: '1',
