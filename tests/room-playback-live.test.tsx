@@ -47,6 +47,7 @@ describe('RoomPlaybackSurface live playback', () => {
       viewerLabel: '1',
       status: 'playing',
       quality: 'auto',
+      effectiveQuality: 'auto',
       volume: 1,
       danmakuEnabled: true,
       playbackAvailabilityStatus: 'available',

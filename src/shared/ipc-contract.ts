@@ -1,13 +1,16 @@
 import {
   DouyuAdapterError,
+  STREAM_REQUEST_QUALITIES,
   type DouyuAdapterErrorCode,
   type RoomCandidate,
   type StreamAvailability,
+  type StreamRequestQuality,
 } from '../domain/douyu-adapter';
 
 export const IPC_CHANNELS = {
   searchRooms: 'rooms.search',
   getStreamAvailability: 'playback.getAvailability',
+  releaseStreamProxy: 'playback.releaseProxy',
   ping: 'app.ping',
   startDanmaku: 'danmaku.start',
   stopDanmaku: 'danmaku.stop',
@@ -25,6 +28,11 @@ export interface SearchRoomsRequest {
 }
 
 export interface GetStreamAvailabilityRequest {
+  roomId: string;
+  quality: StreamRequestQuality;
+}
+
+export interface ReleaseStreamProxyRequest {
   roomId: string;
 }
 
@@ -60,6 +68,17 @@ export function isValidSearchRoomsRequest(value: unknown): value is SearchRoomsR
 export function isValidGetStreamAvailabilityRequest(
   value: unknown,
 ): value is GetStreamAvailabilityRequest {
+  if (!isValidReleaseStreamProxyRequest(value) || !('quality' in value)) return false;
+  const quality = (value as { quality?: unknown }).quality;
+  return (
+    typeof quality === 'string'
+    && STREAM_REQUEST_QUALITIES.includes(quality as StreamRequestQuality)
+  );
+}
+
+export function isValidReleaseStreamProxyRequest(
+  value: unknown,
+): value is ReleaseStreamProxyRequest {
   if (!value || typeof value !== 'object' || !('roomId' in value)) return false;
   const roomId = (value as { roomId?: unknown }).roomId;
   return typeof roomId === 'string' && /^\d{1,20}$/.test(roomId);
@@ -96,6 +115,10 @@ export function toIpcError(error: unknown): IpcError {
     > = {
       STREAMGET_UNAVAILABLE: {
         message: '\u65e0\u6cd5\u542f\u52a8 StreamGet\uff0c\u8bf7\u68c0\u67e5 Python \u73af\u5883',
+        retryable: true,
+      },
+      LOCAL_STREAM_PROXY_FAILED: {
+        message: '无法创建本地播放通道，请重试',
         retryable: true,
       },
       ROOM_NOT_FOUND: { message: '未找到对应直播间', retryable: false },

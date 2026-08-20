@@ -28,6 +28,8 @@ export const MAX_WORKSPACE_PRESETS = 20;
 export const MAX_PRESET_ROOMS = 9;
 export const MAX_WORKSPACE_PRESET_NAME_LENGTH = 40;
 
+export type AudioMode = 'single' | 'multi';
+
 export interface WorkspaceStorage {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
@@ -60,6 +62,8 @@ export interface WorkspacePreset {
   primaryRoomId?: string;
   primaryRoomRatio: PrimaryRoomRatio;
   audioRoomId?: string;
+  audioMode: AudioMode;
+  mutedRoomIds: string[];
   globalDanmakuEnabled: boolean;
   globalMuted: boolean;
   danmakuSettings: DanmakuSettings;
@@ -79,6 +83,8 @@ export interface WorkspaceSnapshot {
   roomPlacementOrder: string[];
   primaryRoomRatio: PrimaryRoomRatio;
   audioRoomId?: string;
+  audioMode: AudioMode;
+  mutedRoomIds: string[];
   globalDanmakuEnabled: boolean;
   globalMuted: boolean;
   danmakuSettings: DanmakuSettings;
@@ -90,6 +96,7 @@ export interface WorkspaceSnapshot {
 
 const QUALITY_VALUES = new Set<StreamQuality>(['auto', 'original', 'super', 'high', 'standard']);
 const STATUS_VALUES = new Set<RoomStatus>(['playing', 'offline', 'reconnecting', 'error']);
+const AUDIO_MODE_VALUES = new Set<AudioMode>(['single', 'multi']);
 const LAYOUT_VALUES = new Set([
   'auto',
   'single',
@@ -197,6 +204,18 @@ function validRoomIds(value: unknown, roomLibrary: RoomLibrary, limit = Number.P
     if (!roomId || !roomLibrary[roomId] || roomIds.includes(roomId)) continue;
     roomIds.push(roomId);
     if (roomIds.length >= limit) break;
+  }
+  return roomIds;
+}
+
+function validRoomIdSubset(value: unknown, allowedRoomIds: readonly string[]): string[] {
+  if (!Array.isArray(value)) return [];
+  const allowed = new Set(allowedRoomIds);
+  const roomIds: string[] = [];
+  for (const item of value) {
+    const roomId = readString(item);
+    if (!roomId || !allowed.has(roomId) || roomIds.includes(roomId)) continue;
+    roomIds.push(roomId);
   }
   return roomIds;
 }
@@ -361,6 +380,8 @@ function parsePreset(value: unknown): WorkspacePreset | undefined {
     ...(value.primaryRoomId !== undefined ? { primaryRoomId: value.primaryRoomId } : {}),
     primaryRoomRatio: value.primaryRoomRatio as PrimaryRoomRatio,
     ...(value.audioRoomId !== undefined ? { audioRoomId: value.audioRoomId } : {}),
+    audioMode: parseAudioMode(value.audioMode),
+    mutedRoomIds: validRoomIdSubset(value.mutedRoomIds, roomIds),
     globalDanmakuEnabled: value.globalDanmakuEnabled,
     globalMuted: value.globalMuted,
     danmakuSettings: parseDanmakuSettings(value.danmakuSettings),
@@ -392,6 +413,10 @@ function parsePrimaryRoomRatio(value: unknown): PrimaryRoomRatio {
   return typeof value === 'number' && PRIMARY_ROOM_RATIOS.includes(value as PrimaryRoomRatio)
     ? value as PrimaryRoomRatio
     : DEFAULT_PRIMARY_ROOM_RATIO;
+}
+
+function parseAudioMode(value: unknown): AudioMode {
+  return AUDIO_MODE_VALUES.has(value as AudioMode) ? value as AudioMode : 'single';
 }
 
 function sameRoomIds(left: string[], right: string[]): boolean {
@@ -463,6 +488,8 @@ export function loadWorkspaceSnapshot(storage: WorkspaceStorage | undefined = ge
         ? parsePrimaryRoomRatio(parsed.primaryRoomRatio)
         : DEFAULT_PRIMARY_ROOM_RATIO,
       audioRoomId: readString(parsed.audioRoomId),
+      audioMode: parseAudioMode(parsed.audioMode),
+      mutedRoomIds: validRoomIdSubset(parsed.mutedRoomIds, migrated.activeRoomIds),
       globalDanmakuEnabled: parsed.globalDanmakuEnabled !== false,
       globalMuted: parsed.globalMuted === true,
       danmakuSettings: parseDanmakuSettings(parsed.danmakuSettings),

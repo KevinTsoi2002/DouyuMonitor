@@ -11,6 +11,7 @@ import type {
   RoomStatus,
   StreamAvailability,
   StreamQuality,
+  StreamRequestQuality,
 } from '../../domain/douyu-adapter';
 import { DouyuAdapterError } from '../../domain/douyu-adapter';
 import { RoomRegistry } from '../../domain/room-registry';
@@ -33,6 +34,7 @@ import {
   type WorkspacePresetRoom,
   type WorkspaceSnapshot,
   type WorkspaceStorage,
+  type AudioMode,
 } from './workspace-persistence';
 import {
   addHistoryEntry,
@@ -50,6 +52,10 @@ import {
   normalizeRoomPlacementOrder,
   swapPrimaryRoomPlacement,
 } from './room-placement';
+import {
+  changedEffectiveQualityRoomIds,
+  resolveEffectiveQualities,
+} from './stream-quality-policy';
 
 export type PlaybackAvailabilityStatus = 'checking' | 'available' | 'blocked' | 'error';
 
@@ -66,6 +72,7 @@ export interface PlaybackRecoveryDiagnostic extends PlaybackRecoveryReport {
 export interface RoomSession extends RoomCandidate {
   status: RoomStatus;
   quality: StreamQuality;
+  effectiveQuality: StreamRequestQuality;
   volume: number;
   danmakuEnabled: boolean;
   playbackAvailabilityStatus: PlaybackAvailabilityStatus;
@@ -91,6 +98,8 @@ export interface WorkspaceState {
   roomPlacementOrder: string[];
   primaryRoomRatio: PrimaryRoomRatio;
   audioRoomId?: string;
+  audioMode: AudioMode;
+  mutedRoomIds: string[];
   globalDanmakuEnabled: boolean;
   globalMuted: boolean;
   danmakuSettings: DanmakuSettings;
@@ -110,6 +119,8 @@ export interface WorkspaceState {
   setPrimaryRoom: (roomId: string) => void;
   setPrimaryRoomRatio: (ratio: PrimaryRoomRatio) => void;
   setAudioRoom: (roomId?: string) => void;
+  setAudioMode: (mode: AudioMode) => void;
+  toggleRoomMuted: (roomId: string) => void;
   setQuality: (roomId: string, quality: StreamQuality) => void;
   setVolume: (roomId: string, volume: number) => void;
   toggleDanmaku: (roomId: string) => void;
@@ -163,6 +174,7 @@ function toSession(candidate: LibraryRoom): RoomSession {
   return {
     ...candidate,
     status: candidate.online ? 'playing' : 'offline',
+    effectiveQuality: candidate.quality,
     playbackAvailabilityStatus: 'checking',
   };
 }
@@ -245,6 +257,8 @@ export function createWorkspacePresetDraft(state: WorkspaceState): WorkspacePres
     ...(state.audioRoomId && roomIdSet.has(state.audioRoomId)
       ? { audioRoomId: state.audioRoomId }
       : {}),
+    audioMode: state.audioMode,
+    mutedRoomIds: state.mutedRoomIds.filter((roomId) => roomIdSet.has(roomId)),
     globalDanmakuEnabled: state.globalDanmakuEnabled,
     globalMuted: state.globalMuted,
     danmakuSettings: cloneJson(state.danmakuSettings),
@@ -299,6 +313,8 @@ export function createWorkspaceStore(
   const createGroupId = options.createGroupId ?? (() => globalThis.crypto.randomUUID());
   const createPresetId = options.createPresetId ?? (() => globalThis.crypto.randomUUID());
   const metadataRefreshInFlight = new Set<string>();
+  const streamRefreshGeneration = new Map<string, number>();
+  let streamRefreshSequence = 0;
   const persisted = loadWorkspaceSnapshot(storage);
   const initialRoomLibrary: RoomLibrary = persisted?.roomLibrary ?? Object.fromEntries(
     (options.initialRooms ?? []).slice(0, RoomRegistry.MAX_ROOMS).map((room) => {
@@ -339,6 +355,8 @@ export function createWorkspaceStore(
         roomPlacementOrder: state.roomPlacementOrder,
         primaryRoomRatio: state.primaryRoomRatio,
         audioRoomId: state.audioRoomId,
+        audioMode: state.audioMode,
+        mutedRoomIds: state.mutedRoomIds,
         globalDanmakuEnabled: state.globalDanmakuEnabled,
         globalMuted: state.globalMuted,
         danmakuSettings: state.danmakuSettings,
@@ -354,6 +372,30 @@ export function createWorkspaceStore(
       }
     };
 
+    const applyEffectiveQualityTransition = (beforeRooms: readonly RoomSession[]) => {
+      const before = new Map(beforeRooms.map((room) => [room.roomId, room.effectiveQuality]));
+      const current = get();
+      const after = resolveEffectiveQualities(current.rooms, current.primaryRoomId);
+      const changedRoomIds = changedEffectiveQualityRoomIds(before, after);
+
+      set((state) => ({
+        rooms: state.rooms.map((room) => {
+          const effectiveQuality = after.get(room.roomId) ?? room.quality;
+          return effectiveQuality === room.effectiveQuality
+            ? room
+            : { ...room, effectiveQuality };
+        }),
+      }));
+
+      for (const roomId of changedRoomIds) {
+        const room = get().rooms.find((item) => item.roomId === roomId);
+        if (room?.online && room.status !== 'offline') {
+          void get().refreshStreamAvailability(roomId);
+        }
+      }
+      return changedRoomIds;
+    };
+
     return ({
     rooms: initialSessions,
     roomLibrary: initialRoomLibrary,
@@ -367,6 +409,8 @@ export function createWorkspaceStore(
     roomPlacementOrder: initialPlacementOrder,
     primaryRoomRatio: persisted?.primaryRoomRatio ?? DEFAULT_PRIMARY_ROOM_RATIO,
     audioRoomId: hasRoom(persisted?.audioRoomId) ? persisted?.audioRoomId : initialSessions[0]?.roomId,
+    audioMode: persisted?.audioMode ?? 'single',
+    mutedRoomIds: persisted?.mutedRoomIds ?? [],
     globalDanmakuEnabled: persisted?.globalDanmakuEnabled ?? true,
     globalMuted: persisted?.globalMuted ?? false,
     danmakuSettings: persisted?.danmakuSettings ?? { ...DEFAULT_DANMAKU_SETTINGS },
@@ -380,6 +424,7 @@ export function createWorkspaceStore(
     searchError: undefined,
 
     addRoom(candidate) {
+      const beforeRooms = get().rooms;
       const result = registry.add({ roomId: candidate.roomId, anchorName: candidate.anchorName });
       if (!result.added) {
         if (result.reason === 'duplicate' && get().roomLibrary[candidate.roomId]) {
@@ -403,12 +448,13 @@ export function createWorkspaceStore(
         primaryRoomId: state.primaryRoomId ?? session.roomId,
         audioRoomId: state.audioRoomId ?? session.roomId,
       }));
+      applyEffectiveQualityTransition(beforeRooms);
       persist();
-      if (candidate.online) void get().refreshStreamAvailability(candidate.roomId);
       return 'added';
     },
 
     removeRoom(roomId) {
+      const beforeRooms = get().rooms;
       if (!registry.remove(roomId)) return;
       set((state) => {
         const rooms = state.rooms.filter((room) => room.roomId !== roomId);
@@ -423,8 +469,12 @@ export function createWorkspaceStore(
           activeGroupId: undefined,
           primaryRoomId: state.primaryRoomId === roomId ? nextPrimaryRoomId : state.primaryRoomId,
           audioRoomId: state.audioRoomId === roomId ? rooms[0]?.roomId : state.audioRoomId,
+          mutedRoomIds: state.mutedRoomIds.filter((id) => id !== roomId),
         };
       });
+      void adapter.releaseStream?.(roomId);
+      streamRefreshGeneration.delete(roomId);
+      applyEffectiveQualityTransition(beforeRooms);
       persist();
     },
 
@@ -474,6 +524,7 @@ export function createWorkspaceStore(
 
     setPrimaryRoom(roomId) {
       if (!get().rooms.some((room) => room.roomId === roomId)) return;
+      const beforeRooms = get().rooms;
       set((state) => ({
         primaryRoomId: roomId,
         roomPlacementOrder: swapPrimaryRoomPlacement(
@@ -482,6 +533,7 @@ export function createWorkspaceStore(
           roomId,
         ),
       }));
+      applyEffectiveQualityTransition(beforeRooms);
       persist();
     },
 
@@ -497,13 +549,31 @@ export function createWorkspaceStore(
       }
     },
 
+    setAudioMode(mode) {
+      if (mode !== 'single' && mode !== 'multi') return;
+      set({ audioMode: mode });
+      persist();
+    },
+
+    toggleRoomMuted(roomId) {
+      if (!get().rooms.some((room) => room.roomId === roomId)) return;
+      set((state) => ({
+        mutedRoomIds: state.mutedRoomIds.includes(roomId)
+          ? state.mutedRoomIds.filter((id) => id !== roomId)
+          : [...state.mutedRoomIds, roomId],
+      }));
+      persist();
+    },
+
     setQuality(roomId, quality) {
+      const beforeRooms = get().rooms;
       set((state) => ({
         rooms: state.rooms.map((room) => (room.roomId === roomId ? { ...room, quality } : room)),
         roomLibrary: state.roomLibrary[roomId]
           ? { ...state.roomLibrary, [roomId]: { ...state.roomLibrary[roomId], quality } }
           : state.roomLibrary,
       }));
+      applyEffectiveQualityTransition(beforeRooms);
       persist();
     },
 
@@ -705,6 +775,8 @@ export function createWorkspaceStore(
       const group = state.groups.find((item) => item.id === groupId);
       if (!group) return;
       const rooms = group.roomIds.flatMap((roomId) => {
+        const activeRoom = state.rooms.find((room) => room.roomId === roomId);
+        if (activeRoom) return [activeRoom];
         const room = state.roomLibrary[roomId];
         return room ? [toSession(room)] : [];
       });
@@ -725,11 +797,16 @@ export function createWorkspaceStore(
         activeGroupId: groupId,
         primaryRoomId,
         audioRoomId: rooms[0]?.roomId,
+        mutedRoomIds: state.mutedRoomIds.filter((roomId) => roomPlacementOrder.includes(roomId)),
       });
-      persist();
-      for (const room of rooms.filter((item) => item.online)) {
-        void get().refreshStreamAvailability(room.roomId);
+      for (const room of state.rooms) {
+        if (!rooms.some((nextRoom) => nextRoom.roomId === room.roomId)) {
+          void adapter.releaseStream?.(room.roomId);
+          streamRefreshGeneration.delete(room.roomId);
+        }
       }
+      applyEffectiveQualityTransition(state.rooms);
+      persist();
     },
 
     saveWorkspacePreset(name) {
@@ -836,12 +913,21 @@ export function createWorkspaceStore(
           ),
           primaryRoomRatio: preset.primaryRoomRatio,
           audioRoomId,
+          audioMode: preset.audioMode,
+          mutedRoomIds: preset.mutedRoomIds,
           globalDanmakuEnabled: preset.globalDanmakuEnabled,
           globalMuted: preset.globalMuted,
           danmakuSettings: cloneJson(preset.danmakuSettings),
           danmakuGovernanceOverrides: cloneJson(preset.danmakuGovernanceOverrides),
           activeWorkspacePresetId: id,
         });
+        for (const roomId of previousRoomIds) {
+          if (!nextRooms.some((room) => room.roomId === roomId)) {
+            void adapter.releaseStream?.(roomId);
+            streamRefreshGeneration.delete(roomId);
+          }
+        }
+        applyEffectiveQualityTransition([]);
         persist();
         for (const room of nextRooms.filter((item) => item.online)) {
           void get().refreshRoomMetadata(room.roomId);
@@ -861,6 +947,8 @@ export function createWorkspaceStore(
           roomPlacementOrder: previous.roomPlacementOrder,
           primaryRoomRatio: previous.primaryRoomRatio,
           audioRoomId: previous.audioRoomId,
+          audioMode: previous.audioMode,
+          mutedRoomIds: previous.mutedRoomIds,
           globalDanmakuEnabled: previous.globalDanmakuEnabled,
           globalMuted: previous.globalMuted,
           danmakuSettings: previous.danmakuSettings,
@@ -924,9 +1012,11 @@ export function createWorkspaceStore(
           !currentRoom
           || !currentRoom.online
           || currentRoom.status === 'offline'
-          || currentRoom.playbackAvailabilityStatus !== 'available'
+          || currentRoom.playbackAvailabilityStatus === 'blocked'
+          || currentRoom.playbackAvailabilityStatus === 'error'
         );
 
+        const beforeRooms = get().rooms;
         const libraryRoom = toLibraryRoom({ ...existing, ...candidate });
         set((state) => ({
           rooms: state.rooms.map((room) => room.roomId === roomId
@@ -943,8 +1033,12 @@ export function createWorkspaceStore(
             : room),
           roomLibrary: { ...state.roomLibrary, [roomId]: libraryRoom },
         }));
+        const qualityChanges = applyEffectiveQualityTransition(beforeRooms);
+        if (!candidate.online) void adapter.releaseStream?.(roomId);
         persist();
-        if (shouldRefreshStream) void get().refreshStreamAvailability(roomId);
+        if (shouldRefreshStream && !qualityChanges.includes(roomId)) {
+          void get().refreshStreamAvailability(roomId);
+        }
         return true;
       } catch (error) {
         const checkedAt = now().toISOString();
@@ -972,6 +1066,9 @@ export function createWorkspaceStore(
     async refreshStreamAvailability(roomId) {
       const room = get().rooms.find((item) => item.roomId === roomId);
       if (!room || !room.online || room.status === 'offline') return;
+      const requestedQuality = room.effectiveQuality;
+      const requestGeneration = ++streamRefreshSequence;
+      streamRefreshGeneration.set(roomId, requestGeneration);
 
       set((state) => ({
         rooms: state.rooms.map((room) => room.roomId === roomId
@@ -986,8 +1083,15 @@ export function createWorkspaceStore(
       }));
 
       try {
-        const availability = await adapter.getStreamAvailability(roomId);
-        if (!get().rooms.some((room) => room.roomId === roomId)) return;
+        const availability = await adapter.getStreamAvailability(roomId, requestedQuality);
+        const currentRoom = get().rooms.find((room) => room.roomId === roomId);
+        if (
+          !currentRoom
+          || streamRefreshGeneration.get(roomId) !== requestGeneration
+          || currentRoom.effectiveQuality !== requestedQuality
+          || !currentRoom.online
+          || currentRoom.status === 'offline'
+        ) return;
 
         set((state) => ({
           rooms: state.rooms.map((room) => room.roomId === roomId
@@ -1003,7 +1107,14 @@ export function createWorkspaceStore(
             : room),
         }));
       } catch (error) {
-        if (!get().rooms.some((room) => room.roomId === roomId)) return;
+        const currentRoom = get().rooms.find((room) => room.roomId === roomId);
+        if (
+          !currentRoom
+          || streamRefreshGeneration.get(roomId) !== requestGeneration
+          || currentRoom.effectiveQuality !== requestedQuality
+          || !currentRoom.online
+          || currentRoom.status === 'offline'
+        ) return;
 
         set((state) => ({
           rooms: state.rooms.map((room) => room.roomId === roomId
@@ -1038,6 +1149,16 @@ export function createWorkspaceStore(
     });
   });
 
+  const initialEffectiveQualities = resolveEffectiveQualities(
+    store.getState().rooms,
+    store.getState().primaryRoomId,
+  );
+  store.setState((state) => ({
+    rooms: state.rooms.map((room) => ({
+      ...room,
+      effectiveQuality: initialEffectiveQualities.get(room.roomId) ?? room.quality,
+    })),
+  }));
   store.setState((state) => ({ hasUnsavedWorkspaceChanges: hasWorkspaceChanges(state) }));
 
   for (const room of initialSessions.filter((item) => item.online)) {

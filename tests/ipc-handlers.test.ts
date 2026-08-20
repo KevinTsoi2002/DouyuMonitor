@@ -2,7 +2,11 @@ import { describe, expect, it, vi } from 'vitest';
 import type { DouyuAdapter } from '../src/domain/douyu-adapter';
 import { createMockDouyuAdapter } from '../src/infrastructure/mock-douyu-adapter';
 import type { DanmakuSessionManager } from '../src/main/danmaku-session-manager';
-import { registerIpcHandlers, type IpcMainLike } from '../src/main/ipc-handlers';
+import {
+  registerIpcHandlers,
+  type IpcMainLike,
+  type PlaybackProxyLifecycle,
+} from '../src/main/ipc-handlers';
 import { invalidRoomIdError, IPC_CHANNELS } from '../src/shared/ipc-contract';
 
 function createFakeIpcMain() {
@@ -25,6 +29,10 @@ function createFakeManager(): DanmakuSessionManager {
     stopOwner: vi.fn<DanmakuSessionManager['stopOwner']>(),
     stopAll: vi.fn<DanmakuSessionManager['stopAll']>(),
   };
+}
+
+function createFakePlaybackLifecycle(): PlaybackProxyLifecycle {
+  return { release: vi.fn<PlaybackProxyLifecycle['release']>(async () => undefined) };
 }
 
 const sender = {
@@ -153,17 +161,22 @@ describe('registerIpcHandlers', () => {
 
   it('registers a typed stream availability handler', async () => {
     const { ipcMain, handlers } = createFakeIpcMain();
-    registerIpcHandlers(ipcMain, createMockDouyuAdapter(), createFakeManager());
+    const getStreamAvailability = vi.fn(createMockDouyuAdapter().getStreamAvailability);
+    registerIpcHandlers(ipcMain, {
+      ...createMockDouyuAdapter(),
+      getStreamAvailability,
+    }, createFakeManager());
 
     const result = await handlers.get(IPC_CHANNELS.getStreamAvailability)?.(
       {},
-      { roomId: '63136' },
+      { roomId: '63136', quality: '720p' },
     );
 
     expect(result).toEqual(expect.objectContaining({
       ok: true,
       data: expect.objectContaining({ kind: 'available', roomId: '63136' }),
     }));
+    expect(getStreamAvailability).toHaveBeenCalledWith('63136', '720p');
   });
 
   it('rejects malformed room ids before checking availability', async () => {
@@ -180,7 +193,7 @@ describe('registerIpcHandlers', () => {
 
     const result = await handlers.get(IPC_CHANNELS.getStreamAvailability)?.(
       {},
-      { roomId: 'abc' },
+      { roomId: 'abc', quality: 'auto' },
     );
 
     expect(result).toEqual({
@@ -188,6 +201,42 @@ describe('registerIpcHandlers', () => {
       error: { code: 'INVALID_INPUT', message: '请输入有效的直播间号', retryable: false },
     });
     expect(calls).toBe(0);
+  });
+
+  it('releases a validated playback proxy', async () => {
+    const { ipcMain, handlers } = createFakeIpcMain();
+    const lifecycle = createFakePlaybackLifecycle();
+    registerIpcHandlers(
+      ipcMain,
+      createMockDouyuAdapter(),
+      createFakeManager(),
+      undefined,
+      lifecycle,
+    );
+
+    await expect(handlers.get(IPC_CHANNELS.releaseStreamProxy)?.(
+      {},
+      { roomId: '63136' },
+    )).resolves.toEqual({ ok: true, data: undefined });
+    expect(lifecycle.release).toHaveBeenCalledWith('63136');
+  });
+
+  it('rejects malformed playback proxy releases before invoking the lifecycle', async () => {
+    const { ipcMain, handlers } = createFakeIpcMain();
+    const lifecycle = createFakePlaybackLifecycle();
+    registerIpcHandlers(
+      ipcMain,
+      createMockDouyuAdapter(),
+      createFakeManager(),
+      undefined,
+      lifecycle,
+    );
+
+    await expect(handlers.get(IPC_CHANNELS.releaseStreamProxy)?.(
+      {},
+      { roomId: 'abc' },
+    )).resolves.toEqual(invalidRoomIdError());
+    expect(lifecycle.release).not.toHaveBeenCalled();
   });
 
   it('starts and stops a validated room for the sending owner', async () => {

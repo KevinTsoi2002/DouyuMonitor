@@ -1,8 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import rendererConfig from '../vite.config';
+import mainConfig from '../vite.main.config';
 
 describe('renderer build config', () => {
+  it('keeps proxy Node built-ins external in the Electron main bundle', () => {
+    const external = mainConfig.build?.rollupOptions?.external;
+    expect(external).toEqual(expect.arrayContaining([
+      'node:crypto',
+      'node:http',
+      'node:https',
+    ]));
+  });
+
   it('uses relative assets so the Electron file target can load the bundle', () => {
     expect(rendererConfig.base).toBe('./');
   });
@@ -20,6 +30,9 @@ describe('renderer build config', () => {
     const css = readFileSync(new URL('../src/renderer/styles.css', import.meta.url), 'utf8');
 
     expect(css).toMatch(/\.tile-topbar\s*\{[^}]*display:\s*flex/);
+    expect(css).toMatch(/\.tile-room-meta\s*\{[^}]*flex:\s*1 1 auto[^}]*overflow:\s*hidden/);
+    expect(css).toMatch(/\.tile-menu-wrap\s*\{[^}]*flex:\s*0 0 auto/);
+    expect(css).toMatch(/\.tile-more\s*\{[^}]*width:\s*27px[^}]*height:\s*27px/);
   });
 
   it('anchors the danmaku settings panel to the mobile viewport', () => {

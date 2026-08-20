@@ -22,7 +22,15 @@ describe('streamget bridge', () => {
       roomId: '63136',
       isLive: true,
       flvUrl,
-    }))).toEqual({ roomId: '63136', isLive: true, flvUrl });
+      resolvedQuality: 'auto',
+      source: 'web-h5',
+    }), 'auto')).toEqual({
+      roomId: '63136',
+      isLive: true,
+      flvUrl,
+      resolvedQuality: 'auto',
+      source: 'web-h5',
+    });
   });
 
   it('accepts a live FLV response from an allowed Douyu host', async () => {
@@ -30,13 +38,17 @@ describe('streamget bridge', () => {
       run: async () => JSON.stringify({
         roomId: '63136',
         isLive: true,
+        resolvedQuality: '720p',
+        source: 'web-h5',
         flvUrl: 'https://openflv-hw.douyucdn2.cn/live/63136_demo.flv?wsAuth=redacted',
       }),
     });
 
-    await expect(bridge.resolve('63136')).resolves.toEqual({
+    await expect(bridge.resolve('63136', '720p')).resolves.toEqual({
       roomId: '63136',
       isLive: true,
+      resolvedQuality: '720p',
+      source: 'web-h5',
       flvUrl: 'https://openflv-hw.douyucdn2.cn/live/63136_demo.flv?wsAuth=redacted',
     });
   });
@@ -44,9 +56,11 @@ describe('streamget bridge', () => {
   it('rejects stream URLs outside the Douyu CDN allowlist', async () => {
     const bridge = createStreamgetBridge({
       run: async () => JSON.stringify({
-        roomId: '63136',
-        isLive: true,
-        flvUrl: 'https://example.invalid/live/63136.flv',
+      roomId: '63136',
+      isLive: true,
+      resolvedQuality: '720p',
+      source: 'web-h5',
+      flvUrl: 'https://example.invalid/live/63136.flv',
       }),
     });
 
@@ -62,16 +76,20 @@ describe('streamget bridge', () => {
     expect(() => parseStreamgetResponse('63136', JSON.stringify({
       roomId: '63136',
       isLive: true,
+      resolvedQuality: '720p',
+      source: 'web-h5',
       flvUrl,
-    }))).toThrowError(expect.objectContaining({ code: 'UNSAFE_STREAM_URL' }));
+    }), '720p')).toThrowError(expect.objectContaining({ code: 'UNSAFE_STREAM_URL' }));
   });
 
   it('rejects a non-HTTP stream URL', () => {
     expect(() => parseStreamgetResponse('63136', JSON.stringify({
       roomId: '63136',
       isLive: true,
+      resolvedQuality: '720p',
+      source: 'web-h5',
       flvUrl: 'ftp://live.douyucdn.cn/live/63136.flv',
-    }))).toThrowError(expect.objectContaining({ code: 'UNSAFE_STREAM_URL' }));
+    }), '720p')).toThrowError(expect.objectContaining({ code: 'UNSAFE_STREAM_URL' }));
   });
 
   it('preserves an offline response without requiring a URL', () => {
@@ -86,6 +104,18 @@ describe('streamget bridge', () => {
       .toThrowError(expect.objectContaining({ code: 'INVALID_RESPONSE' }));
   });
 
+  it.each([
+    { resolvedQuality: '720p' },
+    { source: 'web-h5' },
+  ])('rejects a live response with incomplete quality metadata', (metadata) => {
+    expect(() => parseStreamgetResponse('63136', JSON.stringify({
+      roomId: '63136',
+      isLive: true,
+      flvUrl: 'https://live.douyucdn.cn/live/63136.flv',
+      ...metadata,
+    }), '720p')).toThrowError(expect.objectContaining({ code: 'INVALID_RESPONSE' }));
+  });
+
   it('prefers a project-local Python environment', () => {
     const command = findStreamgetPython({
       cwd: 'C:\\DouyuMonitor',
@@ -97,38 +127,38 @@ describe('streamget bridge', () => {
   });
 
   it('launches the Python script from the project during development', () => {
-    expect(resolveStreamgetLaunch('63136', {
+    expect(resolveStreamgetLaunch('63136', '720p', {
       cwd: 'C:\\DouyuMonitor',
       platform: 'win32',
       exists: (candidate) => candidate.endsWith('\\.venv\\Scripts\\python.exe'),
     })).toEqual({
       command: 'C:\\DouyuMonitor\\.venv\\Scripts\\python.exe',
-      args: ['C:\\DouyuMonitor\\scripts\\streamget_bridge.py', '63136'],
+      args: ['C:\\DouyuMonitor\\scripts\\streamget_bridge.py', '63136', '720p'],
       cwd: 'C:\\DouyuMonitor',
     });
   });
 
   it('launches only the bundled sidecar executable after packaging', () => {
-    expect(resolveStreamgetLaunch('63136', {
+    expect(resolveStreamgetLaunch('63136', 'original', {
       isPackaged: true,
       resourcesPath: 'C:\\Program Files\\DouyuMonitor\\resources',
       platform: 'win32',
     })).toEqual({
       command: 'C:\\Program Files\\DouyuMonitor\\resources\\streamget\\streamget_bridge.exe',
-      args: ['63136'],
+      args: ['63136', 'original'],
       cwd: 'C:\\Program Files\\DouyuMonitor\\resources\\streamget',
     });
   });
 
   it('ignores development command overrides after packaging', () => {
-    expect(resolveStreamgetLaunch('63136', {
+    expect(resolveStreamgetLaunch('63136', 'original', {
       command: 'python',
       isPackaged: true,
       resourcesPath: 'C:\\Program Files\\DouyuMonitor\\resources',
       platform: 'win32',
     })).toEqual({
       command: 'C:\\Program Files\\DouyuMonitor\\resources\\streamget\\streamget_bridge.exe',
-      args: ['63136'],
+      args: ['63136', 'original'],
       cwd: 'C:\\Program Files\\DouyuMonitor\\resources\\streamget',
     });
   });
@@ -139,7 +169,10 @@ describe('streamget bridge', () => {
       'utf8',
     );
 
-    expect(source).toContain('live.fetch_app_stream_data(');
-    expect(source).not.toContain('_fetch_web_stream_url');
+    expect(source).toContain('fetch_web_stream_data');
+    expect(source).toContain('fetch_stream_url');
+    expect(source).toContain('fetch_app_stream_data');
+    expect(source).toContain('"720p": "HD"');
+    expect(source).toContain('raise RuntimeError("STREAMGET_UNAVAILABLE")');
   });
 });

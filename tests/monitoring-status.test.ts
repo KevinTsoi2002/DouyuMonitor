@@ -17,6 +17,7 @@ function room(roomId: string, patch: Partial<RoomSession> = {}): RoomSession {
     viewerLabel: '100',
     status: 'playing',
     quality: 'auto',
+    effectiveQuality: 'auto',
     volume: 0.5,
     danmakuEnabled: true,
     playbackAvailabilityStatus: 'available',

@@ -27,6 +27,7 @@ function createTestAppApi(overrides: Partial<AppApi>): AppApi {
   return {
     searchRooms: unavailable,
     getStreamAvailability: unavailable,
+    releaseStreamProxy: unavailable,
     startDanmaku: async () => ok(undefined),
     stopDanmaku: async () => ok(undefined),
     onDanmakuEvent: () => () => {},
@@ -95,8 +96,8 @@ describe('createRendererDouyuAdapter', () => {
 
     const adapter = createRendererDouyuAdapter();
 
-    await expect(adapter.getStreamAvailability('63136')).resolves.toEqual(availability);
-    expect(getStreamAvailability).toHaveBeenCalledWith('63136');
+    await expect(adapter.getStreamAvailability('63136', '720p')).resolves.toEqual(availability);
+    expect(getStreamAvailability).toHaveBeenCalledWith('63136', '720p');
   });
 
   it('throws the availability IPC error without falling back to mock data', async () => {
@@ -113,8 +114,19 @@ describe('createRendererDouyuAdapter', () => {
 
     const adapter = createRendererDouyuAdapter();
 
-    await expect(adapter.getStreamAvailability('63136')).rejects.toThrow(
-      '无法连接斗鱼，请检查网络后重试',
-    );
+    await expect(adapter.getStreamAvailability('63136', '720p')).rejects.toMatchObject({
+      code: 'NETWORK_UNAVAILABLE',
+      message: '无法连接斗鱼，请检查网络后重试',
+    });
+  });
+
+  it('releases playback through the preload API in Electron', async () => {
+    const releaseStreamProxy = vi.fn(async () => ok(undefined));
+    installAppApi(createTestAppApi({ releaseStreamProxy }));
+
+    const adapter = createRendererDouyuAdapter();
+
+    await expect(adapter.releaseStream?.('63136')).resolves.toBeUndefined();
+    expect(releaseStreamProxy).toHaveBeenCalledWith('63136');
   });
 });

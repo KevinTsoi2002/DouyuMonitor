@@ -1,11 +1,15 @@
 import { Crown, LoaderCircle, MessageCircle, MessageCircleOff, MoreHorizontal, RotateCw, ShieldAlert, Volume2, VolumeX } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import { createPortal } from 'react-dom';
 import type { LayoutSlot } from '../../domain/layout-engine';
+import type { StreamRequestQuality } from '../../domain/douyu-adapter';
 import type { RoomSession } from '../store/workspace-store';
+import type { AudioMode } from '../store/workspace-persistence';
 import { useWorkspace } from '../store/workspace-context';
 import { useDanmakuControls, useDanmakuRoom } from '../store/danmaku-context';
 import { getPlaybackPresentation, getRoomActionSummary, getRoomTone } from '../ui-model';
 import { scheduleControlsHide } from '../player-controls-visibility';
+import { resolveTileMenuPosition } from '../tile-menu-position';
 import { RoomPlaybackSurface } from './RoomPlaybackSurface';
 
 interface RoomTileProps {
@@ -22,14 +26,39 @@ const STATUS_LABELS = {
   error: '信号异常',
 } as const;
 
+export function getRoomMuted(
+  room: RoomSession,
+  audioMode: AudioMode,
+  audioRoomId: string | undefined,
+  globalMuted: boolean,
+  roomMuted: boolean,
+): boolean {
+  if (globalMuted) return true;
+  if (!room.online || room.status === 'offline' || room.playbackAvailabilityStatus !== 'available') {
+    return true;
+  }
+  return audioMode === 'single' ? room.roomId !== audioRoomId : roomMuted;
+}
+
+export function getDisplayedRoomQuality(
+  effectiveQuality: StreamRequestQuality | undefined,
+  storedQuality: RoomSession['quality'],
+): RoomSession['quality'] {
+  const quality = effectiveQuality ?? storedQuality;
+  return quality === '720p' ? 'high' : quality;
+}
+
 export function RoomTile({ room, slot, index, controlsLocked = false }: RoomTileProps) {
   const primaryRoomId = useWorkspace((state) => state.primaryRoomId);
   const audioRoomId = useWorkspace((state) => state.audioRoomId);
+  const audioMode = useWorkspace((state) => state.audioMode);
+  const mutedRoomIds = useWorkspace((state) => state.mutedRoomIds);
   const globalDanmakuEnabled = useWorkspace((state) => state.globalDanmakuEnabled);
   const danmakuSettings = useWorkspace((state) => state.danmakuSettings);
   const globalMuted = useWorkspace((state) => state.globalMuted);
   const setPrimaryRoom = useWorkspace((state) => state.setPrimaryRoom);
   const setAudioRoom = useWorkspace((state) => state.setAudioRoom);
+  const toggleRoomMuted = useWorkspace((state) => state.toggleRoomMuted);
   const setQuality = useWorkspace((state) => state.setQuality);
   const setVolume = useWorkspace((state) => state.setVolume);
   const toggleDanmaku = useWorkspace((state) => state.toggleDanmaku);
@@ -41,9 +70,12 @@ export function RoomTile({ room, slot, index, controlsLocked = false }: RoomTile
   const danmakuView = useDanmakuRoom(room.roomId);
   const { retryRoom } = useDanmakuControls();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState<{ left: number; top: number }>();
   const [controlsVisible, setControlsVisible] = useState(true);
   const [focusWithin, setFocusWithin] = useState(false);
   const hideCleanupRef = useRef<() => void>(() => {});
+  const menuTriggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const isPrimary = room.roomId === primaryRoomId;
   const isAudio = room.roomId === audioRoomId;
   const presentation = getPlaybackPresentation(room);
@@ -58,12 +90,22 @@ export function RoomTile({ room, slot, index, controlsLocked = false }: RoomTile
   const qualityOptions = room.streamAvailability?.kind === 'available'
     ? presentation.qualityOptions
     : disabledQualityOptions;
+  const displayedQuality = getDisplayedRoomQuality(room.effectiveQuality, room.quality);
   const selectedQuality = room.streamAvailability?.kind === 'available'
-    ? qualityOptions.find((option) => option.value === room.quality)?.value
+    ? qualityOptions.find((option) => option.value === displayedQuality)?.value
       ?? qualityOptions[0]?.value
-      ?? room.quality
+      ?? displayedQuality
     : disabledQualityOptions[0].value;
+  const isIndividuallyMuted = mutedRoomIds.includes(room.roomId);
   const hasAudioFocus = isAudio && !presentation.audioDisabled;
+  const roomMuted = getRoomMuted(
+    room,
+    audioMode,
+    audioRoomId,
+    globalMuted,
+    isIndividuallyMuted,
+  );
+  const hasActiveAudio = !roomMuted && !presentation.audioDisabled;
   const tone = getRoomTone(index);
   const tileStyle = {
     gridColumn: `${slot.column} / span ${slot.columnSpan}`,
@@ -81,6 +123,20 @@ export function RoomTile({ room, slot, index, controlsLocked = false }: RoomTile
     setControlsVisible(true);
     resetControlsHide();
   }, [resetControlsHide]);
+  const updateMenuPosition = useCallback(() => {
+    const trigger = menuTriggerRef.current;
+    const menu = menuRef.current;
+    if (!trigger || !menu) return;
+
+    const triggerRect = trigger.getBoundingClientRect();
+    const menuRect = menu.getBoundingClientRect();
+    const position = resolveTileMenuPosition(
+      triggerRect,
+      { width: menuRect.width, height: menuRect.height },
+      { width: window.innerWidth, height: window.innerHeight },
+    );
+    setMenuPosition({ left: position.left, top: position.top });
+  }, []);
 
   useEffect(() => {
     if (controlsLocked) setControlsVisible(true);
@@ -90,6 +146,40 @@ export function RoomTile({ room, slot, index, controlsLocked = false }: RoomTile
     resetControlsHide();
     return () => hideCleanupRef.current();
   }, [resetControlsHide, room.roomId]);
+
+  useLayoutEffect(() => {
+    if (!menuOpen) return undefined;
+
+    updateMenuPosition();
+    window.addEventListener('resize', updateMenuPosition);
+    window.addEventListener('scroll', updateMenuPosition, true);
+    return () => {
+      window.removeEventListener('resize', updateMenuPosition);
+      window.removeEventListener('scroll', updateMenuPosition, true);
+    };
+  }, [menuOpen, updateMenuPosition]);
+
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (menuTriggerRef.current?.contains(target) || menuRef.current?.contains(target)) return;
+      setMenuOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setMenuOpen(false);
+        menuTriggerRef.current?.focus();
+      }
+    };
+    document.addEventListener('pointerdown', closeOnOutsidePointer);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsidePointer);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [menuOpen]);
 
   return (
     <article
@@ -108,7 +198,7 @@ export function RoomTile({ room, slot, index, controlsLocked = false }: RoomTile
       <RoomPlaybackSurface
         room={room}
         demoMode={demoMode}
-        muted={!hasAudioFocus || globalMuted}
+        muted={roomMuted}
         globalDanmakuEnabled={globalDanmakuEnabled}
         danmakuSettings={danmakuSettings}
         tone={tone}
@@ -128,6 +218,7 @@ export function RoomTile({ room, slot, index, controlsLocked = false }: RoomTile
         </div>
         <div className="tile-menu-wrap">
           <button
+            ref={menuTriggerRef}
             className="tiny-icon-button tile-more"
             type="button"
             aria-label={`${room.anchorName} 更多操作`}
@@ -137,8 +228,16 @@ export function RoomTile({ room, slot, index, controlsLocked = false }: RoomTile
           >
             <MoreHorizontal size={16} />
           </button>
-          {menuOpen ? (
-            <div className="tile-menu" role="menu" aria-label={`${room.anchorName} 操作菜单`}>
+          {menuOpen && typeof document !== 'undefined' ? createPortal(
+            <div
+              ref={menuRef}
+              className="tile-menu"
+              role="menu"
+              aria-label={`${room.anchorName} 操作菜单`}
+              style={menuPosition
+                ? { left: menuPosition.left, top: menuPosition.top }
+                : { left: 0, top: 0, visibility: 'hidden' }}
+            >
               <div className="tile-menu-status" role="status">
                 <strong>{actionSummary.playbackLabel}</strong>
                 <span>{actionSummary.playbackDetail}</span>
@@ -189,7 +288,8 @@ export function RoomTile({ room, slot, index, controlsLocked = false }: RoomTile
                 <ShieldAlert size={14} />
                 <span>移除房间</span>
               </button>
-            </div>
+            </div>,
+            document.body,
           ) : null}
         </div>
       </div>
@@ -201,14 +301,28 @@ export function RoomTile({ room, slot, index, controlsLocked = false }: RoomTile
         <div className="tile-actions">
           <button className={`tile-action-button ${isPrimary ? 'is-active' : ''}`} type="button" aria-label={isPrimary ? '当前主画面' : `设 ${room.anchorName} 为主画面`} title={isPrimary ? '当前主画面' : '设为主画面'} onClick={() => setPrimaryRoom(room.roomId)}><Crown size={15} /></button>
           <button
-            className={`tile-action-button ${hasAudioFocus ? 'is-active is-audio' : ''}`}
+            className={`tile-action-button ${hasActiveAudio ? 'is-active is-audio' : ''}`}
             type="button"
-            aria-label={presentation.audioDisabled ? '暂无可用音频' : hasAudioFocus ? '关闭声音焦点' : `播放 ${room.anchorName} 声音`}
-            title={presentation.audioDisabled ? '暂无可用音频' : hasAudioFocus ? '关闭声音' : '播放声音'}
+            aria-label={presentation.audioDisabled
+              ? '暂无可用音频'
+              : audioMode === 'multi'
+                ? isIndividuallyMuted ? `打开 ${room.anchorName} 声音` : `静音 ${room.anchorName}`
+                : hasAudioFocus ? '关闭声音焦点' : `播放 ${room.anchorName} 声音`}
+            title={presentation.audioDisabled
+              ? '暂无可用音频'
+              : audioMode === 'multi'
+                ? isIndividuallyMuted ? '打开声音' : '静音'
+                : hasAudioFocus ? '关闭声音' : '播放声音'}
             disabled={presentation.audioDisabled}
-            onClick={() => setAudioRoom(hasAudioFocus ? undefined : room.roomId)}
+            onClick={() => {
+              if (audioMode === 'multi') {
+                toggleRoomMuted(room.roomId);
+              } else {
+                setAudioRoom(hasAudioFocus ? undefined : room.roomId);
+              }
+            }}
           >
-            {hasAudioFocus ? <Volume2 size={15} /> : <VolumeX size={15} />}
+            {hasActiveAudio ? <Volume2 size={15} /> : <VolumeX size={15} />}
           </button>
           {danmakuView.status.state === 'connecting' || danmakuView.status.state === 'reconnecting' ? (
             <span

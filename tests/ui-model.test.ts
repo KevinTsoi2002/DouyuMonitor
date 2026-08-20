@@ -19,6 +19,7 @@ const baseRoom: RoomSession = {
   viewerLabel: '1 万',
   status: 'playing',
   quality: 'auto',
+  effectiveQuality: 'auto',
   volume: 1,
   danmakuEnabled: true,
   playbackAvailabilityStatus: 'checking',

@@ -6,6 +6,7 @@ import {
   parseRoomIds,
   parseSampleDurationMs,
   profileLayoutForRoomCount,
+  roomQualityPolicySatisfied,
   summarizeMetricSamples,
 } from '../scripts/performance-utils.mjs';
 
@@ -88,6 +89,28 @@ describe('performance baseline utilities', () => {
 
     it('requires at least one sample', () => {
       expect(() => summarizeMetricSamples([])).toThrow('Metric samples are required');
+    });
+  });
+
+  describe('roomQualityPolicySatisfied', () => {
+    it('allows stored quality for four or fewer rooms', () => {
+      expect(roomQualityPolicySatisfied([
+        { videoWidth: 1920, videoHeight: 1080 },
+        { videoWidth: 1920, videoHeight: 1080 },
+      ])).toBe(true);
+    });
+
+    it('requires every non-primary room to be at most 1280 by 720 above four rooms', () => {
+      const compliant = [
+        { videoWidth: 1920, videoHeight: 1080 },
+        ...Array.from({ length: 4 }, () => ({ videoWidth: 1280, videoHeight: 720 })),
+      ];
+      expect(roomQualityPolicySatisfied(compliant)).toBe(true);
+      expect(roomQualityPolicySatisfied([
+        compliant[0],
+        { videoWidth: 1920, videoHeight: 1080 },
+        ...compliant.slice(2),
+      ])).toBe(false);
     });
   });
 });
