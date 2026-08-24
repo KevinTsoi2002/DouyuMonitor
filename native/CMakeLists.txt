@@ -38,6 +38,13 @@ add_library(stream_service STATIC
 target_link_libraries(stream_service PUBLIC Qt6::Core)
 target_include_directories(stream_service PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
+add_library(remote_playback STATIC
+    src/media/media_source.cpp
+    src/media/remote_playback_controller.cpp
+)
+target_link_libraries(remote_playback PUBLIC stream_service Qt6::Core)
+target_include_directories(remote_playback PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
 add_executable(stream_service_protocol_test
     tests/stream_service_protocol_test.cpp
 )
@@ -61,6 +68,22 @@ target_compile_definitions(streamget_process_client_test PRIVATE
     FAKE_STREAMGET_SERVICE_PATH="$<TARGET_FILE:fake_streamget_service>"
 )
 add_test(NAME streamget_process_client_test COMMAND streamget_process_client_test)
+
+add_executable(remote_playback_controller_test
+    tests/remote_playback_controller_test.cpp
+)
+target_link_libraries(remote_playback_controller_test
+    PRIVATE
+        remote_playback
+        Qt6::Core
+        Qt6::Test
+)
+target_include_directories(remote_playback_controller_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+add_dependencies(remote_playback_controller_test fake_streamget_service)
+target_compile_definitions(remote_playback_controller_test PRIVATE
+    FAKE_STREAMGET_SERVICE_PATH="$<TARGET_FILE:fake_streamget_service>"
+)
+add_test(NAME remote_playback_controller_test COMMAND remote_playback_controller_test)
 
 option(DOUYU_BUILD_SERVICE_TESTS "Register Python StreamGet service tests" ON)
 if(DOUYU_BUILD_SERVICE_TESTS)

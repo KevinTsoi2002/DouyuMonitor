@@ -9,6 +9,8 @@
 
 class MediaSource final {
 public:
+    MediaSource() = default;
+
     enum class Kind {
         LocalFile,
         RemoteStream,

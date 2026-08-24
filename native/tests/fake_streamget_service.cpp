@@ -24,6 +24,8 @@ struct Options {
     bool ignoreCancel = false;
     int crashAfter = 0;
     QString crashOnceFile;
+    int offlineAfter = 0;
+    QString errorCode;
 };
 
 Options parseOptions(const QStringList &arguments)
@@ -41,6 +43,10 @@ Options parseOptions(const QStringList &arguments)
             options.crashAfter = qMax(0, arguments.at(++index).toInt());
         } else if (argument == QStringLiteral("--crash-once-file") && index + 1 < arguments.size()) {
             options.crashOnceFile = arguments.at(++index);
+        } else if (argument == QStringLiteral("--offline-after") && index + 1 < arguments.size()) {
+            options.offlineAfter = qMax(0, arguments.at(++index).toInt());
+        } else if (argument == QStringLiteral("--error-code") && index + 1 < arguments.size()) {
+            options.errorCode = arguments.at(++index);
         }
     }
     return options;
@@ -92,6 +98,7 @@ int main(int argc, char **argv)
 
     QHash<quint64, QTimer *> pending;
     int requestCount = 0;
+    int resolveCount = 0;
     QTimer poller;
     QObject::connect(&poller, &QTimer::timeout, &application, [&] {
         QList<QByteArray> current;
@@ -147,13 +154,31 @@ int main(int argc, char **argv)
                 response.insert(QStringLiteral("cancelled"), static_cast<qint64>(request->targetRequestId));
                 emitObject(response);
             } else if (request->operation == ServiceOperation::Resolve) {
+                const int resolveIndex = ++resolveCount;
                 auto *timer = new QTimer(&application);
                 timer->setSingleShot(true);
                 pending.insert(request->requestId, timer);
                 QObject::connect(timer, &QTimer::timeout, &application,
-                                 [&, timer, requestId = request->requestId, roomId = request->roomId] {
+                                 [&, timer, requestId = request->requestId, roomId = request->roomId,
+                                  resolveIndex] {
                                      pending.remove(requestId);
                                      timer->deleteLater();
+                                     if (!options.errorCode.isEmpty()) {
+                                         emitError(requestId, options.errorCode);
+                                         return;
+                                     }
+                                     if (options.offlineAfter > 0
+                                         && resolveIndex == options.offlineAfter) {
+                                         QJsonObject response;
+                                         response.insert(QStringLiteral("requestId"),
+                                                         static_cast<qint64>(requestId));
+                                         response.insert(QStringLiteral("ok"), true);
+                                         response.insert(QStringLiteral("roomId"), roomId);
+                                         response.insert(QStringLiteral("isLive"), false);
+                                         response.insert(QStringLiteral("variants"), QJsonArray());
+                                         emitObject(response);
+                                         return;
+                                     }
                                      QJsonObject variant;
                                      variant.insert(QStringLiteral("id"), QStringLiteral("flv-auto"));
                                      variant.insert(QStringLiteral("label"), QStringLiteral("fake"));
