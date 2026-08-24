@@ -62,6 +62,32 @@ target_compile_definitions(streamget_process_client_test PRIVATE
 )
 add_test(NAME streamget_process_client_test COMMAND streamget_process_client_test)
 
+option(DOUYU_BUILD_SERVICE_TESTS "Register Python StreamGet service tests" ON)
+if(DOUYU_BUILD_SERVICE_TESTS)
+    if(WIN32)
+        set(_douyu_venv_python "${CMAKE_CURRENT_SOURCE_DIR}/.venv/Scripts/python.exe")
+    else()
+        set(_douyu_venv_python "${CMAKE_CURRENT_SOURCE_DIR}/.venv/bin/python")
+    endif()
+    if(EXISTS "${_douyu_venv_python}")
+        set(Python3_EXECUTABLE "${_douyu_venv_python}" CACHE FILEPATH
+            "Python interpreter for the StreamGet service tests" FORCE)
+    endif()
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME streamget_service_python_tests
+            COMMAND ${Python3_EXECUTABLE} -m unittest discover
+                -s ${CMAKE_CURRENT_SOURCE_DIR}/service/tests -v
+        )
+        set_tests_properties(streamget_service_python_tests PROPERTIES
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+            ENVIRONMENT "PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}/.."
+        )
+    else()
+        message(WARNING "Python3 interpreter not found; service tests are disabled")
+    endif()
+endif()
+
 option(DOUYU_BUILD_MEDIA_SOURCE_TEST "Build the MediaSource test" ON)
 if(DOUYU_BUILD_MEDIA_SOURCE_TEST)
     add_executable(media_source_test
