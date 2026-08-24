@@ -8,6 +8,8 @@ class StreamServiceProtocolTest final : public QObject {
 private slots:
     void encodesPingRequest();
     void encodesResolveRequest();
+    void encodesSearchCancelAndShutdownRequests();
+    void decodesControlResponsesAndSearchResults();
     void decodesValidSuccessResponse();
     void decodesOfflineResponseWithoutUrl();
     void decodesFixedErrorWithoutMessage();
@@ -41,6 +43,52 @@ void StreamServiceProtocolTest::encodesResolveRequest()
     QCOMPARE(decoded->operation, ServiceOperation::Resolve);
     QCOMPARE(decoded->roomId, QStringLiteral("63136"));
     QCOMPARE(decoded->quality, StreamQuality::Auto);
+}
+
+void StreamServiceProtocolTest::encodesSearchCancelAndShutdownRequests()
+{
+    ServiceRequest search;
+    search.requestId = 3;
+    search.operation = ServiceOperation::Search;
+    search.query = QStringLiteral("主播");
+    QVERIFY(decodeRequest(encodeRequest(search)).has_value());
+    QCOMPARE(decodeRequest(encodeRequest(search))->query, QStringLiteral("主播"));
+
+    ServiceRequest cancel;
+    cancel.requestId = 4;
+    cancel.operation = ServiceOperation::Cancel;
+    cancel.targetRequestId = 2;
+    QCOMPARE(decodeRequest(encodeRequest(cancel))->targetRequestId, quint64(2));
+
+    ServiceRequest shutdown;
+    shutdown.requestId = 5;
+    shutdown.operation = ServiceOperation::Shutdown;
+    QCOMPARE(decodeRequest(encodeRequest(shutdown))->operation, ServiceOperation::Shutdown);
+}
+
+void StreamServiceProtocolTest::decodesControlResponsesAndSearchResults()
+{
+    const auto pong = decodeResponse(
+        QByteArray(R"({"requestId":1,"ok":true,"pong":true})"));
+    QVERIFY(pong.has_value());
+    QVERIFY(pong->pong);
+
+    const auto cancelled = decodeResponse(
+        QByteArray(R"({"requestId":2,"ok":true,"cancelled":9})"));
+    QVERIFY(cancelled.has_value());
+    QCOMPARE(cancelled->cancelledRequestId, quint64(9));
+
+    const auto shutdown = decodeResponse(
+        QByteArray(R"({"requestId":3,"ok":true,"shutdown":true})"));
+    QVERIFY(shutdown.has_value());
+    QVERIFY(shutdown->shutdown);
+
+    const auto search = decodeResponse(
+        QByteArray(R"({"requestId":4,"ok":true,"results":[{"roomId":"63136","anchorName":"主播","title":"房间","category":"游戏","online":true,"viewerLabel":"1,234","avatarUrl":"https://example.invalid/avatar.jpg"}]})"));
+    QVERIFY(search.has_value());
+    QVERIFY(search->search);
+    QCOMPARE(search->results.size(), 1);
+    QCOMPARE(search->results.front().roomId, QStringLiteral("63136"));
 }
 
 void StreamServiceProtocolTest::decodesValidSuccessResponse()

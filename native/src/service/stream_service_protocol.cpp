@@ -103,6 +103,13 @@ bool isAllowedPlaybackUrl(const QUrl &url)
     return false;
 }
 
+bool isSafeHttpUrl(const QUrl &url)
+{
+    return url.isValid() && (url.scheme() == QStringLiteral("http")
+                             || url.scheme() == QStringLiteral("https"))
+        && !url.host().isEmpty() && url.userName().isEmpty() && url.password().isEmpty();
+}
+
 } // namespace
 
 QByteArray encodeRequest(const ServiceRequest &request)
@@ -190,6 +197,61 @@ std::optional<ServiceResponse> decodeResponse(const QByteArray &line)
         }
         response.errorCode = code;
         response.retryable = error.value(QStringLiteral("retryable")).toBool();
+        return response;
+    }
+
+    if (object.contains(QStringLiteral("pong"))) {
+        if (!object.value(QStringLiteral("pong")).isBool()
+            || !object.value(QStringLiteral("pong")).toBool()) {
+            return std::nullopt;
+        }
+        response.pong = true;
+        return response;
+    }
+
+    if (object.contains(QStringLiteral("shutdown"))) {
+        if (!object.value(QStringLiteral("shutdown")).isBool()
+            || !object.value(QStringLiteral("shutdown")).toBool()) {
+            return std::nullopt;
+        }
+        response.shutdown = true;
+        return response;
+    }
+
+    if (object.contains(QStringLiteral("cancelled"))) {
+        if (!isPositiveRequestId(object.value(QStringLiteral("cancelled")))) {
+            return std::nullopt;
+        }
+        response.cancelledRequestId = static_cast<quint64>(
+            object.value(QStringLiteral("cancelled")).toDouble());
+        return response;
+    }
+
+    if (object.contains(QStringLiteral("results"))) {
+        if (!object.value(QStringLiteral("results")).isArray()) return std::nullopt;
+        response.search = true;
+        const QJsonArray results = object.value(QStringLiteral("results")).toArray();
+        for (const QJsonValue &value : results) {
+            if (!value.isObject()) return std::nullopt;
+            const QJsonObject result = value.toObject();
+            RoomSearchResult item;
+            item.roomId = result.value(QStringLiteral("roomId")).toString();
+            item.anchorName = result.value(QStringLiteral("anchorName")).toString();
+            item.title = result.value(QStringLiteral("title")).toString();
+            item.category = result.value(QStringLiteral("category")).toString();
+            item.viewerLabel = result.value(QStringLiteral("viewerLabel")).toString();
+            if (!isValidRoomId(item.roomId) || item.anchorName.isEmpty() || item.title.isEmpty()
+                || item.category.isEmpty() || item.viewerLabel.isEmpty()
+                || !result.value(QStringLiteral("online")).isBool()) {
+                return std::nullopt;
+            }
+            item.online = result.value(QStringLiteral("online")).toBool();
+            if (result.contains(QStringLiteral("avatarUrl"))) {
+                item.avatarUrl = QUrl(result.value(QStringLiteral("avatarUrl")).toString());
+                if (!isSafeHttpUrl(item.avatarUrl)) return std::nullopt;
+            }
+            response.results.push_back(item);
+        }
         return response;
     }
 

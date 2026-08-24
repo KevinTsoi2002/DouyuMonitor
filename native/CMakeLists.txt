@@ -33,6 +33,7 @@ enable_testing()
 
 add_library(stream_service STATIC
     src/service/stream_service_protocol.cpp
+    src/service/streamget_process_client.cpp
 )
 target_link_libraries(stream_service PUBLIC Qt6::Core)
 target_include_directories(stream_service PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -43,6 +44,23 @@ add_executable(stream_service_protocol_test
 target_link_libraries(stream_service_protocol_test PRIVATE stream_service Qt6::Core Qt6::Test)
 target_include_directories(stream_service_protocol_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 add_test(NAME stream_service_protocol_test COMMAND stream_service_protocol_test)
+
+add_executable(fake_streamget_service
+    tests/fake_streamget_service.cpp
+)
+target_link_libraries(fake_streamget_service PRIVATE stream_service Qt6::Core)
+target_include_directories(fake_streamget_service PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
+add_executable(streamget_process_client_test
+    tests/streamget_process_client_test.cpp
+)
+target_link_libraries(streamget_process_client_test PRIVATE stream_service Qt6::Core Qt6::Test)
+target_include_directories(streamget_process_client_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+add_dependencies(streamget_process_client_test fake_streamget_service)
+target_compile_definitions(streamget_process_client_test PRIVATE
+    FAKE_STREAMGET_SERVICE_PATH="$<TARGET_FILE:fake_streamget_service>"
+)
+add_test(NAME streamget_process_client_test COMMAND streamget_process_client_test)
 
 option(DOUYU_BUILD_MEDIA_SOURCE_TEST "Build the MediaSource test" ON)
 if(DOUYU_BUILD_MEDIA_SOURCE_TEST)

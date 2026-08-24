@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QByteArray>
+#include <QMetaType>
 #include <QUrl>
 #include <QVector>
 
@@ -30,6 +31,16 @@ struct StreamVariant {
     QUrl playbackUrl;
 };
 
+struct RoomSearchResult {
+    QString roomId;
+    QString anchorName;
+    QString title;
+    QString category;
+    bool online = false;
+    QString viewerLabel;
+    QUrl avatarUrl;
+};
+
 struct ServiceRequest {
     quint64 requestId = 0;
     ServiceOperation operation = ServiceOperation::Ping;
@@ -42,6 +53,11 @@ struct ServiceRequest {
 struct ServiceResponse {
     quint64 requestId = 0;
     bool ok = false;
+    bool pong = false;
+    bool shutdown = false;
+    quint64 cancelledRequestId = 0;
+    bool search = false;
+    QVector<RoomSearchResult> results;
     QString roomId;
     bool isLive = false;
     QVector<StreamVariant> variants;
@@ -49,6 +65,8 @@ struct ServiceResponse {
     bool retryable = false;
     QString errorMessage;
 };
+
+Q_DECLARE_METATYPE(ServiceResponse)
 
 QByteArray encodeRequest(const ServiceRequest &request);
 std::optional<ServiceRequest> decodeRequest(const QByteArray &line);
