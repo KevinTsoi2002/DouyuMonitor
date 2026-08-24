@@ -4,6 +4,12 @@
 
 #include "media/media_source.h"
 #include "media/player_surface.h"
+#include "media/remote_playback_controller.h"
+#include "service/streamget_process_client.h"
+
+#ifndef FAKE_STREAMGET_SERVICE_PATH
+#define FAKE_STREAMGET_SERVICE_PATH "fake_streamget_service"
+#endif
 
 class PlayerSurfaceTest final : public QObject {
     Q_OBJECT
@@ -18,6 +24,7 @@ private slots:
     void releasesAndLoadsFreshMedia();
     void rejectsInvalidSourceWithoutChangingIdleState();
     void acceptsValidatedRemoteSourceForLoading();
+    void loadsControllerSourceThroughTypedSurface();
 };
 
 void PlayerSurfaceTest::isOwnedByGuiThread()
@@ -180,6 +187,35 @@ void PlayerSurfaceTest::acceptsValidatedRemoteSourceForLoading()
     QVERIFY(surface.loadSource(*source));
     QCOMPARE(surface.playbackState(), PlayerSurface::PlaybackState::Loading);
     QVERIFY(surface.stop());
+}
+
+void PlayerSurfaceTest::loadsControllerSourceThroughTypedSurface()
+{
+    PlayerSurface surface;
+    surface.resize(320, 240);
+    surface.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&surface));
+    QTRY_VERIFY_WITH_TIMEOUT(surface.isRenderContextReady(), 5000);
+
+    StreamgetProcessClient client(QString::fromLocal8Bit(FAKE_STREAMGET_SERVICE_PATH));
+    RemotePlaybackController controller(&client);
+    bool sourceLoaded = false;
+    bool sourceStopped = false;
+    QObject::connect(&controller, &RemotePlaybackController::sourceReady,
+                     &surface, [&](MediaSource source) {
+                         if (!surface.isRenderContextReady()) return;
+                         sourceLoaded = surface.loadSource(source);
+                         if (sourceLoaded) sourceStopped = surface.stop();
+                     });
+
+    QVERIFY(controller.resolve(QStringLiteral("63136"), StreamQuality::Auto) > 0);
+    QTRY_VERIFY_WITH_TIMEOUT(sourceLoaded, 5000);
+    QVERIFY(sourceStopped);
+    QVERIFY(surface.playbackState() == PlayerSurface::PlaybackState::Ended
+            || surface.playbackState() == PlayerSurface::PlaybackState::Idle);
+    QVERIFY(surface.mediaError().isEmpty());
+
+    client.shutdown();
 }
 
 QTEST_MAIN(PlayerSurfaceTest)

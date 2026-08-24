@@ -133,7 +133,6 @@ option(DOUYU_BUILD_PLAYER_SURFACE_TEST "Build the PlayerSurface test" ON)
 if(DOUYU_BUILD_PLAYER_SURFACE_TEST)
     add_executable(player_surface_test
         tests/player_surface_test.cpp
-        src/media/media_source.cpp
         src/media/player_surface.cpp
     )
 
@@ -142,10 +141,15 @@ if(DOUYU_BUILD_PLAYER_SURFACE_TEST)
             Qt6::Widgets
             Qt6::OpenGLWidgets
             Qt6::Test
+            remote_playback
             mpv::mpv
     )
 
     target_include_directories(player_surface_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    add_dependencies(player_surface_test fake_streamget_service)
+    target_compile_definitions(player_surface_test PRIVATE
+        FAKE_STREAMGET_SERVICE_PATH="$<TARGET_FILE:fake_streamget_service>"
+    )
 
     add_custom_command(TARGET player_surface_test POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
