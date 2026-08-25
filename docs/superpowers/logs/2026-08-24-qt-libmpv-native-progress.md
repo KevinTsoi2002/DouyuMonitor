@@ -295,7 +295,10 @@ test remain intentionally out of scope for this offline verification.
   URLs, tokens, signatures, raw service output, tracebacks, or raw mpv
   diagnostics were used or recorded.
 
-Notion M5 Task 1 log: pending creation and reread in this execution step.
+Notion M5 Task 1 log: https://app.notion.com/p/3c70f4bdec48816484f2cac6ea27c437?pvs=204
+Created and reread after the local log commit; the scope, implementation commit,
+regression fix, `2/2` focused CTest evidence, safety boundary, and next task
+match this local record.
 
 ## Prepared Next Step
 
