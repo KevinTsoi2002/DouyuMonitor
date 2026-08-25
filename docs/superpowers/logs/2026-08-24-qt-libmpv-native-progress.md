@@ -266,3 +266,38 @@ test remain intentionally out of scope for this offline verification.
 - The next gate is execution approval. M5 still excludes search, room metadata,
   persistence, playback retry, live Douyu traffic, credentials, Electron, and
   browser runtimes.
+
+## M5 Task 1 Coordinator Snapshots And Command Results
+
+**Date:** 2026-08-25
+
+- Commit: `cf4cc1e feat: expose room workspace snapshots`.
+- Added UI-safe `RoomSnapshot` and `RoomSnapshots` types plus stable
+  `RoomCommandResult` values. `MultiRoomCoordinator` now exposes ordered
+  snapshots and detailed add, remove, primary, and requested-quality commands;
+  its existing Boolean APIs remain compatibility wrappers.
+- `RoomSession::setRequestedQuality()` retains the user's request without
+  resolving or changing the effective quality. The coordinator reuses the M4
+  policy: one through four rooms use saved requests; at five through nine the
+  primary is `Original` and other rooms are `Standard`; returning to four
+  restores each saved request.
+- Snapshot publication covers successful room, primary, quality, and session
+  state changes. A nine-room teardown regression test exposed stale session
+  access during destruction. The coordinator now disconnects each session before
+  release, preventing a release-triggered state signal from traversing deleted
+  session pointers.
+- Fresh focused CTest passed `2/2` on this worktree:
+  `room_session_test` and `multi_room_coordinator_test` (7.19 seconds).
+- Design and plan comparison: Task 1 matches the approved M5 contracts,
+  quality policy, offline test scope, and compatibility requirement. The
+  teardown regression adds coverage without expanding product scope.
+- Offline limitation: no live Douyu traffic, credentials, cookies, playback
+  URLs, tokens, signatures, raw service output, tracebacks, or raw mpv
+  diagnostics were used or recorded.
+
+Notion M5 Task 1 log: pending creation and reread in this execution step.
+
+## Prepared Next Step
+
+Create and verify the M5 Task 1 Notion page, then implement the isolated
+`RoomManagementDock` through the approved test-first Task 2 steps.
