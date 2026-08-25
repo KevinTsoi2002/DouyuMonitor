@@ -118,6 +118,33 @@ add_custom_command(TARGET room_session_test POST_BUILD
 )
 add_test(NAME room_session_test COMMAND room_session_test)
 
+add_executable(multi_room_coordinator_test
+    tests/multi_room_coordinator_test.cpp
+    src/workspace/multi_room_coordinator.cpp
+    src/workspace/room_session.cpp
+    src/workspace/quality_policy.cpp
+    src/media/player_surface.cpp
+)
+target_link_libraries(multi_room_coordinator_test
+    PRIVATE
+        remote_playback
+        Qt6::Widgets
+        Qt6::OpenGLWidgets
+        Qt6::Test
+        mpv::mpv
+)
+target_include_directories(multi_room_coordinator_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+add_dependencies(multi_room_coordinator_test fake_streamget_service)
+target_compile_definitions(multi_room_coordinator_test PRIVATE
+    FAKE_STREAMGET_SERVICE_PATH="$<TARGET_FILE:fake_streamget_service>"
+)
+add_custom_command(TARGET multi_room_coordinator_test POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${MPV_RUNTIME_DLL}"
+        "$<TARGET_FILE_DIR:multi_room_coordinator_test>/libmpv-2.dll"
+)
+add_test(NAME multi_room_coordinator_test COMMAND multi_room_coordinator_test)
+
 option(DOUYU_BUILD_SERVICE_TESTS "Register Python StreamGet service tests" ON)
 if(DOUYU_BUILD_SERVICE_TESTS)
     if(WIN32)
