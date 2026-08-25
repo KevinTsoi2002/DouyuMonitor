@@ -304,3 +304,45 @@ match this local record.
 
 Create and verify the M5 Task 1 Notion page, then implement the isolated
 `RoomManagementDock` through the approved test-first Task 2 steps.
+
+## M5 Task 2 Native Room Management Dock
+
+**Date:** 2026-08-25
+
+- Implementation commit: `a4e0bb0 feat: add Qt room management dock`.
+- Review-test commit: `3271622 test: cover room management dock command locks`.
+- Added `RoomManagementDock` as a Qt Widgets-only component with numeric room
+  ID validation, a nine-room display limit, fixed-height 44-pixel room rows,
+  snapshot rendering, and four intent signals for add, remove, primary, and
+  requested-quality changes.
+- Rows show room ID, basic state, requested quality, effective quality, and a
+  fixed policy marker when the effective value differs. The dock does not
+  calculate room order, primary state, capacity, or M4 quality policy.
+- Snapshot updates block primary and quality control signals. Each user command
+  locks that row's controls until the synchronous result returns; retained rows
+  re-enable through `setCommandResult()` and removed rows await the snapshot
+  refresh. Feedback maps only stable command results to fixed local text.
+- Test-first evidence: the new target initially failed because
+  `room_management_dock.cpp` was absent. A clean configure required explicit
+  local `QT_ROOT` and `MPV_ROOT` in the new shell; this was an environment
+  propagation issue, not a source failure.
+- Fresh focused CTest passed `3/3`: `room_session_test`,
+  `multi_room_coordinator_test`, and `room_management_dock_test` (7.97
+  seconds). Review follow-up tests cover command locking and restoration,
+  20-digit acceptance and 21-digit rejection, fixed row height, and every
+  fixed result mapping.
+- Design and plan comparison: Task 2 matches the approved Qt-only dock
+  contract, nine-room limit, snapshot-driven data flow, fixed local feedback,
+  no-echo refresh, and offline-only test requirements. No Electron, Chromium,
+  Qt WebEngine, WebView, Node, React, TypeScript, networking, or playback
+  policy calculation was added.
+- Offline limitation: no live Douyu traffic, credentials, cookies, playback
+  URLs, tokens, signatures, raw service output, tracebacks, or raw mpv
+  diagnostics were used or recorded.
+
+Notion M5 Task 2 log: pending creation and reread in this execution step.
+
+## Prepared Next Step
+
+Create and verify the M5 Task 2 Notion page, then bind the dock to
+`MainWindow` and the playback grid through the approved Task 3 tests.
