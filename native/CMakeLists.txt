@@ -233,6 +233,7 @@ if(DOUYU_BUILD_MAIN_WINDOW_TEST)
     add_executable(main_window_test
         tests/main_window_test.cpp
         src/app/main_window.cpp
+        src/app/room_management_dock.cpp
         src/media/media_source.cpp
         src/media/player_surface.cpp
         src/workspace/quality_policy.cpp
@@ -267,6 +268,7 @@ endif()
 add_executable(douyu_monitor_native
     app/main.cpp
     src/app/main_window.cpp
+    src/app/room_management_dock.cpp
     src/media/media_source.cpp
     src/media/player_surface.cpp
     src/workspace/quality_policy.cpp

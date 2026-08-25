@@ -8,7 +8,9 @@
 
 class MultiRoomCoordinator;
 class PlayerSurface;
+class QDockWidget;
 class QGridLayout;
+class RoomManagementDock;
 class StreamgetProcessClient;
 class QToolButton;
 class QWidget;
@@ -31,9 +33,11 @@ public:
     QString layoutId() const;
     QStringList roomIds() const;
     PlayerSurface *surfaceForRoom(const QString &roomId) const noexcept;
+    RoomManagementDock *roomManagementDock() const noexcept;
 
 private:
     void rebuildGrid();
+    void synchronizeWorkspace();
     void updatePauseButtonIcon();
     void synchronizePauseButton(bool paused);
 
@@ -42,6 +46,8 @@ private:
     PlayerSurface *compatibilitySurface_ = nullptr;
     StreamgetProcessClient *streamClient_ = nullptr;
     MultiRoomCoordinator *coordinator_ = nullptr;
+    QDockWidget *roomDockHost_ = nullptr;
+    RoomManagementDock *roomManagementDock_ = nullptr;
     QToolButton *pauseButton_ = nullptr;
     QToolButton *stopButton_ = nullptr;
 };

@@ -1,6 +1,7 @@
 #include "app/main_window.h"
 
 #include <QCoreApplication>
+#include <QDockWidget>
 #include <QDir>
 #include <QGridLayout>
 #include <QSignalBlocker>
@@ -11,6 +12,7 @@
 
 #include "media/media_source.h"
 #include "media/player_surface.h"
+#include "app/room_management_dock.h"
 #include "service/streamget_process_client.h"
 #include "workspace/multi_room_coordinator.h"
 
@@ -37,12 +39,36 @@ MainWindow::MainWindow(const QString &serviceProgram, QWidget *parent)
 
     streamClient_ = new StreamgetProcessClient(serviceProgram, {}, this);
     coordinator_ = new MultiRoomCoordinator(streamClient_, gridHost_, this);
-    connect(coordinator_, &MultiRoomCoordinator::roomAdded,
-            this, &MainWindow::rebuildGrid);
-    connect(coordinator_, &MultiRoomCoordinator::roomRemoved,
-            this, &MainWindow::rebuildGrid);
-    connect(coordinator_, &MultiRoomCoordinator::layoutChanged,
-            this, &MainWindow::rebuildGrid);
+
+    roomDockHost_ = new QDockWidget(QStringLiteral("Room Management"), this);
+    roomDockHost_->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
+    roomManagementDock_ = new RoomManagementDock(roomDockHost_);
+    roomDockHost_->setWidget(roomManagementDock_);
+    addDockWidget(Qt::RightDockWidgetArea, roomDockHost_);
+
+    connect(coordinator_, &MultiRoomCoordinator::roomSnapshotsChanged,
+            this, [this](const RoomSnapshots &) { synchronizeWorkspace(); });
+
+    const auto showResult = [this](RoomCommandResult result) {
+        if (roomManagementDock_ != nullptr) roomManagementDock_->setCommandResult(result);
+    };
+    connect(roomManagementDock_, &RoomManagementDock::addRequested, this,
+            [this, showResult](const QString &roomId) {
+                showResult(coordinator_->addRoomDetailed(roomId));
+            });
+    connect(roomManagementDock_, &RoomManagementDock::removeRequested, this,
+            [this, showResult](const QString &roomId) {
+                showResult(coordinator_->removeRoomDetailed(roomId));
+            });
+    connect(roomManagementDock_, &RoomManagementDock::primaryRequested, this,
+            [this, showResult](const QString &roomId) {
+                showResult(coordinator_->setPrimaryRoomDetailed(roomId));
+            });
+    connect(roomManagementDock_, &RoomManagementDock::requestedQualityChanged, this,
+            [this, showResult](const QString &roomId, StreamQuality quality) {
+                showResult(coordinator_->setRequestedQuality(roomId, quality));
+            });
+    synchronizeWorkspace();
 
     resize(1280, 720);
 
@@ -131,25 +157,19 @@ QToolButton *MainWindow::pauseButton() const noexcept
 bool MainWindow::addRoom(const QString &roomId, StreamQuality userQuality)
 {
     if (coordinator_ == nullptr) return false;
-    const bool added = coordinator_->addRoom(roomId, userQuality);
-    if (added) rebuildGrid();
-    return added;
+    return coordinator_->addRoom(roomId, userQuality);
 }
 
 bool MainWindow::removeRoom(const QString &roomId)
 {
     if (coordinator_ == nullptr) return false;
-    const bool removed = coordinator_->removeRoom(roomId);
-    if (removed) rebuildGrid();
-    return removed;
+    return coordinator_->removeRoom(roomId);
 }
 
 bool MainWindow::setPrimaryRoom(const QString &roomId)
 {
     if (coordinator_ == nullptr) return false;
-    const bool changed = coordinator_->setPrimaryRoom(roomId);
-    if (changed) rebuildGrid();
-    return changed;
+    return coordinator_->setPrimaryRoom(roomId);
 }
 
 int MainWindow::roomCount() const noexcept
@@ -170,6 +190,19 @@ QStringList MainWindow::roomIds() const
 PlayerSurface *MainWindow::surfaceForRoom(const QString &roomId) const noexcept
 {
     return coordinator_ != nullptr ? coordinator_->surfaceForRoom(roomId) : nullptr;
+}
+
+RoomManagementDock *MainWindow::roomManagementDock() const noexcept
+{
+    return roomManagementDock_;
+}
+
+void MainWindow::synchronizeWorkspace()
+{
+    rebuildGrid();
+    if (coordinator_ != nullptr && roomManagementDock_ != nullptr) {
+        roomManagementDock_->setRooms(coordinator_->roomSnapshots());
+    }
 }
 
 void MainWindow::rebuildGrid()

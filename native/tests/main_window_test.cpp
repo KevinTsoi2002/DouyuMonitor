@@ -1,9 +1,14 @@
+#include <QComboBox>
 #include <QFile>
+#include <QLabel>
+#include <QLineEdit>
+#include <QPushButton>
 #include <QToolButton>
 #include <QTemporaryDir>
 #include <QtTest/QtTest>
 
 #include "app/main_window.h"
+#include "app/room_management_dock.h"
 #include "media/player_surface.h"
 
 #ifndef FAKE_STREAMGET_SERVICE_PATH
@@ -31,6 +36,8 @@ private slots:
     void synchronizesPauseButtonWhenLoadingAndStopping();
     void supportsNineRoomGridAndLimit();
     void removesRoomAndPreservesRemainingSurfaces();
+    void managesRoomsThroughDock();
+    void reflectsQualityPolicyInDockAfterRoomCountChanges();
 };
 
 void MainWindowTest::createsSinglePlayerSurface()
@@ -190,6 +197,67 @@ void MainWindowTest::removesRoomAndPreservesRemainingSurfaces()
     QCOMPARE(window.roomIds(), QStringList({QStringLiteral("63136"), QStringLiteral("63138")}));
     QCOMPARE(window.surfaceForRoom(QStringLiteral("63138")), remainingSurface);
     QVERIFY(window.surfaceForRoom(QStringLiteral("63137")) == nullptr);
+}
+
+void MainWindowTest::managesRoomsThroughDock()
+{
+    MainWindow window(fakeServicePath());
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+
+    auto *dock = window.roomManagementDock();
+    QVERIFY(dock != nullptr);
+
+    dock->roomIdInput()->setText(QStringLiteral("63136"));
+    dock->addButton()->click();
+    QTRY_VERIFY(dock->rowForRoom(QStringLiteral("63136")) != nullptr);
+
+    dock->roomIdInput()->setText(QStringLiteral("63137"));
+    dock->addButton()->click();
+    QTRY_VERIFY(dock->rowForRoom(QStringLiteral("63137")) != nullptr);
+
+    auto *secondSurface = window.surfaceForRoom(QStringLiteral("63137"));
+    QVERIFY(secondSurface != nullptr);
+    dock->rowForRoom(QStringLiteral("63137"))
+        ->findChild<QToolButton *>(QStringLiteral("primaryButton"))
+        ->click();
+    QCOMPARE(window.playerSurface(), secondSurface);
+
+    dock->rowForRoom(QStringLiteral("63136"))
+        ->findChild<QToolButton *>(QStringLiteral("removeButton"))
+        ->click();
+    QTRY_VERIFY(dock->rowForRoom(QStringLiteral("63136")) == nullptr);
+    QVERIFY(window.surfaceForRoom(QStringLiteral("63136")) == nullptr);
+    QCOMPARE(window.surfaceForRoom(QStringLiteral("63137")), secondSurface);
+}
+
+void MainWindowTest::reflectsQualityPolicyInDockAfterRoomCountChanges()
+{
+    MainWindow window(fakeServicePath());
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+
+    for (int index = 0; index < 5; ++index) {
+        QVERIFY(window.addRoom(QString::number(63136 + index)));
+    }
+
+    auto *dock = window.roomManagementDock();
+    QVERIFY(dock != nullptr);
+    QWidget *row = dock->rowForRoom(QStringLiteral("63137"));
+    QVERIFY(row != nullptr);
+    auto *qualityCombo = row->findChild<QComboBox *>(QStringLiteral("qualityCombo"));
+    QVERIFY(qualityCombo != nullptr);
+    qualityCombo->setCurrentIndex(qualityCombo->findData(static_cast<int>(StreamQuality::Super)));
+
+    QCOMPARE(row->findChild<QLabel *>(QStringLiteral("policyLabel"))->text(),
+             QStringLiteral("Policy active"));
+    QCOMPARE(row->findChild<QLabel *>(QStringLiteral("effectiveQualityLabel"))->text(),
+             QStringLiteral("Effective: Standard"));
+
+    QVERIFY(window.removeRoom(QStringLiteral("63140")));
+    QCOMPARE(row->findChild<QLabel *>(QStringLiteral("policyLabel"))->text(), QString());
+    QCOMPARE(row->findChild<QLabel *>(QStringLiteral("effectiveQualityLabel"))->text(),
+             QStringLiteral("Effective: Super"));
 }
 
 QTEST_MAIN(MainWindowTest)
