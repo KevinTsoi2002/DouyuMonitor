@@ -581,10 +581,10 @@ and the Splitter-based MainWindow layout.
 
 ### Notion synchronization
 
-- A new-page documentation fetch was attempted after the review-fix commit, but
-  the Notion MCP transport returned `Auth required` before page creation. No
-  Notion URL or successful sync is claimed; the local record remains the source
-  of truth until reauthentication.
+- A new-page documentation fetch and page-creation attempt were made after the
+  review-fix commit, but the Notion MCP transport returned `Auth required`
+  before page creation. No Notion URL or successful sync is claimed; the local
+  record remains the source of truth until reauthentication.
 
 ## Prepared Next Step
 
