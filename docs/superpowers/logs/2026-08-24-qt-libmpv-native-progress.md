@@ -238,3 +238,31 @@ verification counts, and offline-test limitation match this local evidence.
 M4 implementation and acceptance checks are complete. The Qt-only branch is
 ready for review or integration; live Douyu traffic and a real nine-room smoke
 test remain intentionally out of scope for this offline verification.
+
+## M5 Design And Plan Evidence
+
+**Date:** 2026-08-25
+
+- The approved M5 scope adds a Qt-native right-side room-management dock for
+  numeric room ID entry, removal, primary-room selection, requested quality,
+  effective quality, and basic fixed lifecycle status.
+- M4 remains the source of the maximum nine-room limit and the quality policy:
+  one through four rooms use the user's request; five through nine use
+  `Original` for the primary room and `Standard` for the others. Returning to
+  four rooms restores each saved request.
+- The confirmed design is
+  `docs/superpowers/specs/2026-08-25-qt-only-m5-room-management-design.md`,
+  committed as `3fec208`.
+- The executable M5 plan is
+  `docs/superpowers/plans/2026-08-25-qt-only-m5-room-management.md`, committed
+  as `e2cf85a`.
+- The plan maps the design to three implementation slices: coordinator snapshots
+  and fixed command results, the isolated Qt management dock, and MainWindow
+  integration. It requires failing tests before each implementation slice,
+  then full native/Python verification and a sensitive-output scan.
+- Design/plan comparison: all confirmed UI, data-flow, quality-policy,
+  validation, safety, testing, and Notion logging requirements have a concrete
+  plan task. No production source file has changed during this planning phase.
+- The next gate is execution approval. M5 still excludes search, room metadata,
+  persistence, playback retry, live Douyu traffic, credentials, Electron, and
+  browser runtimes.
