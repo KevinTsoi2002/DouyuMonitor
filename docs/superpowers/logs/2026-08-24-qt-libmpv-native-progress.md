@@ -387,3 +387,59 @@ boundary, and next task match this local record.
 Create and reread the M5 Task 3 Notion page, then start Task 4 acceptance:
 MSVC configuration and build, full native and Python tests, sensitive-output
 scan, process cleanup, and the final design/plan comparison.
+
+## M5 Qt-only Room Management Final Acceptance
+
+**Date:** 2026-08-25
+
+- Design commit: `3fec208 docs: define Qt-only M5 room management`.
+- Plan commit: `e2cf85a docs: plan Qt-only M5 room management`.
+- Implementation commits: `cf4cc1e feat: expose room workspace snapshots`,
+  `a4e0bb0 feat: add Qt room management dock`, and
+  `190f377 feat: manage rooms from the Qt main window`.
+- Follow-up commits: `3271622 test: cover room management dock command locks`
+  and `36cc82c fix: restore dock state after rejected room commands`.
+- Fresh MSVC x64 preset configuration and Debug build completed with exit code
+  `0` using the local Qt 6.8.3 and libmpv SDK paths.
+- Fresh full CTest passed `14/14`. The direct Python service suite passed
+  `19/19` with the worktree root supplied as `PYTHONPATH`, matching the CTest
+  target environment.
+- A first acceptance attempt observed `native_self_test_media` failing while
+  its child application was not freshly rebuilt. Rebuilding the declared
+  `native_self_test_test` dependency restored the original path; the media
+  self-test then passed three consecutive runs and the final full CTest passed.
+- Captured successful configure, build, CTest, and Python output was scanned
+  for `playbackUrl`, `wsAuth`, `Cookie`, `token`, `signature`, `Traceback`, and
+  raw mpv debug/error patterns. The scan found no matches. `git diff --check`
+  found no whitespace errors, and no managed service, test, or native-app
+  process remained.
+
+### Final design and plan comparison
+
+1. The right-side Qt dock accepts numeric IDs, rejects invalid and duplicate
+   values, and disables adding at nine rooms; dock and MainWindow tests cover
+   these cases.
+2. Every row routes remove, primary, and requested-quality actions through the
+   coordinator; the MainWindow integration test covers add, primary, removal,
+   and preserved remaining surfaces.
+3. `MultiRoomCoordinator` alone owns order, primary state, command validation,
+   effective quality, and ordered snapshots; the dock only renders snapshots
+   and emits intent.
+4. At five through nine rooms, the dock displays `Original` for the primary and
+   `Standard` for non-primary effective quality without overwriting requests;
+   coordinator and MainWindow tests cover that policy.
+5. Removing the fifth room restores saved requested quality at four rooms; the
+   coordinator and MainWindow tests assert the restored effective value.
+6. The implementation remains Qt + libmpv only. Tests use fake/offline inputs
+   and record no live Douyu request, credential, playback URL, cookie, token,
+   signature, raw service output, traceback, or raw mpv diagnostic.
+
+M5 is accepted for the Qt-only branch. The only non-M5 worktree differences
+remain intentionally unstaged: `.gitignore`, `PlayerSurface`, and legacy
+bootstrap/dependency files listed by `git status`.
+
+Notion M5 final acceptance: https://app.notion.com/p/3c70f4bdec4881f49bffc9cb108af85d?pvs=204
+Created and reread after the local acceptance record. The recorded commits,
+`14/14` CTest and `19/19` Python totals, sensitive-output scan, cleanup result,
+design/plan comparison, offline boundary, and unstaged-worktree boundary match
+this local evidence.
