@@ -43,6 +43,13 @@ StreamQuality RoomSession::userQuality() const noexcept
     return userQuality_;
 }
 
+bool RoomSession::setRequestedQuality(StreamQuality quality)
+{
+    if (userQuality_ == quality) return false;
+    userQuality_ = quality;
+    return true;
+}
+
 StreamQuality RoomSession::effectiveQuality() const noexcept
 {
     return effectiveQuality_;

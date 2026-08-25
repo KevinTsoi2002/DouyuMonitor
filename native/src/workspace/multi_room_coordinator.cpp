@@ -19,6 +19,7 @@ MultiRoomCoordinator::MultiRoomCoordinator(StreamgetProcessClient *client,
     , surfaceParent_(surfaceParent)
 {
     qRegisterMetaType<StreamQuality>();
+    qRegisterMetaType<RoomSnapshots>("RoomSnapshots");
 }
 
 MultiRoomCoordinator::~MultiRoomCoordinator()
@@ -26,6 +27,7 @@ MultiRoomCoordinator::~MultiRoomCoordinator()
     const auto sessions = sessions_.values();
     for (RoomSession *session : sessions) {
         if (session != nullptr) {
+            QObject::disconnect(session, nullptr, this, nullptr);
             session->release();
             delete session;
         }
@@ -36,12 +38,18 @@ MultiRoomCoordinator::~MultiRoomCoordinator()
 
 bool MultiRoomCoordinator::addRoom(const QString &roomId, StreamQuality userQuality)
 {
-    if (!isValidRoomId(roomId) || sessions_.contains(roomId)
-        || order_.size() >= kMaxRooms || client_ == nullptr || surfaceParent_ == nullptr) {
-        return false;
-    }
+    return addRoomDetailed(roomId, userQuality) == RoomCommandResult::Accepted;
+}
 
-    auto *session = new RoomSession(client_, roomId, userQuality, surfaceParent_, this);
+RoomCommandResult MultiRoomCoordinator::addRoomDetailed(const QString &roomId,
+                                                         StreamQuality requestedQuality)
+{
+    if (!isValidRoomId(roomId)) return RoomCommandResult::InvalidRoomId;
+    if (sessions_.contains(roomId)) return RoomCommandResult::DuplicateRoomId;
+    if (order_.size() >= kMaxRooms) return RoomCommandResult::RoomLimitReached;
+    if (client_ == nullptr || surfaceParent_ == nullptr) return RoomCommandResult::Unavailable;
+
+    auto *session = new RoomSession(client_, roomId, requestedQuality, surfaceParent_, this);
     sessions_.insert(roomId, session);
     order_.append(roomId);
     connectSession(session);
@@ -54,15 +62,22 @@ bool MultiRoomCoordinator::addRoom(const QString &roomId, StreamQuality userQual
 
     emit roomAdded(roomId);
     if (previousLayout != layoutId_) emit layoutChanged(layoutId_);
-    return true;
+    publishSnapshots();
+    return RoomCommandResult::Accepted;
 }
 
 bool MultiRoomCoordinator::removeRoom(const QString &roomId)
 {
+    return removeRoomDetailed(roomId) == RoomCommandResult::Accepted;
+}
+
+RoomCommandResult MultiRoomCoordinator::removeRoomDetailed(const QString &roomId)
+{
     auto it = sessions_.find(roomId);
-    if (it == sessions_.end()) return false;
+    if (it == sessions_.end()) return RoomCommandResult::RoomNotFound;
 
     RoomSession *session = it.value();
+    QObject::disconnect(session, nullptr, this, nullptr);
     if (session != nullptr) session->release();
     sessions_.erase(it);
     order_.removeAll(roomId);
@@ -78,15 +93,34 @@ bool MultiRoomCoordinator::removeRoom(const QString &roomId)
 
     emit roomRemoved(roomId);
     if (previousLayout != layoutId_) emit layoutChanged(layoutId_);
-    return true;
+    publishSnapshots();
+    return RoomCommandResult::Accepted;
 }
 
 bool MultiRoomCoordinator::setPrimaryRoom(const QString &roomId)
 {
-    if (!sessions_.contains(roomId) || primaryRoomId_ == roomId) return false;
+    return setPrimaryRoomDetailed(roomId) == RoomCommandResult::Accepted;
+}
+
+RoomCommandResult MultiRoomCoordinator::setPrimaryRoomDetailed(const QString &roomId)
+{
+    if (!sessions_.contains(roomId)) return RoomCommandResult::RoomNotFound;
+    if (primaryRoomId_ == roomId) return RoomCommandResult::AlreadyPrimary;
     primaryRoomId_ = roomId;
     recomputeQuality();
-    return true;
+    publishSnapshots();
+    return RoomCommandResult::Accepted;
+}
+
+RoomCommandResult MultiRoomCoordinator::setRequestedQuality(const QString &roomId,
+                                                             StreamQuality requestedQuality)
+{
+    RoomSession *session = sessionForRoom(roomId);
+    if (session == nullptr) return RoomCommandResult::RoomNotFound;
+    if (!session->setRequestedQuality(requestedQuality)) return RoomCommandResult::Unchanged;
+    recomputeQuality();
+    publishSnapshots();
+    return RoomCommandResult::Accepted;
 }
 
 int MultiRoomCoordinator::roomCount() const noexcept
@@ -107,6 +141,22 @@ QStringList MultiRoomCoordinator::roomIds() const
 QString MultiRoomCoordinator::layoutId() const
 {
     return layoutId_;
+}
+
+RoomSnapshots MultiRoomCoordinator::roomSnapshots() const
+{
+    RoomSnapshots snapshots;
+    snapshots.reserve(order_.size());
+    for (const QString &roomId : order_) {
+        const RoomSession *session = sessions_.value(roomId, nullptr);
+        if (session == nullptr) continue;
+        snapshots.push_back({roomId,
+                             roomId == primaryRoomId_,
+                             session->state(),
+                             session->userQuality(),
+                             session->effectiveQuality()});
+    }
+    return snapshots;
 }
 
 StreamQuality MultiRoomCoordinator::userQuality(const QString &roomId) const noexcept
@@ -146,12 +196,18 @@ void MultiRoomCoordinator::recomputeQuality()
     }
 }
 
+void MultiRoomCoordinator::publishSnapshots()
+{
+    emit roomSnapshotsChanged(roomSnapshots());
+}
+
 void MultiRoomCoordinator::connectSession(RoomSession *session)
 {
     if (session == nullptr) return;
     connect(session, &RoomSession::stateChanged, this,
             [this, session](RoomSession::State) {
                 emit roomStateChanged(session->roomId());
+                publishSnapshots();
             });
     connect(session, &RoomSession::failed, this,
             [this, session](const QString &errorCode) {

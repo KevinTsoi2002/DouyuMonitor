@@ -23,6 +23,7 @@ class RoomSessionTest final : public QObject {
 
 private slots:
     void startsResolvingWithUserAndEffectiveQuality();
+    void updatesRequestedQualityWithoutChangingEffectiveQuality();
     void acceptsSourceAndReportsReady();
     void cancelSuppressesLateSource();
     void removesSessionStateWithoutLeakingSurface();
@@ -41,6 +42,19 @@ void RoomSessionTest::startsResolvingWithUserAndEffectiveQuality()
     QCOMPARE(session.effectiveQuality(), StreamQuality::Standard);
     QVERIFY(session.resolve() > 0);
     QCOMPARE(session.state(), RoomSession::State::Resolving);
+    client.shutdown();
+}
+
+void RoomSessionTest::updatesRequestedQualityWithoutChangingEffectiveQuality()
+{
+    StreamgetProcessClient client(fakeServicePath());
+    QWidget host;
+    RoomSession session(&client, QStringLiteral("63136"), StreamQuality::High, &host);
+
+    QVERIFY(session.setRequestedQuality(StreamQuality::Super));
+    QCOMPARE(session.userQuality(), StreamQuality::Super);
+    QCOMPARE(session.effectiveQuality(), StreamQuality::High);
+    QVERIFY(!session.setRequestedQuality(StreamQuality::Super));
     client.shutdown();
 }
 

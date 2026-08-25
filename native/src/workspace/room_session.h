@@ -29,6 +29,7 @@ public:
 
     QString roomId() const;
     StreamQuality userQuality() const noexcept;
+    bool setRequestedQuality(StreamQuality quality);
     StreamQuality effectiveQuality() const noexcept;
     bool setEffectiveQuality(StreamQuality quality);
     State state() const noexcept;

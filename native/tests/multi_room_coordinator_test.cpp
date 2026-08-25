@@ -4,6 +4,7 @@
 
 #include "service/streamget_process_client.h"
 #include "workspace/multi_room_coordinator.h"
+#include "workspace/room_workspace_types.h"
 
 #ifndef FAKE_STREAMGET_SERVICE_PATH
 #define FAKE_STREAMGET_SERVICE_PATH "fake_streamget_service"
@@ -35,6 +36,10 @@ private slots:
     void droppingToFourRoomsRestoresUserQuality();
     void removesRoomAndReflowsOrder();
     void oneRoomFailureDoesNotBlockOtherRooms();
+    void returnsSpecificResultsForManagementCommands();
+    void publishesOrderedSnapshotsWithPolicyOverrides();
+    void restoresChangedRequestedQualityAfterDroppingToFourRooms();
+    void releasesSessionsWithoutDanglingSnapshotAccess();
 };
 
 void MultiRoomCoordinatorTest::acceptsNineRoomsAndRejectsTheTenth()
@@ -163,6 +168,101 @@ void MultiRoomCoordinatorTest::oneRoomFailureDoesNotBlockOtherRooms()
     QCOMPARE(coordinator.roomCount(), 2);
     QVERIFY(coordinator.surfaceForRoom(QStringLiteral("63137")) != nullptr);
     client.shutdown();
+}
+
+void MultiRoomCoordinatorTest::returnsSpecificResultsForManagementCommands()
+{
+    StreamgetProcessClient client(fakeServicePath());
+    QWidget host;
+    MultiRoomCoordinator coordinator(&client, &host);
+    MultiRoomCoordinator unavailable(nullptr, &host);
+
+    QCOMPARE(unavailable.addRoomDetailed(QStringLiteral("63136")),
+             RoomCommandResult::Unavailable);
+    QCOMPARE(coordinator.addRoomDetailed(QStringLiteral("x")),
+             RoomCommandResult::InvalidRoomId);
+    QCOMPARE(coordinator.addRoomDetailed(QStringLiteral("63136")),
+             RoomCommandResult::Accepted);
+    QCOMPARE(coordinator.addRoomDetailed(QStringLiteral("63136")),
+             RoomCommandResult::DuplicateRoomId);
+    QCOMPARE(coordinator.removeRoomDetailed(QStringLiteral("63137")),
+             RoomCommandResult::RoomNotFound);
+    QCOMPARE(coordinator.setPrimaryRoomDetailed(QStringLiteral("63137")),
+             RoomCommandResult::RoomNotFound);
+    QCOMPARE(coordinator.setPrimaryRoomDetailed(QStringLiteral("63136")),
+             RoomCommandResult::AlreadyPrimary);
+    QCOMPARE(coordinator.setRequestedQuality(QStringLiteral("63137"), StreamQuality::High),
+             RoomCommandResult::RoomNotFound);
+    QCOMPARE(coordinator.setRequestedQuality(QStringLiteral("63136"), StreamQuality::Auto),
+             RoomCommandResult::Unchanged);
+
+    for (int index = 1; index < MultiRoomCoordinator::kMaxRooms; ++index) {
+        QCOMPARE(coordinator.addRoomDetailed(roomId(index)), RoomCommandResult::Accepted);
+    }
+    QCOMPARE(coordinator.addRoomDetailed(QStringLiteral("999999")),
+             RoomCommandResult::RoomLimitReached);
+    client.shutdown();
+}
+
+void MultiRoomCoordinatorTest::publishesOrderedSnapshotsWithPolicyOverrides()
+{
+    StreamgetProcessClient client(fakeServicePath());
+    QWidget host;
+    MultiRoomCoordinator coordinator(&client, &host);
+    QSignalSpy snapshotChanges(&coordinator, &MultiRoomCoordinator::roomSnapshotsChanged);
+
+    for (int index = 0; index < 5; ++index) {
+        QCOMPARE(coordinator.addRoomDetailed(roomId(index), StreamQuality::High),
+                 RoomCommandResult::Accepted);
+    }
+
+    QVERIFY(!snapshotChanges.isEmpty());
+    const RoomSnapshots snapshots = snapshotChanges.last().at(0).value<RoomSnapshots>();
+    QCOMPARE(snapshots.size(), 5);
+    QCOMPARE(snapshots.at(0).roomId, roomId(0));
+    QVERIFY(snapshots.at(0).isPrimary);
+    QCOMPARE(snapshots.at(0).requestedQuality, StreamQuality::High);
+    QCOMPARE(snapshots.at(0).effectiveQuality, StreamQuality::Original);
+    QCOMPARE(snapshots.at(1).roomId, roomId(1));
+    QVERIFY(!snapshots.at(1).isPrimary);
+    QCOMPARE(snapshots.at(1).requestedQuality, StreamQuality::High);
+    QCOMPARE(snapshots.at(1).effectiveQuality, StreamQuality::Standard);
+    client.shutdown();
+}
+
+void MultiRoomCoordinatorTest::restoresChangedRequestedQualityAfterDroppingToFourRooms()
+{
+    StreamgetProcessClient client(fakeServicePath());
+    QWidget host;
+    MultiRoomCoordinator coordinator(&client, &host);
+
+    for (int index = 0; index < 5; ++index) {
+        QCOMPARE(coordinator.addRoomDetailed(roomId(index), StreamQuality::High),
+                 RoomCommandResult::Accepted);
+    }
+    QCOMPARE(coordinator.setRequestedQuality(roomId(1), StreamQuality::Super),
+             RoomCommandResult::Accepted);
+    QCOMPARE(coordinator.roomSnapshots().at(1).requestedQuality, StreamQuality::Super);
+    QCOMPARE(coordinator.roomSnapshots().at(1).effectiveQuality, StreamQuality::Standard);
+
+    QCOMPARE(coordinator.removeRoomDetailed(roomId(4)), RoomCommandResult::Accepted);
+    QCOMPARE(coordinator.roomSnapshots().size(), 4);
+    QCOMPARE(coordinator.roomSnapshots().at(1).requestedQuality, StreamQuality::Super);
+    QCOMPARE(coordinator.roomSnapshots().at(1).effectiveQuality, StreamQuality::Super);
+    client.shutdown();
+}
+
+void MultiRoomCoordinatorTest::releasesSessionsWithoutDanglingSnapshotAccess()
+{
+    StreamgetProcessClient client(fakeServicePath());
+    QWidget host;
+    auto *coordinator = new MultiRoomCoordinator(&client, &host);
+
+    for (int index = 0; index < MultiRoomCoordinator::kMaxRooms; ++index) {
+        QCOMPARE(coordinator->addRoomDetailed(roomId(index)), RoomCommandResult::Accepted);
+    }
+    client.shutdown();
+    delete coordinator;
 }
 
 QTEST_MAIN(MultiRoomCoordinatorTest)
