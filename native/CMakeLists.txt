@@ -85,6 +85,14 @@ target_compile_definitions(remote_playback_controller_test PRIVATE
 )
 add_test(NAME remote_playback_controller_test COMMAND remote_playback_controller_test)
 
+add_executable(quality_policy_test
+    tests/quality_policy_test.cpp
+    src/workspace/quality_policy.cpp
+)
+target_link_libraries(quality_policy_test PRIVATE Qt6::Core Qt6::Test)
+target_include_directories(quality_policy_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+add_test(NAME quality_policy_test COMMAND quality_policy_test)
+
 option(DOUYU_BUILD_SERVICE_TESTS "Register Python StreamGet service tests" ON)
 if(DOUYU_BUILD_SERVICE_TESTS)
     if(WIN32)
