@@ -10,6 +10,20 @@
 
 ---
 
+## Build Environment
+
+Before running any CMake command in this plan, set the SDK roots in the same PowerShell session:
+
+~~~powershell
+$env:QT_ROOT = 'D:\Qt\6.8.3\msvc2022_64'
+$env:MPV_ROOT = (Resolve-Path 'native\sdk\mpv').Path
+cmake -S native --preset windows-x64
+~~~
+
+The preset file is native/CMakePresets.json; its configured build tree is
+native/out/build/windows-x64. Every build and CTest command below relies on this configured
+tree. Do not use the unavailable root-level msvc-x64-debug preset.
+
 ## Scope and File Map
 
 Create:
@@ -195,7 +209,7 @@ RoomRefreshTiming argument whose production default is the contract above.
 - Create: native/tests/native_workspace_store_test.cpp
 - Modify: native/CMakeLists.txt
 
-- [ ] **Step 1: Write failing persistence tests.**
+- [x] **Step 1: Write failing persistence tests.**
 
 ~~~cpp
 void NativeWorkspaceStoreTest::roundTripsSafeWorkspaceState()
@@ -219,13 +233,13 @@ void NativeWorkspaceStoreTest::rejectsMalformedAndSensitiveValues()
 }
 ~~~
 
-- [ ] **Step 2: Run the focused test and confirm it fails because the store is absent.**
+- [x] **Step 2: Run the focused test and confirm it fails because the store is absent.**
 
-Run: cmake --build --preset msvc-x64-debug --target native_workspace_store_test; ctest --test-dir out/build/msvc-x64-debug -R native_workspace_store_test --output-on-failure
+Run: cmake --build native/out/build/windows-x64 --target native_workspace_store_test; ctest --test-dir native/out/build/windows-x64 -R native_workspace_store_test --output-on-failure
 
 Expected: build failure that names native_workspace_store_test or missing NativeWorkspaceStore.
 
-- [ ] **Step 3: Implement value validation and storage.**
+- [x] **Step 3: Implement value validation and storage.**
 
 Use QJsonDocument and QJsonObject. Write only accepted room metadata, quality, favorite flag, timestamp, groups, active order, primary ID, and audio ID. Keep RoomMetadata::avatarUrl only when the existing safe HTTP rule accepts it. Normalize duplicate room IDs by keeping the first and drop invalid references from groups and active order.
 
@@ -245,7 +259,7 @@ NativeWorkspaceSnapshot NativeWorkspaceStore::load() const
 }
 ~~~
 
-- [ ] **Step 4: Register the target and run persistence tests.**
+- [x] **Step 4: Register the target and run persistence tests.**
 
 Add native_workspace_store_test to native/CMakeLists.txt, link Qt6::Core and Qt6::Test, then run the command from Step 2.
 
@@ -298,7 +312,7 @@ void MultiRoomCoordinatorTest::appliesSingleAudioFocusAndPublishesIt()
 
 - [ ] **Step 2: Run focused tests and confirm the missing APIs fail.**
 
-Run: cmake --build --preset msvc-x64-debug --target room_session_test multi_room_coordinator_test player_surface_test; ctest --test-dir out/build/msvc-x64-debug -R "room_session_test|multi_room_coordinator_test|player_surface_test" --output-on-failure
+Run: cmake --build native/out/build/windows-x64 --target room_session_test multi_room_coordinator_test player_surface_test; ctest --test-dir native/out/build/windows-x64 -R "room_session_test|multi_room_coordinator_test|player_surface_test" --output-on-failure
 
 Expected: compile failures for liveStatus, playbackHealth, setAudioFocus, or setMuted.
 
@@ -330,7 +344,7 @@ Extend RoomSnapshot rather than allowing widgets to read sessions directly. Pres
 
 - [ ] **Step 4: Run focused tests and the M4 regression suite.**
 
-Run: ctest --test-dir out/build/msvc-x64-debug -R "room_session_test|multi_room_coordinator_test|player_surface_test|quality_policy_test" --output-on-failure
+Run: ctest --test-dir native/out/build/windows-x64 -R "room_session_test|multi_room_coordinator_test|player_surface_test|quality_policy_test" --output-on-failure
 
 Expected: all selected tests pass.
 
@@ -394,7 +408,7 @@ void RoomSidebarTest::emitsOneIntentForEachRoomAction()
 
 - [ ] **Step 2: Run the widget test and confirm it fails.**
 
-Run: cmake --build --preset msvc-x64-debug --target room_sidebar_test; ctest --test-dir out/build/msvc-x64-debug -R room_sidebar_test --output-on-failure
+Run: cmake --build native/out/build/windows-x64 --target room_sidebar_test; ctest --test-dir native/out/build/windows-x64 -R room_sidebar_test --output-on-failure
 
 Expected: build failure because RoomSidebar does not exist.
 
@@ -436,7 +450,7 @@ setCentralWidget(splitter_);
 
 - [ ] **Step 5: Run sidebar and MainWindow UI tests.**
 
-Run: ctest --test-dir out/build/msvc-x64-debug -R "room_sidebar_test|main_window_test|room_management_dock_test" --output-on-failure
+Run: ctest --test-dir native/out/build/windows-x64 -R "room_sidebar_test|main_window_test|room_management_dock_test" --output-on-failure
 
 Expected: all tests pass. main_window_test asserts that a RoomSidebar exists and no dock widget titled Room Management exists.
 
@@ -484,7 +498,7 @@ void MultiRoomCoordinatorTest::switchingGroupReplacesActiveSetAndKeepsLibrary()
 
 - [ ] **Step 2: Run restoration tests and confirm the APIs are absent.**
 
-Run: cmake --build --preset msvc-x64-debug --target native_workspace_store_test multi_room_coordinator_test main_window_test; ctest --test-dir out/build/msvc-x64-debug -R "native_workspace_store_test|multi_room_coordinator_test|main_window_test" --output-on-failure
+Run: cmake --build native/out/build/windows-x64 --target native_workspace_store_test multi_room_coordinator_test main_window_test; ctest --test-dir native/out/build/windows-x64 -R "native_workspace_store_test|multi_room_coordinator_test|main_window_test" --output-on-failure
 
 Expected: compile failure for restoreWorkspace, switchGroup, primaryRoomId, or audioRoomId accessors.
 
@@ -496,7 +510,7 @@ History records one timestamp per room, moves the accessed room to the front, an
 
 - [ ] **Step 4: Run restore, sidebar, and coordinator tests.**
 
-Run: ctest --test-dir out/build/msvc-x64-debug -R "native_workspace_store_test|room_sidebar_test|multi_room_coordinator_test|main_window_test" --output-on-failure
+Run: ctest --test-dir native/out/build/windows-x64 -R "native_workspace_store_test|room_sidebar_test|multi_room_coordinator_test|main_window_test" --output-on-failure
 
 Expected: all selected tests pass, including restart auto-resolution through the fake child.
 
@@ -558,7 +572,7 @@ void RoomStatusSchedulerTest::cancelsRemovedRoomsAndRejectsLateResponse()
 
 - [ ] **Step 2: Run the scheduler test and confirm it fails.**
 
-Run: cmake --build --preset msvc-x64-debug --target room_status_scheduler_test; ctest --test-dir out/build/msvc-x64-debug -R room_status_scheduler_test --output-on-failure
+Run: cmake --build native/out/build/windows-x64 --target room_status_scheduler_test; ctest --test-dir native/out/build/windows-x64 -R room_status_scheduler_test --output-on-failure
 
 Expected: build failure because RoomStatusScheduler does not exist.
 
@@ -570,7 +584,7 @@ Extend fake_streamget_service with --search-script online,offline,online and emi
 
 - [ ] **Step 4: Run scheduler and protocol/client regression tests.**
 
-Run: ctest --test-dir out/build/msvc-x64-debug -R "room_status_scheduler_test|stream_service_protocol_test|streamget_process_client_test" --output-on-failure
+Run: ctest --test-dir native/out/build/windows-x64 -R "room_status_scheduler_test|stream_service_protocol_test|streamget_process_client_test" --output-on-failure
 
 Expected: all selected tests pass.
 
@@ -636,7 +650,7 @@ void MultiRoomCoordinatorTest::stopsWhenMetadataChangesOnlineToOffline()
 
 - [ ] **Step 2: Run transition tests and confirm they fail.**
 
-Run: cmake --build --preset msvc-x64-debug --target multi_room_coordinator_test room_session_test room_sidebar_test; ctest --test-dir out/build/msvc-x64-debug -R "multi_room_coordinator_test|room_session_test|room_sidebar_test" --output-on-failure
+Run: cmake --build native/out/build/windows-x64 --target multi_room_coordinator_test room_session_test room_sidebar_test; ctest --test-dir native/out/build/windows-x64 -R "multi_room_coordinator_test|room_session_test|room_sidebar_test" --output-on-failure
 
 Expected: the new status-transition assertions fail.
 
@@ -648,7 +662,7 @@ Do not call resolve() on unchanged online refreshes. A failed metadata request k
 
 - [ ] **Step 4: Run phase-two component tests.**
 
-Run: ctest --test-dir out/build/msvc-x64-debug -R "room_status_scheduler_test|multi_room_coordinator_test|room_session_test|room_sidebar_test|main_window_test" --output-on-failure
+Run: ctest --test-dir native/out/build/windows-x64 -R "room_status_scheduler_test|multi_room_coordinator_test|room_session_test|room_sidebar_test|main_window_test" --output-on-failure
 
 Expected: all selected tests pass.
 
@@ -722,7 +736,7 @@ void NotificationPolicyTest::doesNotTreatOfflineAsPlaybackFailure()
 
 - [ ] **Step 2: Run policy test and confirm it fails.**
 
-Run: cmake --build --preset msvc-x64-debug --target notification_policy_test; ctest --test-dir out/build/msvc-x64-debug -R notification_policy_test --output-on-failure
+Run: cmake --build native/out/build/windows-x64 --target notification_policy_test; ctest --test-dir native/out/build/windows-x64 -R notification_policy_test --output-on-failure
 
 Expected: build failure because NotificationPolicy does not exist.
 
@@ -749,7 +763,7 @@ Create the policy before room restoration and call resetBaseline() after restore
 
 - [ ] **Step 5: Run policy, settings, and integration tests.**
 
-Run: ctest --test-dir out/build/msvc-x64-debug -R "notification_policy_test|windows_notification_service_test|main_window_test|multi_room_coordinator_test" --output-on-failure
+Run: ctest --test-dir native/out/build/windows-x64 -R "notification_policy_test|windows_notification_service_test|main_window_test|multi_room_coordinator_test" --output-on-failure
 
 Expected: all selected tests pass; fake sink observes only enabled, deduplicated, rate-limited events.
 
@@ -767,19 +781,19 @@ git commit -m "feat: notify native room status changes"
 
 - [ ] **Step 1: Configure and build the Windows native preset.**
 
-Run: cmake --preset msvc-x64-debug; cmake --build --preset msvc-x64-debug --parallel
+Run: cmake -S native --preset windows-x64; cmake --build native/out/build/windows-x64 --parallel
 
 Expected: zero configuration and compilation errors.
 
 - [ ] **Step 2: Run the full offline suite.**
 
-Run: ctest --test-dir out/build/msvc-x64-debug --output-on-failure
+Run: ctest --test-dir native/out/build/windows-x64 --output-on-failure
 
 Expected: every registered CTest test passes. Record the actual test count, not a planned count.
 
 - [ ] **Step 3: Run the product self-test and inspect the Qt shell.**
 
-Run: out/build/msvc-x64-debug/native/douyu_monitor_native.exe --self-test
+Run: native/out/build/windows-x64/douyu_monitor_native.exe --self-test
 
 Expected: exit code 0.
 

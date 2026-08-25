@@ -93,6 +93,15 @@ target_link_libraries(quality_policy_test PRIVATE Qt6::Core Qt6::Test)
 target_include_directories(quality_policy_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 add_test(NAME quality_policy_test COMMAND quality_policy_test)
 
+add_executable(native_workspace_store_test
+    tests/native_workspace_store_test.cpp
+    src/workspace/native_workspace_types.cpp
+    src/workspace/native_workspace_store.cpp
+)
+target_link_libraries(native_workspace_store_test PRIVATE Qt6::Core Qt6::Test)
+target_include_directories(native_workspace_store_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+add_test(NAME native_workspace_store_test COMMAND native_workspace_store_test)
+
 add_executable(room_session_test
     tests/room_session_test.cpp
     src/workspace/room_session.cpp
