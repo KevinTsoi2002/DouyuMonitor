@@ -478,3 +478,118 @@ this local evidence.
 Create and reread the M6 Task 1 Notion acceptance page, then implement Task 2:
 session live/playback state, coordinator audio focus, and the muted-player API
 through focused failing tests.
+
+## M6 Task 2 Native Live State and Audio Focus
+
+**Date:** 2026-08-25
+
+- Implementation commit: `8976e2d feat: expose native room live state`.
+- Added `RoomLiveStatus` (`Unknown`, `Online`, `Offline`) and
+  `RoomPlaybackHealth` (`Pending`, `Playing`, `Error`) to the native snapshot
+  boundary. Snapshots now include protocol-validated display metadata,
+  favorite state, audio focus, and muted state.
+- `RoomSession::applyMetadata()` copies only the validated protocol result.
+  `ROOM_OFFLINE` stops its player, reports `Offline` with `Pending` playback,
+  returns to `Idle`, and does not emit a playback-failure signal. Other fixed
+  service error codes remain playback errors.
+- `PlayerSurface` starts muted and exposes `setMuted()` / `isMuted()`.
+  `MultiRoomCoordinator` owns one audio-focus room, applies mute state across
+  all retained sessions, and publishes the resulting ordered snapshots.
+  The existing M4 quality policy and the maximum nine-room limit are unchanged.
+- Focused regression verification rebuilt the four targets from clean state
+  after loading the Visual Studio x64 developer environment, then passed `4/4`:
+  `quality_policy_test`, `room_session_test`,
+  `multi_room_coordinator_test`, and `player_surface_test` (37.05 seconds).
+  `douyu_monitor_native` also rebuilt successfully.
+- The initial clean rebuild from a plain PowerShell failed because the process
+  had `cl.exe` but not the MSVC standard-library include environment
+  (`<utility>` was unavailable). Loading `VsDevCmd.bat -arch=x64` isolated the
+  configuration cause; the same clean rebuild and tests then passed without
+  source changes.
+- `git diff --check` completed without whitespace errors before the commit.
+  Task 2 committed only its eleven planned source/test files; `.gitignore`,
+  SDK/bootstrap material, generated Python caches, and unrelated native files
+  remain unstaged.
+
+### Task 2 design and plan comparison
+
+1. The plan's tested offline semantics, metadata copy boundary, mute API, and
+   single coordinator-owned audio focus are implemented and covered by focused
+   tests.
+2. The M6 design's separation between live availability and playback health is
+   present in ordered UI snapshots. Widget work remains intentionally deferred
+   to Task 3.
+3. No Electron, Chromium, WebEngine, Node, React, or TypeScript was introduced.
+   Verification used local fake-service inputs only; no live Douyu request,
+   credential, cookie, playback URL, token, signature, raw service output, or
+   raw libmpv diagnostic was recorded.
+
+### Notion synchronization
+
+- The 2026-08-25 attempt to create and reread
+  `DouyuMonitor M6 Task 2 原生直播状态与音频焦点验收` was blocked before page
+  creation because the Notion MCP transport returned `Auth required` while
+  fetching its Markdown specification. No Notion URL or successful sync is
+  claimed. Reauthenticate the connector before the next Notion write, then
+  create and reread the page using this local evidence.
+
+## Prepared Next Step
+
+After the Notion connector is reauthenticated, create and reread the M6 Task 2
+acceptance page. Then begin Task 3: replace the visible M5 dock with the
+legacy-style left `RoomSidebar`, native add-room and group-management dialogs,
+and the Splitter-based MainWindow layout.
+
+## M6 Task 2 Review Fix: Stale Player Event Isolation
+
+**Date:** 2026-08-25
+
+- Review-fix commit: `94b5e0b fix: isolate stale player failures`.
+- `PlayerSurface` now assigns a unique asynchronous request ID to every
+  `loadfile` command, aborts the previous pending request, and only maps a
+  matching command reply to the current load.
+- `MPV_EVENT_START_FILE` and `MPV_EVENT_END_FILE` now use libmpv playlist entry
+  IDs. Retired entries are tracked and their delayed failures are ignored, so
+  switching from source A to source B cannot mark B as failed because of A.
+- Player failures are emitted through a Qt signal and mapped by `RoomSession`
+  to the fixed `PLAYER_FAILED` code without replacing live availability state.
+- Avatar metadata accepts only host-bearing HTTP(S) URLs without credentials;
+  unsafe schemes and credential-bearing URLs are cleared.
+- TDD evidence: the stale-event regression was first red due to missing request
+  generation members, then passed after the minimal implementation.
+- Fresh focused CTest passed `4/4`: `quality_policy_test`,
+  `room_session_test`, `multi_room_coordinator_test`, and `player_surface_test`
+  (27.92 seconds). The standalone `player_surface_test` also passed after the
+  fix (1/1, 18.26 seconds).
+- `douyu_monitor_native` rebuilt successfully with MSVC x64; the target was
+  already current after the source build and exited `0` with `ninja: no work to
+  do`.
+- `git diff --check` passed. The source/test diff contains no credentials,
+  playback URLs, cookies, tokens, signatures, request headers, tracebacks, or
+  raw mpv diagnostics. Existing redacted URL literals in tests remain unchanged.
+
+### Review-fix design and plan comparison
+
+1. The fix stays within Task 2's existing PlayerSurface/RoomSession boundary;
+   no UI, networking, quality policy, or nine-room behavior changed.
+2. Live availability and playback health remain separate. Retired playback
+   events are discarded before they can alter the current health snapshot.
+3. The implementation uses libmpv's documented `reply_userdata` and
+   `playlist_entry_id` fields and preserves the Qt + libmpv-only product route.
+4. No Electron, Chromium, Qt WebEngine, WebView, Node, React, or TypeScript was
+   introduced. Verification remains offline-only.
+
+### Notion synchronization
+
+- A new-page documentation fetch was attempted after the review-fix commit, but
+  the Notion MCP transport returned `Auth required` before page creation. No
+  Notion URL or successful sync is claimed; the local record remains the source
+  of truth until reauthentication.
+
+## Prepared Next Step
+
+After the Notion connector is authenticated and the new Task 2 review-fix page
+is created and reread, start M6 Task 3: replace the visible M5 dock with the
+legacy-style left `RoomSidebar`, add-room and group-management dialogs, and the
+Splitter-based MainWindow layout. Keep the nine-room cap, snapshot ownership,
+and Qt + libmpv-only boundary unchanged.
