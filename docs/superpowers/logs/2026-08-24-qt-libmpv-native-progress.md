@@ -349,3 +349,41 @@ and next task match this local record.
 
 Create and verify the M5 Task 2 Notion page, then bind the dock to
 `MainWindow` and the playback grid through the approved Task 3 tests.
+
+## M5 Task 3 MainWindow Integration
+
+**Date:** 2026-08-25
+
+- Main integration commit: `190f377 feat: manage rooms from the Qt main window`.
+- Review-fix commit: `36cc82c fix: restore dock state after rejected room commands`.
+- `MainWindow` now owns a right-side Qt `QDockWidget` containing
+  `RoomManagementDock`. The dock sends add, remove, primary-room, and
+  requested-quality intent to the coordinator's detailed command APIs.
+- `MultiRoomCoordinator::roomSnapshotsChanged` is the one update path for the
+  playback grid and dock. `MainWindow` does not calculate duplicate IDs,
+  capacity, primary state, or the M4 quality policy.
+- MainWindow integration coverage exercises add, primary selection, removal,
+  surface preservation, the five-to-four quality restoration display, and the
+  rejected `AlreadyPrimary` path. The latter re-applies the coordinator snapshot
+  so an already-primary button cannot remain visually unchecked after a click.
+- Fresh focused CTest passed `4/4`: `room_session_test`,
+  `multi_room_coordinator_test`, `room_management_dock_test`, and
+  `main_window_test` (23.26 seconds).
+- Design and plan comparison: Task 3 meets the right-side dock, four command
+  routes, single-snapshot synchronization, M4 quality-display, surface reuse,
+  and Qt-only requirements. The review correction stays inside the approved
+  snapshot ownership model.
+- Offline limitation: no live Douyu traffic, credentials, cookies, playback
+  URLs, tokens, signatures, raw service output, tracebacks, or raw mpv
+  diagnostics were used or recorded.
+
+Notion M5 Task 3 log: https://app.notion.com/p/3c70f4bdec4881fd8b5ace3064d13a1f?pvs=204
+Created and reread after the local log update; its scope, implementation and
+review-fix commits, focused CTest count, design/plan comparison, safety
+boundary, and next task match this local record.
+
+## Prepared Next Step
+
+Create and reread the M5 Task 3 Notion page, then start Task 4 acceptance:
+MSVC configuration and build, full native and Python tests, sensitive-output
+scan, process cleanup, and the final design/plan comparison.
