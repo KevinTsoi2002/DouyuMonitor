@@ -443,3 +443,38 @@ Created and reread after the local acceptance record. The recorded commits,
 `14/14` CTest and `19/19` Python totals, sensitive-output scan, cleanup result,
 design/plan comparison, offline boundary, and unstaged-worktree boundary match
 this local evidence.
+
+## M6 Task 1 Native Workspace Persistence
+
+**Date:** 2026-08-25
+
+- Implementation commit: `27a2891 feat: persist native room workspace`.
+- Added versioned `NativeWorkspaceSnapshot` value types and a
+  `NativeWorkspaceStore` QSettings boundary under
+  `DouyuMonitor/nativeWorkspaceV1`.
+- Persistence keeps room metadata, requested quality, favorite state, history
+  timestamps, groups, active order, primary room, and audio room only. It
+  normalizes duplicate IDs and invalid references, caps active/group members at
+  nine, rejects unsafe avatar URLs, and drops playback URLs, cookies, tokens,
+  signatures, and request headers.
+- Test-first evidence: the focused target was introduced with a failing test,
+  then the implementation was added and the corrected target passed `1/1` in
+  `native_workspace_store_test` (1.15 seconds).
+- Baseline before Task 1 remained `14/14` for the existing full native CTest
+  suite. This task's focused verification used the native preset build tree.
+- The first compile attempt exposed two mechanical issues: a raw JSON literal
+  incompatible with `QByteArrayLiteral` and an escaped CMake include path. A
+  separate environment-only failure confirmed that MSVC's developer shell must
+  run before `cl.exe`; the plan now records the `VsDevCmd.bat` procedure.
+- Design and plan comparison: Task 1 implements the approved durable,
+  non-sensitive workspace boundary without changing live networking or UI
+  scope. Remaining limits are offline-only verification, no real Douyu traffic,
+  and no live nine-room smoke test.
+- No credentials, playback URLs, cookies, tokens, signatures, raw service
+  output, tracebacks, or raw libmpv diagnostics were logged.
+
+## Prepared Next Step
+
+Create and reread the M6 Task 1 Notion acceptance page, then implement Task 2:
+session live/playback state, coordinator audio focus, and the muted-player API
+through focused failing tests.

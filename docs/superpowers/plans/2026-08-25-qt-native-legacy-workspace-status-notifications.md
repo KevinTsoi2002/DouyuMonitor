@@ -20,6 +20,18 @@ $env:MPV_ROOT = (Resolve-Path 'native\sdk\mpv').Path
 cmake -S native --preset windows-x64
 ~~~
 
+Initialize the MSVC x64 developer environment before configuring or building
+new targets. From PowerShell, invoke the commands through `VsDevCmd.bat`:
+
+```powershell
+$quote = [char]34
+$command = 'call ' + $quote +
+  'C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\Tools\VsDevCmd.bat' +
+  $quote + ' -arch=x64 -host_arch=x64 >nul && set QT_ROOT=D:\Qt\6.8.3\msvc2022_64 && set MPV_ROOT=' +
+  (Resolve-Path 'native\sdk\mpv').Path + ' && <COMMAND>'
+cmd.exe /d /s /c $command
+```
+
 The preset file is native/CMakePresets.json; its configured build tree is
 native/out/build/windows-x64. Every build and CTest command below relies on this configured
 tree. Do not use the unavailable root-level msvc-x64-debug preset.
