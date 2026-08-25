@@ -145,6 +145,14 @@ add_custom_command(TARGET multi_room_coordinator_test POST_BUILD
 )
 add_test(NAME multi_room_coordinator_test COMMAND multi_room_coordinator_test)
 
+add_executable(room_management_dock_test
+    tests/room_management_dock_test.cpp
+    src/app/room_management_dock.cpp
+)
+target_link_libraries(room_management_dock_test PRIVATE Qt6::Widgets Qt6::OpenGLWidgets Qt6::Test)
+target_include_directories(room_management_dock_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+add_test(NAME room_management_dock_test COMMAND room_management_dock_test)
+
 option(DOUYU_BUILD_SERVICE_TESTS "Register Python StreamGet service tests" ON)
 if(DOUYU_BUILD_SERVICE_TESTS)
     if(WIN32)
