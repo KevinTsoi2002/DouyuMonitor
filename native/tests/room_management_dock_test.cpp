@@ -57,6 +57,10 @@ void RoomManagementDockTest::validatesRoomIdAndCapacityBeforeAdd()
     QVERIFY(!dock.addButton()->isEnabled());
     dock.roomIdInput()->setText(QStringLiteral("not-a-room"));
     QVERIFY(!dock.addButton()->isEnabled());
+    dock.roomIdInput()->setText(QString(20, QLatin1Char('1')));
+    QVERIFY(dock.addButton()->isEnabled());
+    dock.roomIdInput()->setText(QString(21, QLatin1Char('1')));
+    QVERIFY(!dock.addButton()->isEnabled());
     dock.roomIdInput()->setText(QStringLiteral("63136"));
     QVERIFY(dock.addButton()->isEnabled());
 
@@ -87,16 +91,35 @@ void RoomManagementDockTest::emitsAddRemovePrimaryAndQualityIntents()
 
     auto *qualityCombo = secondaryRow->findChild<QComboBox *>(QStringLiteral("qualityCombo"));
     QVERIFY(qualityCombo != nullptr);
+    auto *removeButton = secondaryRow->findChild<QToolButton *>(QStringLiteral("removeButton"));
+    QVERIFY(removeButton != nullptr);
+    QVERIFY(!secondaryRow->findChild<QToolButton *>(QStringLiteral("primaryButton"))->isEnabled());
+    QVERIFY(!qualityCombo->isEnabled());
+    QVERIFY(!removeButton->isEnabled());
+
+    dock.setCommandResult(RoomCommandResult::Accepted);
+    QVERIFY(secondaryRow->findChild<QToolButton *>(QStringLiteral("primaryButton"))->isEnabled());
+    QVERIFY(qualityCombo->isEnabled());
+    QVERIFY(removeButton->isEnabled());
+
     qualityCombo->setCurrentIndex(qualityCombo->findData(static_cast<int>(StreamQuality::Super)));
     QCOMPARE(qualityChanges.count(), 1);
     QCOMPARE(qualityChanges.at(0).at(0).toString(), QStringLiteral("63137"));
     QCOMPARE(qualityChanges.at(0).at(1).value<StreamQuality>(), StreamQuality::Super);
+
+    QVERIFY(!secondaryRow->findChild<QToolButton *>(QStringLiteral("primaryButton"))->isEnabled());
+    QVERIFY(!qualityCombo->isEnabled());
+    QVERIFY(!removeButton->isEnabled());
+    dock.setCommandResult(RoomCommandResult::Accepted);
 
     QWidget *primaryRow = dock.rowForRoom(QStringLiteral("63136"));
     QVERIFY(primaryRow != nullptr);
     primaryRow->findChild<QToolButton *>(QStringLiteral("removeButton"))->click();
     QCOMPARE(removals.count(), 1);
     QCOMPARE(removals.at(0).at(0).toString(), QStringLiteral("63136"));
+    QVERIFY(!primaryRow->findChild<QToolButton *>(QStringLiteral("primaryButton"))->isEnabled());
+    QVERIFY(!primaryRow->findChild<QComboBox *>(QStringLiteral("qualityCombo"))->isEnabled());
+    QVERIFY(!primaryRow->findChild<QToolButton *>(QStringLiteral("removeButton"))->isEnabled());
 }
 
 void RoomManagementDockTest::rendersSnapshotsWithoutEchoingProgrammaticChanges()
@@ -111,6 +134,7 @@ void RoomManagementDockTest::rendersSnapshotsWithoutEchoingProgrammaticChanges()
 
     QWidget *row = dock.rowForRoom(QStringLiteral("63136"));
     QVERIFY(row != nullptr);
+    QCOMPARE(row->height(), 44);
     QCOMPARE(row->findChild<QLabel *>(QStringLiteral("effectiveQualityLabel"))->text(),
              QStringLiteral("Effective: Standard"));
     QCOMPARE(row->findChild<QLabel *>(QStringLiteral("policyLabel"))->text(),
@@ -131,6 +155,14 @@ void RoomManagementDockTest::displaysOnlyFixedCommandFeedback()
     QCOMPARE(dock.feedbackText(), QStringLiteral("Room already exists"));
     dock.setCommandResult(RoomCommandResult::RoomLimitReached);
     QCOMPARE(dock.feedbackText(), QStringLiteral("Maximum of 9 rooms reached"));
+    dock.setCommandResult(RoomCommandResult::RoomNotFound);
+    QCOMPARE(dock.feedbackText(), QStringLiteral("Room is no longer managed"));
+    dock.setCommandResult(RoomCommandResult::AlreadyPrimary);
+    QCOMPARE(dock.feedbackText(), QStringLiteral("Room is already primary"));
+    dock.setCommandResult(RoomCommandResult::Unavailable);
+    QCOMPARE(dock.feedbackText(), QStringLiteral("Room management is unavailable"));
+    dock.setCommandResult(RoomCommandResult::Unchanged);
+    QVERIFY(dock.feedbackText().isEmpty());
     dock.setCommandResult(RoomCommandResult::Accepted);
     QVERIFY(dock.feedbackText().isEmpty());
 }
