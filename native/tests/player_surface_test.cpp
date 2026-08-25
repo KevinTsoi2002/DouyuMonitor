@@ -2,6 +2,8 @@
 #include <QTemporaryDir>
 #include <QtTest/QtTest>
 
+#include <mpv/client.h>
+
 #include "media/media_source.h"
 #include "media/player_surface.h"
 #include "media/remote_playback_controller.h"
@@ -19,6 +21,8 @@ private slots:
     void rejectsMissingMediaWithErrorState();
     void togglesPauseState();
     void togglesMuteState();
+    void reportsAsyncMediaLoadFailure();
+    void ignoresRetiredLoadFailureAfterSourceSwitch();
     void loadsLocalImageAndPresentsFirstFrame();
     void stopsAfterFirstFrame();
     void repeatedStopIsIdempotent();
@@ -64,6 +68,60 @@ void PlayerSurfaceTest::togglesMuteState()
     QVERIFY(surface.isMuted());
     QVERIFY(surface.setMuted(false));
     QVERIFY(!surface.isMuted());
+}
+
+void PlayerSurfaceTest::reportsAsyncMediaLoadFailure()
+{
+    QTemporaryDir temporaryDirectory;
+    QVERIFY(temporaryDirectory.isValid());
+
+    QFile fixture(temporaryDirectory.filePath(QStringLiteral("broken.ppm")));
+    QVERIFY(fixture.open(QIODevice::WriteOnly | QIODevice::Truncate));
+    const QByteArray corruptMedia = "not a portable pixmap\n";
+    QCOMPARE(fixture.write(corruptMedia), static_cast<qint64>(corruptMedia.size()));
+    fixture.close();
+
+    PlayerSurface surface;
+    surface.resize(320, 240);
+    surface.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&surface));
+    QSignalSpy failures(&surface, SIGNAL(playbackFailed()));
+
+    QVERIFY(failures.isValid());
+    QVERIFY(surface.loadLocalMedia(fixture.fileName()));
+    QTRY_COMPARE_WITH_TIMEOUT(failures.count(), 1, 10000);
+    QCOMPARE(surface.playbackState(), PlayerSurface::PlaybackState::Error);
+}
+
+void PlayerSurfaceTest::ignoresRetiredLoadFailureAfterSourceSwitch()
+{
+    PlayerSurface surface;
+    QSignalSpy failures(&surface, SIGNAL(playbackFailed()));
+    QVERIFY(failures.isValid());
+
+    const quint64 firstRequestId = surface.beginLoadRequest();
+    surface.activePlaylistEntryId_ = 41;
+    const quint64 secondRequestId = surface.beginLoadRequest();
+    surface.playbackState_ = PlayerSurface::PlaybackState::Loading;
+
+    mpv_event commandReply{};
+    commandReply.event_id = MPV_EVENT_COMMAND_REPLY;
+    commandReply.reply_userdata = firstRequestId;
+    commandReply.error = MPV_ERROR_LOADING_FAILED;
+    surface.handleMpvEvent(&commandReply);
+
+    mpv_event_end_file endFile{};
+    endFile.reason = MPV_END_FILE_REASON_ERROR;
+    endFile.error = MPV_ERROR_LOADING_FAILED;
+    endFile.playlist_entry_id = 41;
+    mpv_event endEvent{};
+    endEvent.event_id = MPV_EVENT_END_FILE;
+    endEvent.data = &endFile;
+    surface.handleMpvEvent(&endEvent);
+
+    QCOMPARE(secondRequestId, surface.pendingLoadRequestId_);
+    QCOMPARE(surface.playbackState(), PlayerSurface::PlaybackState::Loading);
+    QCOMPARE(failures.count(), 0);
 }
 
 void PlayerSurfaceTest::loadsLocalImageAndPresentsFirstFrame()

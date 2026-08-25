@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QOpenGLWidget>
+#include <QSet>
 #include <QString>
 
 #include "media/media_source.h"
@@ -11,6 +12,10 @@ struct mpv_render_context;
 class QTimer;
 
 class PlayerSurface final : public QOpenGLWidget {
+    Q_OBJECT
+
+    friend class PlayerSurfaceTest;
+
 public:
     enum class PlaybackState {
         Idle,
@@ -39,6 +44,9 @@ public:
     PlaybackState playbackState() const noexcept;
     QString mediaError() const;
 
+signals:
+    void playbackFailed();
+
 protected:
     void initializeGL() override;
     void paintGL() override;
@@ -49,6 +57,8 @@ private:
     void requestFrame();
     void pollMpvEvents();
     void handleMpvEvent(const mpv_event *event);
+    quint64 beginLoadRequest();
+    void setAsyncPlaybackError(QString error);
     void resetMediaState(PlaybackState state);
 
     mpv_handle *mpv_ = nullptr;
@@ -61,4 +71,8 @@ private:
     bool muted_ = true;
     PlaybackState playbackState_ = PlaybackState::Idle;
     QString mediaError_;
+    quint64 nextLoadRequestId_ = 3;
+    quint64 pendingLoadRequestId_ = 0;
+    qint64 activePlaylistEntryId_ = 0;
+    QSet<qint64> retiredPlaylistEntryIds_;
 };

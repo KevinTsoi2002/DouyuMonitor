@@ -26,6 +26,8 @@ private slots:
     void updatesRequestedQualityWithoutChangingEffectiveQuality();
     void mapsOfflineResolveToLiveOfflineWithoutPlaybackFailure();
     void appliesValidatedMetadataAndLiveState();
+    void dropsUnsafeAvatarUrlFromMetadata();
+    void mapsSurfaceFailureToPlaybackError();
     void acceptsSourceAndReportsReady();
     void cancelSuppressesLateSource();
     void removesSessionStateWithoutLeakingSurface();
@@ -90,6 +92,45 @@ void RoomSessionTest::appliesValidatedMetadataAndLiveState()
     QCOMPARE(session.metadata().anchorName, QStringLiteral("主播 A"));
     QCOMPARE(session.metadata().title, QStringLiteral("标题"));
     QCOMPARE(session.liveStatus(), RoomLiveStatus::Online);
+    client.shutdown();
+}
+
+void RoomSessionTest::dropsUnsafeAvatarUrlFromMetadata()
+{
+    StreamgetProcessClient client(fakeServicePath());
+    QWidget host;
+    RoomSession session(&client, QStringLiteral("63136"), StreamQuality::Auto, &host);
+    const RoomSearchResult result{
+        QStringLiteral("63136"), QStringLiteral("主播 A"), QStringLiteral("标题"),
+        QStringLiteral("游戏"), true, QStringLiteral("1.2万"),
+        QUrl(QStringLiteral("file:///private/avatar.jpg"))};
+
+    session.applyMetadata(result);
+    QCOMPARE(session.metadata().anchorName, QStringLiteral("主播 A"));
+    QVERIFY(session.metadata().avatarUrl.isEmpty());
+    client.shutdown();
+}
+
+void RoomSessionTest::mapsSurfaceFailureToPlaybackError()
+{
+    StreamgetProcessClient client(fakeServicePath());
+    QWidget host;
+    RoomSession session(&client, QStringLiteral("63136"), StreamQuality::Auto, &host);
+    QSignalSpy failures(&session, &RoomSession::failed);
+    const StreamVariant variant{
+        QStringLiteral("flv-auto"), QStringLiteral("Auto"), StreamQuality::Auto,
+        QStringLiteral("flv"), QUrl(QStringLiteral("https://live.douyucdn.cn/fake.flv"))};
+    const auto source = MediaSource::fromRemoteVariant(QStringLiteral("63136"), variant);
+
+    QVERIFY(source.has_value());
+    QVERIFY(QMetaObject::invokeMethod(&session, "onControllerSourceReady", Qt::DirectConnection,
+                                      Q_ARG(MediaSource, *source)));
+    QCOMPARE(session.state(), RoomSession::State::Ready);
+    QVERIFY(QMetaObject::invokeMethod(session.surface(), "playbackFailed", Qt::DirectConnection));
+    QCOMPARE(session.playbackHealth(), RoomPlaybackHealth::Error);
+    QCOMPARE(session.state(), RoomSession::State::Error);
+    QCOMPARE(failures.count(), 1);
+    QCOMPARE(failures.at(0).at(0).toString(), QStringLiteral("PLAYER_FAILED"));
     client.shutdown();
 }
 

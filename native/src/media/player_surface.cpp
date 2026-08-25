@@ -12,7 +12,6 @@
 
 namespace {
 
-constexpr uint64_t kLoadMediaRequest = 1;
 constexpr uint64_t kStopMediaRequest = 2;
 
 void *getProcAddress(void *, const char *name)
@@ -120,6 +119,7 @@ bool PlayerSurface::loadSource(const MediaSource &source)
     firstFrameRendered_ = false;
     playbackState_ = PlaybackState::Loading;
     mediaError_.clear();
+    const quint64 loadRequestId = beginLoadRequest();
 
     const char *args[] = {
         "loadfile",
@@ -127,8 +127,9 @@ bool PlayerSurface::loadSource(const MediaSource &source)
         "replace",
         nullptr,
     };
-    const int result = mpv_command_async(mpv_, kLoadMediaRequest, args);
+    const int result = mpv_command_async(mpv_, loadRequestId, args);
     if (result < 0) {
+        pendingLoadRequestId_ = 0;
         playbackState_ = PlaybackState::Error;
         mediaError_ = QString::fromUtf8(mpv_error_string(result));
         return false;
@@ -265,6 +266,29 @@ void PlayerSurface::resetMediaState(PlaybackState state)
     update();
 }
 
+void PlayerSurface::setAsyncPlaybackError(QString error)
+{
+    const bool wasError = playbackState_ == PlaybackState::Error;
+    playbackState_ = PlaybackState::Error;
+    mediaError_ = std::move(error);
+    if (!wasError) emit playbackFailed();
+}
+
+quint64 PlayerSurface::beginLoadRequest()
+{
+    if (pendingLoadRequestId_ != 0 && mpv_ != nullptr) {
+        mpv_abort_async_command(mpv_, pendingLoadRequestId_);
+    }
+
+    if (activePlaylistEntryId_ != 0) {
+        retiredPlaylistEntryIds_.insert(activePlaylistEntryId_);
+        activePlaylistEntryId_ = 0;
+    }
+
+    pendingLoadRequestId_ = nextLoadRequestId_++;
+    return pendingLoadRequestId_;
+}
+
 void PlayerSurface::initializeGL()
 {
     if (!mpvInitialized_ || mpv_ == nullptr || renderContext_ != nullptr) {
@@ -361,18 +385,28 @@ void PlayerSurface::handleMpvEvent(const mpv_event *event)
 
     switch (event->event_id) {
     case MPV_EVENT_COMMAND_REPLY:
-        if (event->reply_userdata == kLoadMediaRequest && event->error < 0) {
-            playbackState_ = PlaybackState::Error;
-            mediaError_ = QString::fromUtf8(mpv_error_string(event->error));
+        if (event->reply_userdata == pendingLoadRequestId_) {
+            pendingLoadRequestId_ = 0;
+            if (event->error < 0 && playbackState_ != PlaybackState::Ended
+                && playbackState_ != PlaybackState::Idle) {
+                setAsyncPlaybackError(QString::fromUtf8(mpv_error_string(event->error)));
+            }
         } else if (event->reply_userdata == kStopMediaRequest && event->error < 0
                    && playbackState_ != PlaybackState::Idle) {
             playbackState_ = PlaybackState::Error;
             mediaError_ = QStringLiteral("failed to stop media");
         }
         break;
-    case MPV_EVENT_START_FILE:
+    case MPV_EVENT_START_FILE: {
+        const auto *startFile = static_cast<const mpv_event_start_file *>(event->data);
+        if (startFile == nullptr
+            || retiredPlaylistEntryIds_.contains(startFile->playlist_entry_id)) {
+            break;
+        }
+        activePlaylistEntryId_ = startFile->playlist_entry_id;
         playbackState_ = PlaybackState::Loading;
         break;
+    }
     case MPV_EVENT_FILE_LOADED:
         mediaLoaded_ = true;
         update();
@@ -386,9 +420,15 @@ void PlayerSurface::handleMpvEvent(const mpv_event *event)
             break;
         }
         const auto *endFile = static_cast<const mpv_event_end_file *>(event->data);
-        if (endFile != nullptr && endFile->error < 0) {
-            playbackState_ = PlaybackState::Error;
-            mediaError_ = QString::fromUtf8(mpv_error_string(endFile->error));
+        if (endFile == nullptr
+            || retiredPlaylistEntryIds_.remove(endFile->playlist_entry_id)
+            || endFile->playlist_entry_id != activePlaylistEntryId_) {
+            break;
+        }
+        activePlaylistEntryId_ = 0;
+        if (endFile->error < 0
+            && playbackState_ != PlaybackState::Ended) {
+            setAsyncPlaybackError(QString::fromUtf8(mpv_error_string(endFile->error)));
         } else {
             playbackState_ = PlaybackState::Ended;
         }

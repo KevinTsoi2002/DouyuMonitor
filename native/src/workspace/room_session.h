@@ -59,6 +59,7 @@ private slots:
     void onControllerSourceReady(MediaSource source);
     void onControllerFailed(QString errorCode);
     void onControllerStateChanged(RemotePlaybackController::State state);
+    void onSurfacePlaybackFailed();
 
 private:
     void setState(State state);

@@ -3,6 +3,17 @@
 #include "media/remote_playback_controller.h"
 #include "service/streamget_process_client.h"
 
+namespace {
+
+bool isSafeHttpUrl(const QUrl &url)
+{
+    return url.isValid()
+        && (url.scheme() == QStringLiteral("http") || url.scheme() == QStringLiteral("https"))
+        && !url.host().isEmpty() && url.userName().isEmpty() && url.password().isEmpty();
+}
+
+} // namespace
+
 RoomSession::RoomSession(StreamgetProcessClient *client,
                          QString roomId,
                          StreamQuality userQuality,
@@ -23,6 +34,8 @@ RoomSession::RoomSession(StreamgetProcessClient *client,
             this, &RoomSession::onControllerFailed);
     connect(controller_, &RemotePlaybackController::stateChanged,
             this, &RoomSession::onControllerStateChanged);
+    connect(surface_, &PlayerSurface::playbackFailed,
+            this, &RoomSession::onSurfacePlaybackFailed);
 }
 
 RoomSession::~RoomSession()
@@ -50,7 +63,7 @@ void RoomSession::applyMetadata(const RoomSearchResult &result)
         return;
     }
     metadata_ = {result.roomId, result.anchorName, result.title, result.category,
-                 result.viewerLabel, result.avatarUrl};
+                 result.viewerLabel, isSafeHttpUrl(result.avatarUrl) ? result.avatarUrl : QUrl()};
     setLiveStatus(result.online ? RoomLiveStatus::Online : RoomLiveStatus::Offline);
 }
 
@@ -184,6 +197,14 @@ void RoomSession::onControllerStateChanged(RemotePlaybackController::State state
                && state_ != State::Error) {
         setState(State::Idle);
     }
+}
+
+void RoomSession::onSurfacePlaybackFailed()
+{
+    if (state_ == State::Idle || liveStatus_ == RoomLiveStatus::Offline) return;
+    setPlaybackHealth(RoomPlaybackHealth::Error);
+    setState(State::Error);
+    emit failed(QStringLiteral("PLAYER_FAILED"));
 }
 
 void RoomSession::setState(State state)
