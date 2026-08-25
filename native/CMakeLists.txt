@@ -93,6 +93,31 @@ target_link_libraries(quality_policy_test PRIVATE Qt6::Core Qt6::Test)
 target_include_directories(quality_policy_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 add_test(NAME quality_policy_test COMMAND quality_policy_test)
 
+add_executable(room_session_test
+    tests/room_session_test.cpp
+    src/workspace/room_session.cpp
+    src/media/player_surface.cpp
+)
+target_link_libraries(room_session_test
+    PRIVATE
+        remote_playback
+        Qt6::Widgets
+        Qt6::OpenGLWidgets
+        Qt6::Test
+        mpv::mpv
+)
+target_include_directories(room_session_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+add_dependencies(room_session_test fake_streamget_service)
+target_compile_definitions(room_session_test PRIVATE
+    FAKE_STREAMGET_SERVICE_PATH="$<TARGET_FILE:fake_streamget_service>"
+)
+add_custom_command(TARGET room_session_test POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${MPV_RUNTIME_DLL}"
+        "$<TARGET_FILE_DIR:room_session_test>/libmpv-2.dll"
+)
+add_test(NAME room_session_test COMMAND room_session_test)
+
 option(DOUYU_BUILD_SERVICE_TESTS "Register Python StreamGet service tests" ON)
 if(DOUYU_BUILD_SERVICE_TESTS)
     if(WIN32)
