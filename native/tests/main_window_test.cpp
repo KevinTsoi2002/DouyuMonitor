@@ -211,6 +211,12 @@ void MainWindowTest::managesRoomsThroughDock()
     dock->roomIdInput()->setText(QStringLiteral("63136"));
     dock->addButton()->click();
     QTRY_VERIFY(dock->rowForRoom(QStringLiteral("63136")) != nullptr);
+    auto *firstPrimaryButton = dock->rowForRoom(QStringLiteral("63136"))
+        ->findChild<QToolButton *>(QStringLiteral("primaryButton"));
+    QVERIFY(firstPrimaryButton != nullptr);
+    QVERIFY(firstPrimaryButton->isChecked());
+    firstPrimaryButton->click();
+    QVERIFY(firstPrimaryButton->isChecked());
 
     dock->roomIdInput()->setText(QStringLiteral("63137"));
     dock->addButton()->click();

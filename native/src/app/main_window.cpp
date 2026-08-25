@@ -50,7 +50,11 @@ MainWindow::MainWindow(const QString &serviceProgram, QWidget *parent)
             this, [this](const RoomSnapshots &) { synchronizeWorkspace(); });
 
     const auto showResult = [this](RoomCommandResult result) {
-        if (roomManagementDock_ != nullptr) roomManagementDock_->setCommandResult(result);
+        if (roomManagementDock_ == nullptr) return;
+        roomManagementDock_->setCommandResult(result);
+        if (result != RoomCommandResult::Accepted && coordinator_ != nullptr) {
+            roomManagementDock_->setRooms(coordinator_->roomSnapshots());
+        }
     };
     connect(roomManagementDock_, &RoomManagementDock::addRequested, this,
             [this, showResult](const QString &roomId) {
