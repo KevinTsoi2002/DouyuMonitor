@@ -24,6 +24,8 @@ class RoomSessionTest final : public QObject {
 private slots:
     void startsResolvingWithUserAndEffectiveQuality();
     void updatesRequestedQualityWithoutChangingEffectiveQuality();
+    void mapsOfflineResolveToLiveOfflineWithoutPlaybackFailure();
+    void appliesValidatedMetadataAndLiveState();
     void acceptsSourceAndReportsReady();
     void cancelSuppressesLateSource();
     void removesSessionStateWithoutLeakingSurface();
@@ -55,6 +57,39 @@ void RoomSessionTest::updatesRequestedQualityWithoutChangingEffectiveQuality()
     QCOMPARE(session.userQuality(), StreamQuality::Super);
     QCOMPARE(session.effectiveQuality(), StreamQuality::High);
     QVERIFY(!session.setRequestedQuality(StreamQuality::Super));
+    client.shutdown();
+}
+
+void RoomSessionTest::mapsOfflineResolveToLiveOfflineWithoutPlaybackFailure()
+{
+    StreamgetProcessClient client(fakeServicePath(),
+                                  {QStringLiteral("--offline-after"), QStringLiteral("1")});
+    QWidget host;
+    RoomSession session(&client, QStringLiteral("63136"), StreamQuality::Auto, &host);
+    QSignalSpy failures(&session, &RoomSession::failed);
+
+    QVERIFY(session.resolve() > 0);
+    QTRY_COMPARE_WITH_TIMEOUT(session.liveStatus(), RoomLiveStatus::Offline, 3000);
+    QCOMPARE(session.playbackHealth(), RoomPlaybackHealth::Pending);
+    QCOMPARE(failures.count(), 0);
+    QCOMPARE(session.state(), RoomSession::State::Idle);
+    client.shutdown();
+}
+
+void RoomSessionTest::appliesValidatedMetadataAndLiveState()
+{
+    StreamgetProcessClient client(fakeServicePath());
+    QWidget host;
+    RoomSession session(&client, QStringLiteral("63136"), StreamQuality::Auto, &host);
+    const RoomSearchResult result{
+        QStringLiteral("63136"), QStringLiteral("主播 A"), QStringLiteral("标题"),
+        QStringLiteral("游戏"), true, QStringLiteral("1.2万"),
+        QUrl(QStringLiteral("https://example.invalid/avatar.jpg"))};
+
+    session.applyMetadata(result);
+    QCOMPARE(session.metadata().anchorName, QStringLiteral("主播 A"));
+    QCOMPARE(session.metadata().title, QStringLiteral("标题"));
+    QCOMPARE(session.liveStatus(), RoomLiveStatus::Online);
     client.shutdown();
 }
 
@@ -107,14 +142,14 @@ void RoomSessionTest::removesSessionStateWithoutLeakingSurface()
 void RoomSessionTest::mapsControllerErrorsWithoutRawDiagnostics()
 {
     StreamgetProcessClient client(fakeServicePath(),
-                                  {QStringLiteral("--offline-after"), QStringLiteral("1")});
+                                  {QStringLiteral("--error-code"), QStringLiteral("SERVICE_FAILED")});
     QWidget host;
     RoomSession session(&client, QStringLiteral("63136"), StreamQuality::Auto, &host);
     QSignalSpy failures(&session, &RoomSession::failed);
 
     QVERIFY(session.resolve() > 0);
     QTRY_VERIFY_WITH_TIMEOUT(failures.count() == 1, 3000);
-    QCOMPARE(failures.at(0).at(0).toString(), QStringLiteral("ROOM_OFFLINE"));
+    QCOMPARE(failures.at(0).at(0).toString(), QStringLiteral("SERVICE_FAILED"));
     QVERIFY(!failures.at(0).at(0).toString().contains(QStringLiteral("https://")));
     QCOMPARE(session.state(), RoomSession::State::Error);
     client.shutdown();

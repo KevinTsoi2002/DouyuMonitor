@@ -27,6 +27,9 @@ public:
                  StreamQuality userQuality = StreamQuality::Auto);
     bool removeRoom(const QString &roomId);
     bool setPrimaryRoom(const QString &roomId);
+    bool setAudioFocus(const QString &roomId);
+    bool setFavorite(const QString &roomId, bool favorite);
+    QString audioRoomId() const;
     RoomCommandResult addRoomDetailed(const QString &roomId,
                                       StreamQuality requestedQuality = StreamQuality::Auto);
     RoomCommandResult removeRoomDetailed(const QString &roomId);
@@ -55,6 +58,7 @@ signals:
 
 private:
     void recomputeQuality();
+    void applyAudioFocus();
     void publishSnapshots();
     void connectSession(RoomSession *session);
     static bool isValidRoomId(const QString &roomId);
@@ -64,5 +68,6 @@ private:
     QVector<QString> order_;
     QHash<QString, RoomSession *> sessions_;
     QString primaryRoomId_;
+    QString audioRoomId_;
     QString layoutId_ = QStringLiteral("single");
 };

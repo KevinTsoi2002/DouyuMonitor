@@ -39,6 +39,8 @@ private slots:
     void returnsSpecificResultsForManagementCommands();
     void publishesOrderedSnapshotsWithPolicyOverrides();
     void restoresChangedRequestedQualityAfterDroppingToFourRooms();
+    void togglesFavoriteAndPublishesIt();
+    void appliesSingleAudioFocusAndPublishesIt();
     void releasesSessionsWithoutDanglingSnapshotAccess();
 };
 
@@ -163,8 +165,11 @@ void MultiRoomCoordinatorTest::oneRoomFailureDoesNotBlockOtherRooms()
 
     QVERIFY(coordinator.addRoom(QStringLiteral("63136")));
     QVERIFY(coordinator.addRoom(QStringLiteral("63137")));
-    QTRY_VERIFY_WITH_TIMEOUT(failures.count() >= 1, 3000);
-    QCOMPARE(failures.at(0).at(0).toString(), QStringLiteral("63136"));
+    QTRY_COMPARE_WITH_TIMEOUT(coordinator.sessionForRoom(QStringLiteral("63136"))->liveStatus(),
+                              RoomLiveStatus::Offline, 3000);
+    QCOMPARE(failures.count(), 0);
+    QCOMPARE(coordinator.sessionForRoom(QStringLiteral("63136"))->playbackHealth(),
+             RoomPlaybackHealth::Pending);
     QCOMPARE(coordinator.roomCount(), 2);
     QVERIFY(coordinator.surfaceForRoom(QStringLiteral("63137")) != nullptr);
     client.shutdown();
@@ -249,6 +254,39 @@ void MultiRoomCoordinatorTest::restoresChangedRequestedQualityAfterDroppingToFou
     QCOMPARE(coordinator.roomSnapshots().size(), 4);
     QCOMPARE(coordinator.roomSnapshots().at(1).requestedQuality, StreamQuality::Super);
     QCOMPARE(coordinator.roomSnapshots().at(1).effectiveQuality, StreamQuality::Super);
+    client.shutdown();
+}
+
+void MultiRoomCoordinatorTest::togglesFavoriteAndPublishesIt()
+{
+    StreamgetProcessClient client(fakeServicePath());
+    QWidget host;
+    MultiRoomCoordinator coordinator(&client, &host);
+
+    QVERIFY(coordinator.addRoom(QStringLiteral("63136")));
+    QVERIFY(coordinator.setFavorite(QStringLiteral("63136"), true));
+    QVERIFY(coordinator.roomSnapshots().at(0).favorite);
+    QVERIFY(!coordinator.setFavorite(QStringLiteral("63136"), true));
+    QVERIFY(coordinator.setFavorite(QStringLiteral("63136"), false));
+    QVERIFY(!coordinator.roomSnapshots().at(0).favorite);
+    client.shutdown();
+}
+
+void MultiRoomCoordinatorTest::appliesSingleAudioFocusAndPublishesIt()
+{
+    StreamgetProcessClient client(fakeServicePath());
+    QWidget host;
+    MultiRoomCoordinator coordinator(&client, &host);
+
+    QVERIFY(coordinator.addRoom(QStringLiteral("63136")));
+    QVERIFY(coordinator.addRoom(QStringLiteral("63137")));
+    QVERIFY(coordinator.setAudioFocus(QStringLiteral("63137")));
+
+    const RoomSnapshots snapshots = coordinator.roomSnapshots();
+    QVERIFY(!snapshots.at(0).audioFocused);
+    QVERIFY(snapshots.at(1).audioFocused);
+    QVERIFY(snapshots.at(0).muted);
+    QVERIFY(!snapshots.at(1).muted);
     client.shutdown();
 }
 

@@ -1,8 +1,9 @@
 #include "media/player_surface.h"
 
+#include <QCoreApplication>
 #include <QFileInfo>
-#include <QMetaObject>
 #include <QOpenGLContext>
+#include <QMetaObject>
 #include <QTimer>
 
 #include <mpv/client.h>
@@ -42,6 +43,8 @@ PlayerSurface::PlayerSurface(QWidget *parent)
         return;
     }
 
+    mpv_set_property_string(mpv_, "mute", "yes");
+
     eventTimer_->start();
 }
 
@@ -52,6 +55,8 @@ PlayerSurface::~PlayerSurface()
     }
 
     if (renderContext_ != nullptr) {
+        mpv_render_context_set_update_callback(renderContext_, nullptr, nullptr);
+        QCoreApplication::removePostedEvents(this);
         makeCurrent();
         mpv_render_context_free(renderContext_);
         renderContext_ = nullptr;
@@ -216,6 +221,30 @@ bool PlayerSurface::isPaused() const noexcept
     return paused != 0;
 }
 
+bool PlayerSurface::setMuted(bool muted)
+{
+    if (!mpvInitialized_ || mpv_ == nullptr) {
+        playbackState_ = PlaybackState::Error;
+        mediaError_ = QStringLiteral("libmpv is not initialized");
+        return false;
+    }
+    if (mpv_set_property_string(mpv_, "mute", muted ? "yes" : "no") < 0) {
+        playbackState_ = PlaybackState::Error;
+        mediaError_ = QStringLiteral("failed to set mute state");
+        return false;
+    }
+    muted_ = muted;
+    return true;
+}
+
+bool PlayerSurface::isMuted() const noexcept
+{
+    if (!mpvInitialized_ || mpv_ == nullptr) return muted_;
+    int muted = 0;
+    if (mpv_get_property(mpv_, "mute", MPV_FORMAT_FLAG, &muted) < 0) return muted_;
+    return muted != 0;
+}
+
 PlayerSurface::PlaybackState PlayerSurface::playbackState() const noexcept
 {
     return playbackState_;
@@ -263,7 +292,7 @@ void PlayerSurface::initializeGL()
 
 void PlayerSurface::paintGL()
 {
-    if (renderContext_ == nullptr) {
+    if (mpv_ == nullptr || renderContext_ == nullptr) {
         return;
     }
 
@@ -289,7 +318,6 @@ void PlayerSurface::resizeGL(int width, int height)
         return;
     }
 
-    mpv_render_context_set_update_callback(renderContext_, &PlayerSurface::onMpvUpdate, this);
     Q_UNUSED(width);
     Q_UNUSED(height);
 }

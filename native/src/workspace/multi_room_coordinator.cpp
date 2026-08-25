@@ -85,10 +85,12 @@ RoomCommandResult MultiRoomCoordinator::removeRoomDetailed(const QString &roomId
     if (primaryRoomId_ == roomId) {
         primaryRoomId_ = order_.isEmpty() ? QString() : order_.front();
     }
+    if (audioRoomId_ == roomId) audioRoomId_.clear();
 
     const QString previousLayout = layoutId_;
     layoutId_ = recommendedGridId(order_.size());
     recomputeQuality();
+    applyAudioFocus();
     delete session;
 
     emit roomRemoved(roomId);
@@ -110,6 +112,28 @@ RoomCommandResult MultiRoomCoordinator::setPrimaryRoomDetailed(const QString &ro
     recomputeQuality();
     publishSnapshots();
     return RoomCommandResult::Accepted;
+}
+
+bool MultiRoomCoordinator::setAudioFocus(const QString &roomId)
+{
+    if (!sessions_.contains(roomId)) return false;
+    audioRoomId_ = roomId;
+    applyAudioFocus();
+    publishSnapshots();
+    return true;
+}
+
+bool MultiRoomCoordinator::setFavorite(const QString &roomId, bool favorite)
+{
+    RoomSession *session = sessionForRoom(roomId);
+    if (session == nullptr || !session->setFavorite(favorite)) return false;
+    publishSnapshots();
+    return true;
+}
+
+QString MultiRoomCoordinator::audioRoomId() const
+{
+    return audioRoomId_;
 }
 
 RoomCommandResult MultiRoomCoordinator::setRequestedQuality(const QString &roomId,
@@ -154,7 +178,13 @@ RoomSnapshots MultiRoomCoordinator::roomSnapshots() const
                              roomId == primaryRoomId_,
                              session->state(),
                              session->userQuality(),
-                             session->effectiveQuality()});
+                             session->effectiveQuality(),
+                             session->metadata(),
+                             session->liveStatus(),
+                             session->playbackHealth(),
+                             session->isFavorite(),
+                             session->isAudioFocused(),
+                             session->surface() == nullptr || session->surface()->isMuted()});
     }
     return snapshots;
 }
@@ -193,6 +223,17 @@ void MultiRoomCoordinator::recomputeQuality()
         if (!session->setEffectiveQuality(decision.effectiveQuality)) continue;
         emit qualityChanged(roomId, decision.effectiveQuality);
         session->resolve();
+    }
+}
+
+void MultiRoomCoordinator::applyAudioFocus()
+{
+    for (const QString &roomId : order_) {
+        RoomSession *session = sessions_.value(roomId, nullptr);
+        if (session == nullptr) continue;
+        const bool focused = !audioRoomId_.isEmpty() && roomId == audioRoomId_;
+        if (session->surface() != nullptr) session->surface()->setMuted(!focused);
+        session->setAudioFocused(focused);
     }
 }
 

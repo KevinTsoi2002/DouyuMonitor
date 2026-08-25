@@ -7,6 +7,18 @@
 
 #include "service/stream_service_protocol.h"
 
+enum class RoomLiveStatus {
+    Unknown,
+    Online,
+    Offline,
+};
+
+enum class RoomPlaybackHealth {
+    Pending,
+    Playing,
+    Error,
+};
+
 struct RoomMetadata {
     QString roomId;
     QString anchorName;
@@ -47,3 +59,6 @@ struct NativeWorkspaceSnapshot {
 
     bool operator==(const NativeWorkspaceSnapshot &) const = default;
 };
+
+Q_DECLARE_METATYPE(RoomLiveStatus)
+Q_DECLARE_METATYPE(RoomPlaybackHealth)

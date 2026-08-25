@@ -18,6 +18,7 @@ private slots:
     void isOwnedByGuiThread();
     void rejectsMissingMediaWithErrorState();
     void togglesPauseState();
+    void togglesMuteState();
     void loadsLocalImageAndPresentsFirstFrame();
     void stopsAfterFirstFrame();
     void repeatedStopIsIdempotent();
@@ -53,6 +54,16 @@ void PlayerSurfaceTest::togglesPauseState()
     QVERIFY(surface.isPaused());
     QVERIFY(surface.setPaused(false));
     QVERIFY(!surface.isPaused());
+}
+
+void PlayerSurfaceTest::togglesMuteState()
+{
+    PlayerSurface surface;
+
+    QVERIFY(surface.setMuted(true));
+    QVERIFY(surface.isMuted());
+    QVERIFY(surface.setMuted(false));
+    QVERIFY(!surface.isMuted());
 }
 
 void PlayerSurfaceTest::loadsLocalImageAndPresentsFirstFrame()

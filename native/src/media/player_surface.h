@@ -34,6 +34,8 @@ public:
     bool isFirstFrameRendered() const noexcept;
     bool setPaused(bool paused);
     bool isPaused() const noexcept;
+    bool setMuted(bool muted);
+    bool isMuted() const noexcept;
     PlaybackState playbackState() const noexcept;
     QString mediaError() const;
 
@@ -56,6 +58,7 @@ private:
     bool mediaLoaded_ = false;
     bool videoConfigured_ = false;
     bool firstFrameRendered_ = false;
+    bool muted_ = true;
     PlaybackState playbackState_ = PlaybackState::Idle;
     QString mediaError_;
 };

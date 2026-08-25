@@ -38,6 +38,22 @@ QString RoomSession::roomId() const
     return roomId_;
 }
 
+const RoomMetadata &RoomSession::metadata() const noexcept
+{
+    return metadata_;
+}
+
+void RoomSession::applyMetadata(const RoomSearchResult &result)
+{
+    if (result.roomId != roomId_ || result.anchorName.isEmpty() || result.title.isEmpty()
+        || result.category.isEmpty() || result.viewerLabel.isEmpty()) {
+        return;
+    }
+    metadata_ = {result.roomId, result.anchorName, result.title, result.category,
+                 result.viewerLabel, result.avatarUrl};
+    setLiveStatus(result.online ? RoomLiveStatus::Online : RoomLiveStatus::Offline);
+}
+
 StreamQuality RoomSession::userQuality() const noexcept
 {
     return userQuality_;
@@ -66,6 +82,40 @@ bool RoomSession::setEffectiveQuality(StreamQuality quality)
 RoomSession::State RoomSession::state() const noexcept
 {
     return state_;
+}
+
+RoomLiveStatus RoomSession::liveStatus() const noexcept
+{
+    return liveStatus_;
+}
+
+RoomPlaybackHealth RoomSession::playbackHealth() const noexcept
+{
+    return playbackHealth_;
+}
+
+bool RoomSession::isFavorite() const noexcept
+{
+    return favorite_;
+}
+
+bool RoomSession::setFavorite(bool favorite)
+{
+    if (favorite_ == favorite) return false;
+    favorite_ = favorite;
+    return true;
+}
+
+bool RoomSession::isAudioFocused() const noexcept
+{
+    return audioFocused_;
+}
+
+bool RoomSession::setAudioFocused(bool focused)
+{
+    if (audioFocused_ == focused) return false;
+    audioFocused_ = focused;
+    return true;
 }
 
 PlayerSurface *RoomSession::surface() const noexcept
@@ -106,12 +156,22 @@ void RoomSession::onControllerSourceReady(MediaSource source)
         onControllerFailed(QStringLiteral("PLAYER_FAILED"));
         return;
     }
+    setLiveStatus(RoomLiveStatus::Online);
+    setPlaybackHealth(RoomPlaybackHealth::Playing);
     setState(State::Ready);
     emit sourceReady();
 }
 
 void RoomSession::onControllerFailed(QString errorCode)
 {
+    if (errorCode == QStringLiteral("ROOM_OFFLINE")) {
+        if (surface_ != nullptr) surface_->stop();
+        setLiveStatus(RoomLiveStatus::Offline);
+        setPlaybackHealth(RoomPlaybackHealth::Pending);
+        setState(State::Idle);
+        return;
+    }
+    setPlaybackHealth(RoomPlaybackHealth::Error);
     setState(State::Error);
     emit failed(std::move(errorCode));
 }
@@ -131,4 +191,14 @@ void RoomSession::setState(State state)
     if (state_ == state) return;
     state_ = state;
     emit stateChanged(state_);
+}
+
+void RoomSession::setLiveStatus(RoomLiveStatus status)
+{
+    liveStatus_ = status;
+}
+
+void RoomSession::setPlaybackHealth(RoomPlaybackHealth health)
+{
+    playbackHealth_ = health;
 }
