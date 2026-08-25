@@ -25,7 +25,10 @@ MultiRoomCoordinator::~MultiRoomCoordinator()
 {
     const auto sessions = sessions_.values();
     for (RoomSession *session : sessions) {
-        if (session != nullptr) session->release();
+        if (session != nullptr) {
+            session->release();
+            delete session;
+        }
     }
     sessions_.clear();
     order_.clear();

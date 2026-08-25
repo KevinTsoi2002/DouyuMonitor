@@ -227,6 +227,9 @@ if(DOUYU_BUILD_MAIN_WINDOW_TEST)
         src/app/main_window.cpp
         src/media/media_source.cpp
         src/media/player_surface.cpp
+        src/workspace/quality_policy.cpp
+        src/workspace/room_session.cpp
+        src/workspace/multi_room_coordinator.cpp
     )
 
     target_link_libraries(main_window_test
@@ -234,10 +237,15 @@ if(DOUYU_BUILD_MAIN_WINDOW_TEST)
             Qt6::Widgets
             Qt6::OpenGLWidgets
             Qt6::Test
+            remote_playback
             mpv::mpv
     )
 
     target_include_directories(main_window_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    add_dependencies(main_window_test fake_streamget_service)
+    target_compile_definitions(main_window_test PRIVATE
+        FAKE_STREAMGET_SERVICE_PATH="$<TARGET_FILE:fake_streamget_service>"
+    )
 
     add_custom_command(TARGET main_window_test POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -253,12 +261,16 @@ add_executable(douyu_monitor_native
     src/app/main_window.cpp
     src/media/media_source.cpp
     src/media/player_surface.cpp
+    src/workspace/quality_policy.cpp
+    src/workspace/room_session.cpp
+    src/workspace/multi_room_coordinator.cpp
 )
 
 target_link_libraries(douyu_monitor_native
     PRIVATE
         Qt6::Widgets
         Qt6::OpenGLWidgets
+        remote_playback
         mpv::mpv
 )
 

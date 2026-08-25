@@ -13,8 +13,9 @@ RoomSession::RoomSession(StreamgetProcessClient *client,
     , userQuality_(userQuality)
     , effectiveQuality_(userQuality)
     , controller_(new RemotePlaybackController(client, this))
-    , surface_(new PlayerSurface(surfaceParent))
+    , surface_(new PlayerSurface(nullptr))
 {
+    Q_UNUSED(surfaceParent)
     qRegisterMetaType<RoomSession::State>();
     connect(controller_, &RemotePlaybackController::sourceReady,
             this, &RoomSession::onControllerSourceReady);
@@ -27,6 +28,7 @@ RoomSession::RoomSession(StreamgetProcessClient *client,
 RoomSession::~RoomSession()
 {
     release();
+    if (surface_ != nullptr) surface_->setParent(nullptr);
     delete surface_;
     surface_ = nullptr;
 }
