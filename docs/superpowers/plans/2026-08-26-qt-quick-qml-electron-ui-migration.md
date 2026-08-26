@@ -48,7 +48,6 @@ local codes and Chinese labels at the controller boundary.
 
 **Files:**
 - Modify: `native/CMakeLists.txt`
-- Modify: `native/app/main.cpp`
 - Create: `native/app/qml/Main.qml`
 - Create: `native/tests/qml_engine_smoke_test.cpp`
 
@@ -77,36 +76,30 @@ Expected: configuration or build fails because `qml_engine_smoke_test` and the `
 
 - [ ] **Step 3: Add the minimal Quick application and module.**
 
-In `native/CMakeLists.txt`, replace the GUI module discovery with the following
-component list and add the QML module to `douyu_monitor_native` after the
-executable declaration:
+In `native/CMakeLists.txt`, extend the existing GUI module discovery with the
+following component list, preserving the legacy Widgets targets until Task 8:
 
 ```cmake
 find_package(Qt6 CONFIG REQUIRED COMPONENTS
-    Core Gui Qml Quick QuickControls2 OpenGL Test QuickTest)
+    Core Gui Widgets OpenGL OpenGLWidgets Qml Quick QuickControls2 Test QuickTest)
 
-qt_add_qml_module(douyu_monitor_native
+qt_add_library(douyu_qml STATIC)
+qt_add_qml_module(douyu_qml
     URI DouyuMonitor
     VERSION 1.0
     QML_FILES
         app/qml/Main.qml
 )
-target_link_libraries(douyu_monitor_native PRIVATE
-    Qt6::Core Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2 Qt6::OpenGL
-    remote_playback mpv::mpv)
-```
+target_link_libraries(douyu_qml PRIVATE Qt6::Qml Qt6::Quick Qt6::QuickControls2)
 
-Replace `QApplication` in `native/app/main.cpp` with `QGuiApplication`; before
-constructing it call:
-
-```cpp
-QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
-QGuiApplication application(argc, argv);
-qmlRegisterType<MpvQuickItem>("DouyuMonitor", 1, 0, "MpvQuickItem");
-QQmlApplicationEngine engine;
-engine.rootContext()->setContextProperty("appController", &controller);
-engine.loadFromModule("DouyuMonitor", "Main");
-if (engine.rootObjects().isEmpty()) return 1;
+add_executable(qml_engine_smoke_test tests/qml_engine_smoke_test.cpp)
+target_link_libraries(qml_engine_smoke_test PRIVATE
+    Qt6::Core Qt6::Gui Qt6::Qml Qt6::Quick Qt6::Test)
+qt_add_resources(qml_engine_smoke_test qml_engine_test_resources
+    PREFIX "/qml"
+    FILES app/qml/Main.qml
+)
+add_test(NAME qml_engine_smoke_test COMMAND qml_engine_smoke_test)
 ```
 
 Create `Main.qml` with a non-resizable 1280 by 720 application window and an
@@ -129,24 +122,17 @@ ApplicationWindow {
 }
 ```
 
-Create `qml_engine_smoke_test` with `Qt6::Gui`, `Qt6::Qml`, `Qt6::Quick`, and
-`Qt6::Test`, then compile the tested QML into that executable with:
-
-```cmake
-qt_add_resources(qml_engine_smoke_test qml_engine_test_resources
-    PREFIX "/qml"
-    FILES app/qml/Main.qml
-)
-```
-
-Register it with `add_test(NAME qml_engine_smoke_test COMMAND qml_engine_smoke_test)`.
+Keep `native/app/main.cpp` on the legacy entry point during M1-M7. The actual
+`QGuiApplication` / `QQmlApplicationEngine` application switch is Task 8,
+when the old QWidget UI and its self-test are removed in the same change.
 
 - [ ] **Step 4: Run the foundation test and debug build.**
 
 Run: `cmake --build --preset windows-x64-debug; ctest --preset windows-x64-debug -R qml_engine_smoke_test`
 
 Expected: the test passes and `douyu_monitor_native.exe` is rebuilt without
-linking `Qt6Widgets` or `Qt6OpenGLWidgets`.
+changing its legacy runtime linkage; `qml_engine_smoke_test` itself links only
+Qt Core/Gui/Qml/Quick/Test.
 
 - [ ] **Step 5: Commit the foundation.**
 
