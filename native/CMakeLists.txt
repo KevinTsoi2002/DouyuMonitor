@@ -12,7 +12,16 @@ if(QT_ROOT)
     list(PREPEND CMAKE_PREFIX_PATH "${QT_ROOT}")
 endif()
 
-find_package(Qt6 CONFIG REQUIRED COMPONENTS Widgets OpenGLWidgets Test)
+find_package(Qt6 CONFIG REQUIRED COMPONENTS
+    Widgets
+    OpenGL
+    OpenGLWidgets
+    Qml
+    Quick
+    QuickControls2
+    Test
+    QuickTest
+)
 
 set(MPV_ROOT "$ENV{MPV_ROOT}" CACHE PATH "libmpv SDK root")
 find_path(MPV_INCLUDE_DIR NAMES mpv/client.h PATHS "${MPV_ROOT}/include" NO_DEFAULT_PATH REQUIRED)
@@ -30,6 +39,46 @@ set_target_properties(mpv::mpv PROPERTIES
 )
 
 enable_testing()
+
+qt_policy(SET QTP0001 NEW)
+qt_policy(SET QTP0004 NEW)
+
+qt_add_library(douyu_qml STATIC)
+qt_add_qml_module(douyu_qml
+    URI DouyuMonitor
+    VERSION 1.0
+    OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/DouyuMonitor"
+    QML_FILES
+        app/qml/Main.qml
+)
+target_link_libraries(douyu_qml PRIVATE
+    Qt6::Qml
+    Qt6::Quick
+    Qt6::QuickControls2
+)
+
+add_executable(qml_engine_smoke_test
+    tests/qml_engine_smoke_test.cpp
+)
+target_link_libraries(qml_engine_smoke_test PRIVATE
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Qml
+    Qt6::Quick
+    Qt6::Test
+)
+qt_add_resources(qml_engine_smoke_test qml_engine_test_resources
+    PREFIX "/qml"
+    BASE "${CMAKE_CURRENT_SOURCE_DIR}/app/qml"
+    FILES app/qml/Main.qml
+)
+add_test(NAME qml_engine_smoke_test COMMAND qml_engine_smoke_test)
+set_property(TEST qml_engine_smoke_test PROPERTY ENVIRONMENT_MODIFICATION
+    "PATH=path_list_prepend:${QT_ROOT}/bin"
+    "QT_PLUGIN_PATH=set:${QT_ROOT}/plugins"
+    "QT_QPA_PLATFORM=set:offscreen"
+    "QML2_IMPORT_PATH=set:${QT_ROOT}/qml"
+)
 
 add_library(stream_service STATIC
     src/service/stream_service_protocol.cpp
