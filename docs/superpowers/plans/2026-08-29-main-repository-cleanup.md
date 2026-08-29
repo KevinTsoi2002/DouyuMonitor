@@ -67,3 +67,21 @@ Expected: CMake 配置成功，Release CTest 全部通过。
 Run: `git diff --check; git status --short; git ls-files | Where-Object { $_ -notlike 'native/*' -and $_ -notlike 'docs/*' -and $_ -notin '.gitignore','README.md' }`
 
 Expected: 无空白错误；根目录受跟踪文件只剩 `.gitignore` 和 `README.md`；旧框架文件不在 `main`。
+
+### Task 4: 提交与推送
+
+**Files:**
+- Verify: `main`
+- Verify: `origin/main`
+
+- [x] **Step 1: 创建整理提交**
+
+Run: `git commit -m "chore: clean main for Qt-only native runtime"`
+
+Expected: 创建提交 `1f5f0a8`。
+
+- [x] **Step 2: 推送 main**
+
+Run: `git push origin main`
+
+Expected: 远端 `main` 从 `9754b47` 更新至 `1f5f0a8`。
