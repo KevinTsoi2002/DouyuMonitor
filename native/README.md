@@ -1,36 +1,44 @@
-# Native M0 Bootstrap
+# 原生 Qt 客户端
 
-This directory contains the Qt Quick/QML + libmpv Windows x64 client.
+`native` 是 DouyuMonitor 当前唯一维护的桌面客户端：Qt Quick/QML 负责界面，C++20 负责应用逻辑，libmpv 负责播放，独立 `streamget_service.exe` 负责斗鱼资料与播放变体解析。
 
-## Current state
+## 目录职责
 
-- The vcpkg manifest is pinned to the local registry baseline recorded in
-  `vcpkg-configuration.json`.
-- The shipped runtime uses Qt GUI, QML, Qt Quick, OpenGL, and Testlib.
-- `MpvQuickItem` owns the GUI-thread libmpv handle and OpenGL render context.
-- `MpvQuickItem` can load a local media file and reports the first rendered frame
-  for deterministic playback tests.
-- Playback state is explicit: `Idle`, `Loading`, `Playing`, `Paused`, `Ended`,
-  or `Error`; pause/resume uses libmpv's native property.
-- `Main.qml` is the shipped desktop shell and binds UI actions through
-  `AppController`.
-- libmpv is not included in vcpkg; CMake requires an explicitly selected
-  `MPV_ROOT` containing the headers, runtime DLL and MSVC import library.
+| 目录 | 职责 |
+| --- | --- |
+| `app` | Qt 入口与 QML 界面资源。 |
+| `src/ui` | 控制器、QML 模型与 libmpv Quick Item。 |
+| `src/workspace` | 多房协调、持久化、刷新、质量和通知规则。 |
+| `src/media` | 播放源与播放控制。 |
+| `src/service` | StreamGet 子进程协议与客户端。 |
+| `src/danmaku` | 斗鱼弹幕协议、连接、治理和会话。 |
+| `service` | StreamGet Python 服务和 Python 单元测试。 |
+| `tests` | C++、QML 和运行时回归测试。 |
+| `cmake` | Qt 部署、运行时依赖和发布载荷校验脚本。 |
+| `scripts` | 依赖准备、服务构建和安装包生成脚本。 |
 
-## Configure
+完整逐文件说明见根目录的 [文件职责索引](../docs/文件职责索引.md)。
 
-Install the pinned dependencies with the bootstrap script. The script uses
-the official Qt repository through the pinned `aqtinstall` version and checks
-the libmpv archive and runtime SHA-256 values before generating an MSVC import
-library from the DLL exports.
+## 前置条件
+
+- Windows x64
+- Visual Studio 2022（MSVC x64 工具链）
+- CMake 3.24 或更高版本、Ninja
+- Qt 6.8.3 MSVC 2022 x64
+- libmpv SDK：`include/mpv/client.h`、`libmpv.lib`、`libmpv-2.dll`
+
+`vcpkg-configuration.json` 固定项目依赖基线。libmpv 不通过 vcpkg 分发，必须由 `MPV_ROOT` 显式指定。
+
+## 配置和构建
+
+在 `native` 目录内的 Visual Studio x64 Developer PowerShell 中设置环境变量：
 
 ```powershell
-.\native\scripts\bootstrap-dependencies.ps1
 $env:QT_ROOT = 'D:\Qt\6.8.3\msvc2022_64'
-$env:MPV_ROOT = (Resolve-Path .\native\sdk\mpv).Path
+$env:MPV_ROOT = (Resolve-Path .\sdk\mpv).Path
 ```
 
-Then run from a Visual Studio x64 developer prompt:
+Debug：
 
 ```powershell
 cmake --preset windows-x64
@@ -38,81 +46,55 @@ cmake --build --preset windows-x64-debug
 ctest --preset windows-x64-debug
 ```
 
-The Debug executable uses Qt debug libraries and requires the Visual Studio
-debug runtime when launched outside a developer prompt. For a normal
-double-clickable build, configure and build the Release preset instead:
+Release：
 
 ```powershell
 cmake --preset windows-x64-release
 cmake --build --preset windows-x64-release --target douyu_monitor_native
-.\native\out\build\windows-x64-release\douyu_monitor_native.exe
+ctest --preset windows-x64-release
 ```
 
-The post-build deployment runs `windeployqt` with the matching `--debug` or
-`--release` mode and fails the build if the matching Windows platform plugin is
-missing (`platforms/qwindowsd.dll` for Debug or `platforms/qwindows.dll` for
-Release). Do not copy Qt DLLs or platform plugins between the two build
-directories.
+Release 可执行文件为：
 
-The dependency probe and Qt Quick tests are covered by CTest. The native
-executable supports `--media <path>` during `--self-test`; the self-test loads
-the QML application, waits for a Qt Quick OpenGL render context, and exits
-with a non-zero status if libmpv is not ready. Combining the options makes the
-self-test wait for the first rendered frame as well.
+```text
+native/out/build/windows-x64-release/douyu_monitor_native.exe
+```
 
-For a deterministic media lifecycle check, run:
+部署步骤由 CMake 调用匹配的 `windeployqt` 完成。Release 目录必须包含 `platforms/qwindows.dll`；不要混用 Debug 与 Release 的 Qt DLL 或平台插件。
+
+## StreamGet 服务
+
+准备 Python 构建环境并打包服务：
 
 ```powershell
-.\native\out\build\windows-x64\douyu_monitor_native.exe --self-test --media <path-to-local-media>
-ctest --test-dir native/out/build/windows-x64 --output-on-failure -R native_self_test_media
+.\scripts\bootstrap-streamget-service.ps1
+.\scripts\build-streamget-service.ps1
 ```
 
-The media self-test covers `load`, `first-frame`, `stop`, and `release`, and
-prints a fixed Qt Quick renderer summary. It uses only the supplied local path
-and does not print media paths, URLs, cookies, tokens, or raw libmpv
-diagnostics.
+服务以私有 JSONL stdin/stdout 协议运行。主程序只在内存中持有当前播放会话的地址；不会持久化播放 URL、查询参数、Cookie、Token、签名、原始弹幕帧或原始服务诊断。
 
-## Qt-only StreamGet service
+## 自测与安装包
 
-The maintained product runtime is Qt Quick/QML + C++ and libmpv. The Qt
-application starts one `streamget_service.exe` child per application through
-`QProcess`. The child owns Douyu discovery and StreamGet resolution, and
-communicates through private stdin/stdout JSONL.
-
-Bootstrap the pinned Python service environment from PowerShell:
+运行程序自测：
 
 ```powershell
-.\native\scripts\bootstrap-streamget-service.ps1
+.\out\build\windows-x64-release\douyu_monitor_native.exe --self-test
 ```
 
-The bootstrap creates `native\.venv` and installs exactly `streamget==4.0.10`
-and `pyinstaller==6.22.0`. Build the standalone child package with:
+构建安装包：
 
 ```powershell
-.\native\scripts\build-streamget-service.ps1
+.\scripts\build-windows-installer.ps1
 ```
 
-The script prints only the resulting path:
-`native\out\service\streamget_service.exe`.
+输出文件：
 
-The resolver URL exists only in the service protocol payload and Qt memory
-needed to start playback. It is never persisted, logged, written to stderr, or
-copied into crash artifacts. Service and native tests use fake data and do not
-require real Douyu credentials or network access.
-
-When Python is available during CMake configure, the service unit tests are
-registered as `streamget_service_python_tests`; disable them with
-`-DDOUYU_BUILD_SERVICE_TESTS=OFF` only for environments without Python.
-
-## Windows installer
-
-After building the Release target, create a self-contained Windows x64
-installer with the built-in IExpress tool:
-
-```powershell
-.\native\scripts\build-windows-installer.ps1
+```text
+native/out/installer/DouyuMonitor-Setup.exe
 ```
 
-The output is `native\out\installer\DouyuMonitor-Setup.exe`. It installs the
-Qt Quick application and bundled StreamGet service under the current user's
-`%LOCALAPPDATA%\Programs\DouyuMonitor` and creates a Start Menu shortcut.
+安装器使用 Windows 自带 IExpress，安装到 `%LOCALAPPDATA%\\Programs\\DouyuMonitor` 并创建开始菜单快捷方式。运行时载荷校验会拒绝测试程序、构建残留以及 Electron、Chromium、Node、Qt WebEngine 文件。
+
+## 验收边界
+
+自动化验证覆盖 C++、QML、服务协议、libmpv 依赖与自测入口。发布前仍应在目标用户环境完成真实斗鱼 1/4/6/9 路长时间播放验收，重点观察第九路、弹幕、CPU/GPU、内存和关闭稳定性。

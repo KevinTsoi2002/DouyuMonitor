@@ -1,73 +1,110 @@
 # DouyuMonitor
 
-DouyuMonitor 是一个基于 Electron 的斗鱼多直播间监看工具，面向需要同时关注多个直播间的用户。它把多个房间集中到一个桌面窗口中，并在对应画面上叠加持续滚动的弹幕。
+DouyuMonitor 是基于 Qt Quick/QML、C++ 和 libmpv 的 Windows x64 斗鱼多直播间监看工具。当前 `main` 只维护原生 Qt 实现，最多支持 9 路直播；旧 Electron/TypeScript 实现已从 `main` 移除，并保存在 `legacy-framework` 分支供历史追溯。
 
-## 下载
+## 当前版本
 
-Windows x64 安装包位于 [Releases](https://github.com/KevinTsoi2002/DouyuMonitor/releases/latest)。下载最新版本安装包后运行安装程序即可。
-
-当前发布包未进行 Windows 代码签名。原因是构建环境没有可用的、带 Code Signing 用途的受信任证书。Windows 可能显示“未知发布者”；请从本项目的 GitHub Release 下载，并在安装前核对 Release 中的 SHA-256 校验值。
+- 发布版本：`V0.2.0`
+- GitHub Release：[DouyuMonitor V0.2.0](https://github.com/KevinTsoi2002/DouyuMonitor/releases/tag/V0.2.0)
+- Windows 安装包：Release 中的 `DouyuMonitor-Setup.exe`
+- 未提供代码签名；下载后请以 Release 页面中的 SHA-256 值校验安装包
 
 ## 功能
 
-- 按直播间号或主播名字搜索并添加房间
-- 多种画面布局：单画面、2x2、3x2、3x3、横向、纵向和主画面布局
-- 主画面布局支持拖动分隔线调整画幅，切换主直播间时直接对调位置
-- 每个房间独立显示滚动弹幕，可设置弹幕密度、字号、速度、透明度和颜色
-- 房间列表支持历史记录、收藏和自定义分组
-- 支持工作区预设，可保存一组房间、布局、主画面和弹幕设置并一键恢复
-- 支持监控状态面板、播放失败自动恢复、开播/下播与播放状态通知
-- 支持弹幕关键词过滤、重复弹幕抑制、峰值治理和治理统计
-- 支持应用内快捷键；快捷键仅在应用窗口获得焦点时生效
-- 支持设置主直播间、独立音量、全局静音和默认音量 50%
-- 房间资料和开播状态会定时刷新（在线约 60 秒、未开播约 120 秒，失败自动退避）；未开播房间不会请求播放源
-- 仅接受经过 CDN 白名单校验的独立 HTTP/HTTPS FLV 播放地址
+- 按房间号或主播名搜索并添加斗鱼直播间
+- 单画面、2x2、3x2、3x3、横向、纵向和主画面布局
+- 最多 9 路同时播放，主画面支持拖动分隔线
+- 每个房间独立弹幕、弹幕过滤、重复抑制和峰值治理
+- 房间资料、主播头像、标题、观众数和开播状态定时刷新
+- 历史记录、收藏、自定义分组和工作区预设
+- 声音总控、单声道/多声道、独立音量和默认音频焦点
+- StreamGet 动态清晰度列表、播放源重试和状态 Toast
+- 应用级全屏，支持 F11 切换和 Escape 退出
+- Windows 系统通知、快捷键和关闭生命周期保护
 
-## 使用
+## 技术边界
 
-### 直接运行源码
+- UI：Qt Quick/QML
+- 应用逻辑：C++20
+- 播放：libmpv + OpenGL
+- 斗鱼解析：独立 `streamget_service.exe` 子进程
+- 弹幕：Qt WebSockets 原生客户端
+- 安装器：Windows 自带 IExpress 自解压安装器
+- 不使用 Electron、Chromium、Node.js、Qt WebEngine 或网页播放器
 
-环境要求：Node.js 20 或更高版本、Python 3.11 或更高版本。
+## 快速开始
+
+### 环境要求
+
+- Windows x64
+- Visual Studio 2022，含 MSVC x64 工具链
+- CMake 3.24 或更高版本、Ninja
+- Qt `6.8.3` MSVC 2022 x64
+- 已准备好的 libmpv SDK，包含头文件、`libmpv.lib` 和 `libmpv-2.dll`
+
+### 配置和构建
+
+在项目根目录的 Visual Studio x64 Developer PowerShell 中设置依赖路径：
 
 ```powershell
-npm install
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements-streamget.txt
-npm run build
-npm start
+$env:QT_ROOT = 'D:\Qt\6.8.3\msvc2022_64'
+$env:MPV_ROOT = (Resolve-Path .\native\sdk\mpv).Path
+Set-Location .\native
 ```
 
-Electron 主进程会自动查找 `.venv\Scripts\python.exe`。如果使用其他 Python，可设置 `STREAMGET_PYTHON` 指向解释器路径。
+后续命令均在同一终端的 `native` 目录内执行：
+
+```powershell
+cmake --preset windows-x64-release
+cmake --build --preset windows-x64-release --target douyu_monitor_native
+ctest --preset windows-x64-release
+```
+
+启动 Release 程序：
+
+```powershell
+.\out\build\windows-x64-release\douyu_monitor_native.exe
+```
 
 ### 构建 Windows 安装包
 
-打包前安装 PyInstaller：
+先构建 Release，再执行：
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install -r requirements-streamget-build.txt
-npm run dist:win
+.\scripts\build-windows-installer.ps1
 ```
 
-安装包输出到 `release\DouyuMonitor-Setup-<version>-x64.exe`。`npm run dist:unpacked` 可生成 `release\win-unpacked\DouyuMonitor.exe` 用于本地验证；解包目录适合便携运行和问题复现，不需要安装器。
+安装包输出到 `native/out/installer/DouyuMonitor-Setup.exe`，安装位置为当前用户的 `%LOCALAPPDATA%\\Programs\\DouyuMonitor`，并创建开始菜单快捷方式。
 
-## 播放源与合规边界
+## StreamGet 服务
 
-Python 桥接程序只调用 StreamGet 的 `DouyuLiveStream.fetch_app_stream_data()` 获取播放数据。应用不会调用网页解析器、生成斗鱼网页签名、保存带查询参数的播放 URL，也不会记录 Cookie、Token 或请求头。
-
-应用只接受独立播放器可用且主机名通过 CDN 白名单校验的 HTTP/HTTPS FLV 地址。平台没有提供合规直连播放源时，房间仍会保留在列表中并显示平台阻塞状态。播放地址只在当前房间会话内存中使用，平台过期后需要重新获取。
-
-当前生产模式通常只返回一个 `auto` 清晰度变体，因此清晰度选择器可能不可用；测试模式提供五种模拟清晰度用于验证界面。
-
-## 数据与隐私
-
-渲染进程会把房间顺序、布局、主房间、音频焦点、清晰度、弹幕偏好、音量和静音状态保存到本地浏览器存储。快照不包含播放 URL、查询参数、Token、Cookie、凭据或弹幕内容。应用启动后会重新检查播放可用性。
-
-## 开发检查
+服务源码位于 `native/service`。首次准备环境：
 
 ```powershell
-npm test
-npm run typecheck
-npm run build
+.\scripts\bootstrap-streamget-service.ps1
+.\scripts\build-streamget-service.ps1
 ```
 
-性能基线需要先生成 `release\win-unpacked\DouyuMonitor.exe`，并通过环境变量提供当前在线的房间号。测试报告写入系统临时目录，不包含播放 URL 或凭据。
+服务通过私有 JSONL stdin/stdout 协议与 Qt 主程序通信。播放地址只在当前房间会话内存中使用，不写入日志、配置或诊断文件；Cookie、Token、签名和原始弹幕帧同样不会持久化。
+
+## 目录和文件职责
+
+完整的逐文件职责说明见：[文件职责索引](docs/文件职责索引.md)。主要边界如下：
+
+| 目录 | 职责 |
+| --- | --- |
+| `native/app` | Qt 应用入口、QML 组件、面板、对话框和图标资源 |
+| `native/src/ui` | QML 暴露的控制器、模型和 libmpv Quick Item |
+| `native/src/workspace` | 房间会话、工作区持久化、布局、质量、通知和状态调度 |
+| `native/src/media` | 播放源模型和 StreamGet 播放控制 |
+| `native/src/service` | Qt 与 StreamGet 子进程之间的协议和进程管理 |
+| `native/src/danmaku` | 斗鱼弹幕协议、Socket、治理和会话管理 |
+| `native/service` | 独立的 StreamGet Python 服务及单元测试 |
+| `native/tests` | C++、QML 和服务回归测试 |
+| `native/cmake` | 运行时依赖校验、Qt 部署和服务复制脚本 |
+| `native/scripts` | 依赖准备、服务构建和 Windows 安装包脚本 |
+| `docs` | 当前 Qt 设计、计划、文件职责索引和中文开发日志；保留的 2026-08-24 迁移日志维持原始审计记录 |
+
+## 验证
+
+发布前至少执行 Release 全量 CTest、安装包 stage 的 `--self-test` 和载荷扫描。真实斗鱼 1/4/6/9 路长时间播放、弹幕稳定性及用户机器上的 CPU/GPU/内存验收仍需在目标环境完成。

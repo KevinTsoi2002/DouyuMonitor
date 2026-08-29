@@ -1,17 +1,32 @@
-node_modules/
-.venv/
-.npm-cache/
+# Codex and local tool state
 .playwright-mcp/
 .serena/
 .superpowers/
 .worktrees/
-/native/vcpkg_installed/
+
+# Native build and dependency artifacts
+/native/.venv/
+/native/dependencies/
 /native/out/
 /native/sdk/
-dist/
-build/
-release/
-release-sidebar/
+/native/vcpkg_installed/
+
+# Local diagnostic output
+/*.err
+/*.out
+/build-*.txt
+/cmake-*.txt
+/coord-*.txt
+/ctest-*.txt
+/qml-*.txt
+/native/*.err
+/native/*.out
+/native/build-*.txt
+/native/cmake-*.txt
+/native/coord-*.txt
+/native/ctest-*.txt
+/native/qml-*.txt
+/native/dependencies.lock.json
 *.log
 *.tmp
 *.temp
