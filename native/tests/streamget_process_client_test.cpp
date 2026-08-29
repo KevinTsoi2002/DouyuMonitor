@@ -35,11 +35,13 @@ private slots:
     void initTestCase();
     void startsLazilyAndPings();
     void searchesWithTypedResults();
+    void searchesNumericRoomWithScriptedStatus();
     void correlatesRequestsAndKeepsTwoInFlight();
     void timesOutAndCancelsLateResponses();
     void rejectsMalformedChildOutput();
     void failsPendingWorkAndRestartsAfterCrash();
     void shutsDownWithinBound();
+    void startsANewClientAfterImmediateShutdown();
 };
 
 void StreamgetProcessClientTest::initTestCase()
@@ -91,6 +93,35 @@ void StreamgetProcessClientTest::searchesWithTypedResults()
     QVERIFY(response.ok);
     QVERIFY(response.search);
     QVERIFY(response.results.isEmpty());
+    client.shutdown();
+}
+
+void StreamgetProcessClientTest::searchesNumericRoomWithScriptedStatus()
+{
+    StreamgetProcessClient client(
+        fakeServicePath(),
+        {QStringLiteral("--search-script"), QStringLiteral("online,offline,online")});
+    QSignalSpy responses(&client, &StreamgetProcessClient::responseReceived);
+
+    const QVector<bool> expectedOnline{true, false, true};
+    for (const bool expected : expectedOnline) {
+        const quint64 requestId = client.search(QStringLiteral("63136"), 1000);
+        waitForSignalCount(responses, responses.count() + 1);
+        const ServiceResponse response = responseFrom(responses, responses.count() - 1);
+        QCOMPARE(response.requestId, requestId);
+        QVERIFY(response.ok);
+        QVERIFY(response.search);
+        QCOMPARE(response.results.size(), 1);
+        const RoomSearchResult &result = response.results.front();
+        QCOMPARE(result.roomId, QStringLiteral("63136"));
+        QCOMPARE(result.anchorName, QStringLiteral("Fake Anchor"));
+        QCOMPARE(result.title, QStringLiteral("Fake Room"));
+        QCOMPARE(result.category, QStringLiteral("Game"));
+        QCOMPARE(result.viewerLabel, QStringLiteral("1,234"));
+        QCOMPARE(result.online, expected);
+        QVERIFY(result.avatarUrl.isValid());
+    }
+
     client.shutdown();
 }
 
@@ -152,7 +183,7 @@ void StreamgetProcessClientTest::rejectsMalformedChildOutput()
     StreamgetProcessClient client(fakeServicePath(), {QStringLiteral("--malformed")});
     QSignalSpy failures(&client, &StreamgetProcessClient::requestFailed);
 
-    const quint64 requestId = client.ping(500);
+    const quint64 requestId = client.ping(1500);
     waitForSignalCount(failures, 1);
     QCOMPARE(failures.at(0).at(0).toULongLong(), requestId);
     QCOMPARE(failures.at(0).at(1).toString(), QStringLiteral("INVALID_RESPONSE"));
@@ -199,6 +230,24 @@ void StreamgetProcessClientTest::shutsDownWithinBound()
     QVERIFY(elapsed.elapsed() < 1000);
     waitForSignalCount(stopped, 1, 1000);
     QVERIFY(!client.isRunning());
+}
+
+void StreamgetProcessClientTest::startsANewClientAfterImmediateShutdown()
+{
+    {
+        StreamgetProcessClient client(fakeServicePath());
+        QVERIFY(client.resolve(QStringLiteral("63136"), StreamQuality::Auto, 5000) > 0);
+        client.shutdown(100);
+    }
+
+    StreamgetProcessClient restarted(fakeServicePath());
+    QSignalSpy responses(&restarted, &StreamgetProcessClient::responseReceived);
+    const quint64 requestId = restarted.ping(1000);
+    QVERIFY(requestId > 0);
+    waitForSignalCount(responses, 1);
+    QCOMPARE(responseFrom(responses).requestId, requestId);
+    QVERIFY(responseFrom(responses).ok);
+    restarted.shutdown();
 }
 
 QTEST_GUILESS_MAIN(StreamgetProcessClientTest)

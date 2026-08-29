@@ -121,6 +121,8 @@ void RemotePlaybackController::onResponse(ServiceResponse response)
         return;
     }
 
+    emit variantsReady(response.variants);
+
     const auto source = MediaSource::fromRemoteVariant(response.roomId, response.variants.first());
     if (!source.has_value()) {
         failWithCode(QStringLiteral("UNSAFE_STREAM_URL"));

@@ -240,8 +240,7 @@ std::optional<ServiceResponse> decodeResponse(const QByteArray &line)
             item.title = result.value(QStringLiteral("title")).toString();
             item.category = result.value(QStringLiteral("category")).toString();
             item.viewerLabel = result.value(QStringLiteral("viewerLabel")).toString();
-            if (!isValidRoomId(item.roomId) || item.anchorName.isEmpty() || item.title.isEmpty()
-                || item.category.isEmpty() || item.viewerLabel.isEmpty()
+            if (!isValidRoomId(item.roomId) || item.anchorName.isEmpty()
                 || !result.value(QStringLiteral("online")).isBool()) {
                 return std::nullopt;
             }

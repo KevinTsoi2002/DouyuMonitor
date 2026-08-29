@@ -67,6 +67,8 @@ struct ServiceResponse {
 };
 
 Q_DECLARE_METATYPE(ServiceResponse)
+Q_DECLARE_METATYPE(StreamVariant)
+Q_DECLARE_METATYPE(QVector<StreamVariant>)
 
 QByteArray encodeRequest(const ServiceRequest &request);
 std::optional<ServiceRequest> decodeRequest(const QByteArray &line);

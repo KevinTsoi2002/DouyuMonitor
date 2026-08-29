@@ -2,8 +2,21 @@
 
 #include "media/remote_playback_controller.h"
 #include "service/streamget_process_client.h"
+#include "ui/mpv_quick_item.h"
 
 namespace {
+
+QString qualityToken(StreamQuality quality)
+{
+    switch (quality) {
+    case StreamQuality::Auto: return QStringLiteral("auto");
+    case StreamQuality::Original: return QStringLiteral("original");
+    case StreamQuality::Super: return QStringLiteral("super");
+    case StreamQuality::High: return QStringLiteral("high");
+    case StreamQuality::Standard: return QStringLiteral("standard");
+    }
+    return {};
+}
 
 bool isSafeHttpUrl(const QUrl &url)
 {
@@ -17,33 +30,30 @@ bool isSafeHttpUrl(const QUrl &url)
 RoomSession::RoomSession(StreamgetProcessClient *client,
                          QString roomId,
                          StreamQuality userQuality,
-                         QWidget *surfaceParent,
-                         QObject *parent)
+                         QObject *parent,
+                         RoomMetadata metadata)
     : QObject(parent)
     , roomId_(std::move(roomId))
     , userQuality_(userQuality)
     , effectiveQuality_(userQuality)
+    , metadata_(std::move(metadata))
     , controller_(new RemotePlaybackController(client, this))
-    , surface_(new PlayerSurface(nullptr))
 {
-    Q_UNUSED(surfaceParent)
+    metadata_.roomId = roomId_;
     qRegisterMetaType<RoomSession::State>();
     connect(controller_, &RemotePlaybackController::sourceReady,
             this, &RoomSession::onControllerSourceReady);
+    connect(controller_, &RemotePlaybackController::variantsReady,
+            this, &RoomSession::onControllerVariantsReady);
     connect(controller_, &RemotePlaybackController::failed,
             this, &RoomSession::onControllerFailed);
     connect(controller_, &RemotePlaybackController::stateChanged,
             this, &RoomSession::onControllerStateChanged);
-    connect(surface_, &PlayerSurface::playbackFailed,
-            this, &RoomSession::onSurfacePlaybackFailed);
 }
 
 RoomSession::~RoomSession()
 {
     release();
-    if (surface_ != nullptr) surface_->setParent(nullptr);
-    delete surface_;
-    surface_ = nullptr;
 }
 
 QString RoomSession::roomId() const
@@ -58,12 +68,16 @@ const RoomMetadata &RoomSession::metadata() const noexcept
 
 void RoomSession::applyMetadata(const RoomSearchResult &result)
 {
-    if (result.roomId != roomId_ || result.anchorName.isEmpty() || result.title.isEmpty()
-        || result.category.isEmpty() || result.viewerLabel.isEmpty()) {
-        return;
+    if (result.roomId != roomId_ || result.anchorName.isEmpty()) return;
+
+    metadata_.roomId = result.roomId;
+    metadata_.anchorName = result.anchorName;
+    if (!result.title.isEmpty()) metadata_.title = result.title;
+    if (!result.category.isEmpty()) metadata_.category = result.category;
+    if (!result.viewerLabel.isEmpty()) metadata_.viewerLabel = result.viewerLabel;
+    if (!result.avatarUrl.isEmpty()) {
+        metadata_.avatarUrl = isSafeHttpUrl(result.avatarUrl) ? result.avatarUrl : QUrl();
     }
-    metadata_ = {result.roomId, result.anchorName, result.title, result.category,
-                 result.viewerLabel, isSafeHttpUrl(result.avatarUrl) ? result.avatarUrl : QUrl()};
     setLiveStatus(result.online ? RoomLiveStatus::Online : RoomLiveStatus::Offline);
 }
 
@@ -131,9 +145,51 @@ bool RoomSession::setAudioFocused(bool focused)
     return true;
 }
 
-PlayerSurface *RoomSession::surface() const noexcept
+int RoomSession::volume() const noexcept
 {
-    return surface_;
+    return volume_;
+}
+
+bool RoomSession::setVolume(int volume)
+{
+    if (volume < 0 || volume > 100 || volume_ == volume) return false;
+    if (player_ != nullptr && !player_->setVolume(volume)) return false;
+    volume_ = volume;
+    return true;
+}
+
+bool RoomSession::attachPlayer(MpvQuickItem *player)
+{
+    if (player == nullptr || player_ == player) return false;
+    if (player_ != nullptr) detachPlayer(player_);
+
+    player_ = player;
+    connect(player_, &MpvQuickItem::playbackFailed,
+            this, &RoomSession::onSurfacePlaybackFailed);
+
+    if (!player_->setMuted(!audioFocused_) || !player_->setVolume(volume_)) {
+        detachPlayer(player);
+        return false;
+    }
+    if (!pendingSource_.has_value()) return true;
+    return startPendingSource();
+}
+
+void RoomSession::detachPlayer(MpvQuickItem *player)
+{
+    if (player == nullptr || player_ != player) return;
+    QObject::disconnect(player, nullptr, this, nullptr);
+    player_.clear();
+}
+
+MpvQuickItem *RoomSession::player() const noexcept
+{
+    return player_;
+}
+
+QVariantList RoomSession::availableQualities() const
+{
+    return availableQualities_;
 }
 
 quint64 RoomSession::resolve()
@@ -146,48 +202,94 @@ void RoomSession::cancel()
 {
     if (controller_ == nullptr) return;
     controller_->cancel();
+    pendingSource_.reset();
     setState(State::Idle);
 }
 
 void RoomSession::stop()
 {
     if (controller_ != nullptr) controller_->stop();
-    if (surface_ != nullptr) surface_->stop();
+    if (player_ != nullptr) player_->release();
+    pendingSource_.reset();
+    setPlaybackHealth(RoomPlaybackHealth::Pending);
     setState(State::Idle);
 }
 
 void RoomSession::release()
 {
     if (controller_ != nullptr) controller_->release();
-    if (surface_ != nullptr) surface_->release();
+    if (player_ != nullptr) player_->release();
+    pendingSource_.reset();
     setState(State::Idle);
 }
 
 void RoomSession::onControllerSourceReady(MediaSource source)
 {
-    if (surface_ == nullptr || !surface_->loadSource(source)) {
-        onControllerFailed(QStringLiteral("PLAYER_FAILED"));
+    pendingSource_ = std::move(source);
+    if (player_ != nullptr) {
+        startPendingSource();
         return;
     }
+
+    setLiveStatus(RoomLiveStatus::Online);
+    setPlaybackHealth(RoomPlaybackHealth::Pending);
+}
+
+void RoomSession::onControllerVariantsReady(QVector<StreamVariant> variants)
+{
+    QVariantList options;
+    options.reserve(variants.size());
+    for (const StreamVariant &variant : variants) {
+        options.push_back(QVariantMap{
+            {QStringLiteral("id"), variant.id},
+            {QStringLiteral("label"), variant.label},
+            {QStringLiteral("quality"), qualityToken(variant.quality)},
+        });
+    }
+    if (availableQualities_ == options) return;
+    availableQualities_ = std::move(options);
+    emit variantsChanged();
+}
+
+bool RoomSession::startPendingSource()
+{
+    if (player_ == nullptr || !pendingSource_.has_value()) return false;
+    if (!player_->loadSource(*pendingSource_)) {
+        onControllerFailed(QStringLiteral("PLAYER_FAILED"));
+        return false;
+    }
+    pendingSource_.reset();
     setLiveStatus(RoomLiveStatus::Online);
     setPlaybackHealth(RoomPlaybackHealth::Playing);
     setState(State::Ready);
     emit sourceReady();
+    return true;
 }
 
 void RoomSession::onControllerFailed(QString errorCode)
 {
     if (errorCode == QStringLiteral("ROOM_OFFLINE")) {
-        if (surface_ != nullptr) surface_->stop();
-        setLiveStatus(RoomLiveStatus::Offline);
+        if (player_ != nullptr) player_->stop();
+        pendingSource_.reset();
+        if (liveStatus_ == RoomLiveStatus::Unknown) {
+            setLiveStatus(RoomLiveStatus::Offline);
+        }
         setPlaybackHealth(RoomPlaybackHealth::Pending);
         setState(State::Idle);
         return;
     }
+    pendingSource_.reset();
     setPlaybackHealth(RoomPlaybackHealth::Error);
     setState(State::Error);
     emit failed(std::move(errorCode));
 }
+
+#ifdef DOUYU_TESTING
+bool RoomSession::hasPendingSourceForTest() const noexcept
+{
+    return pendingSource_.has_value();
+}
+#endif
 
 void RoomSession::onControllerStateChanged(RemotePlaybackController::State state)
 {
@@ -216,7 +318,9 @@ void RoomSession::setState(State state)
 
 void RoomSession::setLiveStatus(RoomLiveStatus status)
 {
+    if (liveStatus_ == status) return;
     liveStatus_ = status;
+    emit liveStatusChanged(status);
 }
 
 void RoomSession::setPlaybackHealth(RoomPlaybackHealth health)

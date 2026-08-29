@@ -5,6 +5,9 @@ node_modules/
 .serena/
 .superpowers/
 .worktrees/
+/native/vcpkg_installed/
+/native/out/
+/native/sdk/
 dist/
 build/
 release/
@@ -22,3 +25,5 @@ release-sidebar/
 *.key
 *.cer
 *.crt
+__pycache__/
+*.pyc

@@ -1,0 +1,137 @@
+#include <QSettings>
+#include <QTemporaryDir>
+#include <QElapsedTimer>
+#include <QQmlApplicationEngine>
+#include <QQuickItem>
+#include <QSGRendererInterface>
+#include <QQuickWindow>
+#include <QVariant>
+#include <QtTest/QtTest>
+
+#include <memory>
+
+#include "ui/app_controller.h"
+#include "ui/mpv_quick_item.h"
+
+#ifndef FAKE_STREAMGET_SERVICE_PATH
+#define FAKE_STREAMGET_SERVICE_PATH "fake_streamget_service"
+#endif
+
+namespace {
+
+QString fakeServicePath()
+{
+    return QString::fromLocal8Bit(FAKE_STREAMGET_SERVICE_PATH);
+}
+
+void registerQmlTypes()
+{
+    static const int registered =
+        qmlRegisterType<MpvQuickItem>("DouyuNative", 1, 0, "MpvQuickItem");
+    Q_UNUSED(registered);
+}
+
+int requestedRoomCount()
+{
+    bool ok = false;
+    const int count = qEnvironmentVariableIntValue("DOUYU_PERF_ROOM_COUNT", &ok);
+    if (!ok || count <= 0 || count > 9) return 9;
+    return count;
+}
+
+QQuickWindow *loadWindowWithFakeRooms(QQmlApplicationEngine &engine,
+                                      AppController &controller,
+                                      int roomCount)
+{
+    for (int index = 0; index < roomCount; ++index) {
+        if (!controller.addRoom(QString::number(63136 + index)).isEmpty()) return nullptr;
+    }
+
+    registerQmlTypes();
+    engine.setInitialProperties({
+        {QStringLiteral("appController"), QVariant::fromValue(static_cast<QObject *>(&controller))},
+    });
+    engine.load(QUrl(QStringLiteral("qrc:/qml/Main.qml")));
+    if (engine.rootObjects().isEmpty()) return nullptr;
+
+    auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().constFirst());
+    if (window == nullptr) return nullptr;
+
+    window->resize(QSize(1280, 720));
+    window->show();
+    return window;
+}
+
+QList<MpvQuickItem *> playersInItemTree(QQuickItem *item)
+{
+    QList<MpvQuickItem *> players;
+    if (item == nullptr) return players;
+
+    if (auto *player = qobject_cast<MpvQuickItem *>(item); player != nullptr) {
+        players.append(player);
+    }
+    for (QQuickItem *child : item->childItems()) {
+        players.append(playersInItemTree(child));
+    }
+    return players;
+}
+
+} // namespace
+
+class QmlCloseRegressionTest final : public QObject {
+    Q_OBJECT
+
+private slots:
+    void closesNineAttachedPlayersWithoutLingeringCallbacks();
+};
+
+void QmlCloseRegressionTest::closesNineAttachedPlayersWithoutLingeringCallbacks()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSettings settings(directory.filePath(QStringLiteral("workspace.ini")), QSettings::IniFormat);
+    AppController controller(fakeServicePath(), &settings);
+    QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
+    auto engine = std::make_unique<QQmlApplicationEngine>();
+
+    const int roomCount = requestedRoomCount();
+    QQuickWindow *window = loadWindowWithFakeRooms(*engine, controller, roomCount);
+    QVERIFY(window != nullptr);
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+    QTRY_COMPARE_WITH_TIMEOUT(controller.attachedPlayerCountForTest(), roomCount, 5000);
+    const auto allPlayersReady = [window, roomCount] {
+        window->update();
+        const auto players = playersInItemTree(window->contentItem());
+        if (players.size() != roomCount) return false;
+        for (MpvQuickItem *player : players) {
+            if (player == nullptr || !player->isRenderContextReady()) return false;
+        }
+        return true;
+    };
+    QElapsedTimer rendererWait;
+    rendererWait.start();
+    while (!allPlayersReady() && rendererWait.elapsed() < 10000) {
+        QTest::qWait(50);
+    }
+    const auto players = playersInItemTree(window->contentItem());
+    int readyCount = 0;
+    for (MpvQuickItem *player : players) {
+        if (player != nullptr && player->isRenderContextReady()) ++readyCount;
+    }
+    QVERIFY2(allPlayersReady(), qPrintable(QStringLiteral("expected %1 players and %1 render contexts, got %2 players and %3 ready contexts")
+                                                .arg(roomCount)
+                                                .arg(players.size())
+                                                .arg(readyCount)));
+    QTRY_VERIFY_WITH_TIMEOUT(controller.serviceProcessRunningForTest(), 5000);
+
+    window->close();
+    QTRY_VERIFY_WITH_TIMEOUT(!window->isVisible(), 5000);
+    engine.reset();
+    QTest::qWait(250);
+    QTRY_COMPARE_WITH_TIMEOUT(controller.attachedPlayerCountForTest(), 0, 5000);
+    QVERIFY(!controller.serviceProcessRunningForTest());
+}
+
+QTEST_MAIN(QmlCloseRegressionTest)
+
+#include "qml_close_regression_test.moc"

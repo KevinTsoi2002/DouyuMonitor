@@ -1,0 +1,16 @@
+{
+  "name": "douyu-monitor-native",
+  "version-string": "0.1.0",
+  "dependencies": [
+    {
+      "name": "qtbase",
+      "default-features": false,
+      "features": [
+        "gui",
+        "opengl",
+        "testlib",
+        "widgets"
+      ]
+    }
+  ]
+}

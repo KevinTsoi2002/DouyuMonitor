@@ -10,6 +10,7 @@ private slots:
     void encodesResolveRequest();
     void encodesSearchCancelAndShutdownRequests();
     void decodesControlResponsesAndSearchResults();
+    void decodesSearchResultWithOptionalPresentationFields();
     void decodesValidSuccessResponse();
     void decodesOfflineResponseWithoutUrl();
     void decodesFixedErrorWithoutMessage();
@@ -89,6 +90,18 @@ void StreamServiceProtocolTest::decodesControlResponsesAndSearchResults()
     QVERIFY(search->search);
     QCOMPARE(search->results.size(), 1);
     QCOMPARE(search->results.front().roomId, QStringLiteral("63136"));
+}
+
+void StreamServiceProtocolTest::decodesSearchResultWithOptionalPresentationFields()
+{
+    const auto search = decodeResponse(
+        QByteArray(R"({"requestId":4,"ok":true,"results":[{"roomId":"63136","anchorName":"主播","online":true}]})"));
+
+    QVERIFY(search.has_value());
+    QVERIFY(search->search);
+    QCOMPARE(search->results.size(), 1);
+    QCOMPARE(search->results.front().anchorName, QStringLiteral("主播"));
+    QVERIFY(search->results.front().online);
 }
 
 void StreamServiceProtocolTest::decodesValidSuccessResponse()

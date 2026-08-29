@@ -1,8 +1,8 @@
 #include <QSignalSpy>
-#include <QWidget>
 #include <QtTest/QtTest>
 
 #include "service/streamget_process_client.h"
+#include "ui/mpv_quick_item.h"
 #include "workspace/room_session.h"
 
 #ifndef FAKE_STREAMGET_SERVICE_PATH
@@ -26,19 +26,20 @@ private slots:
     void updatesRequestedQualityWithoutChangingEffectiveQuality();
     void mapsOfflineResolveToLiveOfflineWithoutPlaybackFailure();
     void appliesValidatedMetadataAndLiveState();
+    void acceptsMetadataWithOptionalEmptyPresentationFields();
     void dropsUnsafeAvatarUrlFromMetadata();
-    void mapsSurfaceFailureToPlaybackError();
+    void mapsQuickPlayerFailureToPlaybackError();
     void acceptsSourceAndReportsReady();
+    void defersResolvedSourceUntilQuickPlayerIsAttached();
     void cancelSuppressesLateSource();
-    void removesSessionStateWithoutLeakingSurface();
+    void releasesSessionWithQuickPlayer();
     void mapsControllerErrorsWithoutRawDiagnostics();
 };
 
 void RoomSessionTest::startsResolvingWithUserAndEffectiveQuality()
 {
     StreamgetProcessClient client(fakeServicePath());
-    QWidget host;
-    RoomSession session(&client, QStringLiteral("63136"), StreamQuality::High, &host);
+    RoomSession session(&client, QStringLiteral("63136"), StreamQuality::High);
 
     QCOMPARE(session.roomId(), QStringLiteral("63136"));
     QCOMPARE(session.userQuality(), StreamQuality::High);
@@ -52,8 +53,7 @@ void RoomSessionTest::startsResolvingWithUserAndEffectiveQuality()
 void RoomSessionTest::updatesRequestedQualityWithoutChangingEffectiveQuality()
 {
     StreamgetProcessClient client(fakeServicePath());
-    QWidget host;
-    RoomSession session(&client, QStringLiteral("63136"), StreamQuality::High, &host);
+    RoomSession session(&client, QStringLiteral("63136"), StreamQuality::High);
 
     QVERIFY(session.setRequestedQuality(StreamQuality::Super));
     QCOMPARE(session.userQuality(), StreamQuality::Super);
@@ -66,8 +66,7 @@ void RoomSessionTest::mapsOfflineResolveToLiveOfflineWithoutPlaybackFailure()
 {
     StreamgetProcessClient client(fakeServicePath(),
                                   {QStringLiteral("--offline-after"), QStringLiteral("1")});
-    QWidget host;
-    RoomSession session(&client, QStringLiteral("63136"), StreamQuality::Auto, &host);
+    RoomSession session(&client, QStringLiteral("63136"), StreamQuality::Auto);
     QSignalSpy failures(&session, &RoomSession::failed);
 
     QVERIFY(session.resolve() > 0);
@@ -81,12 +80,11 @@ void RoomSessionTest::mapsOfflineResolveToLiveOfflineWithoutPlaybackFailure()
 void RoomSessionTest::appliesValidatedMetadataAndLiveState()
 {
     StreamgetProcessClient client(fakeServicePath());
-    QWidget host;
-    RoomSession session(&client, QStringLiteral("63136"), StreamQuality::Auto, &host);
+    RoomSession session(&client, QStringLiteral("63136"), StreamQuality::Auto);
     const RoomSearchResult result{
         QStringLiteral("63136"), QStringLiteral("主播 A"), QStringLiteral("标题"),
         QStringLiteral("游戏"), true, QStringLiteral("1.2万"),
-        QUrl(QStringLiteral("https://example.invalid/avatar.jpg"))};
+        QUrl::fromLocalFile(QCoreApplication::applicationFilePath())};
 
     session.applyMetadata(result);
     QCOMPARE(session.metadata().anchorName, QStringLiteral("主播 A"));
@@ -95,11 +93,23 @@ void RoomSessionTest::appliesValidatedMetadataAndLiveState()
     client.shutdown();
 }
 
+void RoomSessionTest::acceptsMetadataWithOptionalEmptyPresentationFields()
+{
+    StreamgetProcessClient client(fakeServicePath());
+    RoomSession session(&client, QStringLiteral("63136"), StreamQuality::Auto);
+    const RoomSearchResult result{
+        QStringLiteral("63136"), QStringLiteral("主播 A"), QString(), QString(), true, QString(), QUrl()};
+
+    session.applyMetadata(result);
+    QCOMPARE(session.metadata().anchorName, QStringLiteral("主播 A"));
+    QCOMPARE(session.liveStatus(), RoomLiveStatus::Online);
+    client.shutdown();
+}
+
 void RoomSessionTest::dropsUnsafeAvatarUrlFromMetadata()
 {
     StreamgetProcessClient client(fakeServicePath());
-    QWidget host;
-    RoomSession session(&client, QStringLiteral("63136"), StreamQuality::Auto, &host);
+    RoomSession session(&client, QStringLiteral("63136"), StreamQuality::Auto);
     const RoomSearchResult result{
         QStringLiteral("63136"), QStringLiteral("主播 A"), QStringLiteral("标题"),
         QStringLiteral("游戏"), true, QStringLiteral("1.2万"),
@@ -111,22 +121,20 @@ void RoomSessionTest::dropsUnsafeAvatarUrlFromMetadata()
     client.shutdown();
 }
 
-void RoomSessionTest::mapsSurfaceFailureToPlaybackError()
+void RoomSessionTest::mapsQuickPlayerFailureToPlaybackError()
 {
     StreamgetProcessClient client(fakeServicePath());
-    QWidget host;
-    RoomSession session(&client, QStringLiteral("63136"), StreamQuality::Auto, &host);
+    RoomSession session(&client, QStringLiteral("63136"), StreamQuality::Auto);
     QSignalSpy failures(&session, &RoomSession::failed);
-    const StreamVariant variant{
-        QStringLiteral("flv-auto"), QStringLiteral("Auto"), StreamQuality::Auto,
-        QStringLiteral("flv"), QUrl(QStringLiteral("https://live.douyucdn.cn/fake.flv"))};
-    const auto source = MediaSource::fromRemoteVariant(QStringLiteral("63136"), variant);
+    const auto source = MediaSource::fromDescriptor(QCoreApplication::applicationFilePath());
+    MpvQuickItem player;
 
     QVERIFY(source.has_value());
+    QVERIFY(session.attachPlayer(&player));
     QVERIFY(QMetaObject::invokeMethod(&session, "onControllerSourceReady", Qt::DirectConnection,
                                       Q_ARG(MediaSource, *source)));
     QCOMPARE(session.state(), RoomSession::State::Ready);
-    QVERIFY(QMetaObject::invokeMethod(session.surface(), "playbackFailed", Qt::DirectConnection));
+    QVERIFY(QMetaObject::invokeMethod(&player, "playbackFailed", Qt::DirectConnection));
     QCOMPARE(session.playbackHealth(), RoomPlaybackHealth::Error);
     QCOMPARE(session.state(), RoomSession::State::Error);
     QCOMPARE(failures.count(), 1);
@@ -137,16 +145,32 @@ void RoomSessionTest::mapsSurfaceFailureToPlaybackError()
 void RoomSessionTest::acceptsSourceAndReportsReady()
 {
     StreamgetProcessClient client(fakeServicePath());
-    QWidget host;
-    RoomSession session(&client, QStringLiteral("63136"), StreamQuality::Auto, &host);
+    RoomSession session(&client, QStringLiteral("63136"), StreamQuality::Auto);
     QSignalSpy ready(&session, &RoomSession::sourceReady);
+    MpvQuickItem player;
+    QVERIFY(session.attachPlayer(&player));
 
     QVERIFY(session.resolve() > 0);
     QTRY_VERIFY_WITH_TIMEOUT(ready.count() == 1, 3000);
     QCOMPARE(session.state(), RoomSession::State::Ready);
-    QVERIFY(session.surface() != nullptr);
-    QVERIFY(session.surface()->playbackState() == PlayerSurface::PlaybackState::Loading
-            || session.surface()->playbackState() == PlayerSurface::PlaybackState::Error);
+    QVERIFY(player.playbackState() == MpvQuickItem::PlaybackState::Loading
+            || player.playbackState() == MpvQuickItem::PlaybackState::Error);
+    client.shutdown();
+}
+
+void RoomSessionTest::defersResolvedSourceUntilQuickPlayerIsAttached()
+{
+    StreamgetProcessClient client(fakeServicePath());
+    RoomSession session(&client, QStringLiteral("63136"), StreamQuality::Auto);
+
+    QVERIFY(session.resolve() > 0);
+    QTRY_COMPARE_WITH_TIMEOUT(session.state(), RoomSession::State::Resolving, 3000);
+    QTRY_VERIFY_WITH_TIMEOUT(session.hasPendingSourceForTest(), 3000);
+
+    MpvQuickItem player;
+    QVERIFY(session.attachPlayer(&player));
+    QTRY_COMPARE_WITH_TIMEOUT(session.state(), RoomSession::State::Ready, 3000);
+    QVERIFY(!session.hasPendingSourceForTest());
     client.shutdown();
 }
 
@@ -155,8 +179,7 @@ void RoomSessionTest::cancelSuppressesLateSource()
     StreamgetProcessClient client(fakeServicePath(),
                                   {QStringLiteral("--delay-ms"), QStringLiteral("150"),
                                    QStringLiteral("--ignore-cancel")});
-    QWidget host;
-    RoomSession session(&client, QStringLiteral("63136"), StreamQuality::Auto, &host);
+    RoomSession session(&client, QStringLiteral("63136"), StreamQuality::Auto);
     QSignalSpy ready(&session, &RoomSession::sourceReady);
 
     QVERIFY(session.resolve() > 0);
@@ -167,15 +190,15 @@ void RoomSessionTest::cancelSuppressesLateSource()
     client.shutdown();
 }
 
-void RoomSessionTest::removesSessionStateWithoutLeakingSurface()
+void RoomSessionTest::releasesSessionWithQuickPlayer()
 {
     StreamgetProcessClient client(fakeServicePath());
-    QWidget host;
-    auto *session = new RoomSession(&client, QStringLiteral("63136"), StreamQuality::Auto, &host);
-    QVERIFY(session->surface() != nullptr);
+    auto *session = new RoomSession(&client, QStringLiteral("63136"), StreamQuality::Auto);
+    MpvQuickItem player;
+    QVERIFY(session->attachPlayer(&player));
     session->release();
     QCOMPARE(session->state(), RoomSession::State::Idle);
-    QCOMPARE(session->surface()->playbackState(), PlayerSurface::PlaybackState::Idle);
+    QCOMPARE(player.playbackState(), MpvQuickItem::PlaybackState::Idle);
     delete session;
     client.shutdown();
 }
@@ -184,18 +207,17 @@ void RoomSessionTest::mapsControllerErrorsWithoutRawDiagnostics()
 {
     StreamgetProcessClient client(fakeServicePath(),
                                   {QStringLiteral("--error-code"), QStringLiteral("SERVICE_FAILED")});
-    QWidget host;
-    RoomSession session(&client, QStringLiteral("63136"), StreamQuality::Auto, &host);
+    RoomSession session(&client, QStringLiteral("63136"), StreamQuality::Auto);
     QSignalSpy failures(&session, &RoomSession::failed);
 
     QVERIFY(session.resolve() > 0);
     QTRY_VERIFY_WITH_TIMEOUT(failures.count() == 1, 3000);
     QCOMPARE(failures.at(0).at(0).toString(), QStringLiteral("SERVICE_FAILED"));
-    QVERIFY(!failures.at(0).at(0).toString().contains(QStringLiteral("https://")));
+    QVERIFY(!failures.at(0).at(0).toString().contains(QStringLiteral("://")));
     QCOMPARE(session.state(), RoomSession::State::Error);
     client.shutdown();
 }
 
-QTEST_MAIN(RoomSessionTest)
+QTEST_GUILESS_MAIN(RoomSessionTest)
 
 #include "room_session_test.moc"

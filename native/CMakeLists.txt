@@ -13,12 +13,12 @@ if(QT_ROOT)
 endif()
 
 find_package(Qt6 CONFIG REQUIRED COMPONENTS
-    Widgets
+    Gui
     OpenGL
-    OpenGLWidgets
     Qml
     Quick
     QuickControls2
+    WebSockets
     Test
     QuickTest
 )
@@ -43,6 +43,23 @@ enable_testing()
 qt_policy(SET QTP0001 NEW)
 qt_policy(SET QTP0004 NEW)
 
+set(DOUYU_QML_ICON_ASSETS
+    app/qml/assets/icons/activity.svg
+    app/qml/assets/icons/chevron-down.svg
+    app/qml/assets/icons/chevron-up.svg
+    app/qml/assets/icons/ellipsis.svg
+    app/qml/assets/icons/layout-grid.svg
+    app/qml/assets/icons/menu.svg
+    app/qml/assets/icons/message-circle.svg
+    app/qml/assets/icons/minus.svg
+    app/qml/assets/icons/pin.svg
+    app/qml/assets/icons/plus.svg
+    app/qml/assets/icons/square.svg
+    app/qml/assets/icons/star.svg
+    app/qml/assets/icons/volume-2.svg
+    app/qml/assets/icons/x.svg
+)
+
 qt_add_library(douyu_qml STATIC)
 qt_add_qml_module(douyu_qml
     URI DouyuMonitor
@@ -50,6 +67,25 @@ qt_add_qml_module(douyu_qml
     OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/DouyuMonitor"
     QML_FILES
         app/qml/Main.qml
+        app/qml/components/AppHeader.qml
+        app/qml/components/WindowControls.qml
+        app/qml/components/RoomSidebar.qml
+        app/qml/components/RoomLibraryView.qml
+        app/qml/components/WorkspaceGrid.qml
+        app/qml/components/PrimaryRoomDivider.qml
+        app/qml/components/RoomTile.qml
+        app/qml/components/DanmakuOverlay.qml
+        app/qml/components/DanmakuLine.qml
+        app/qml/components/DanmakuLaneScheduler.js
+        app/qml/components/ToastViewport.qml
+        app/qml/panels/DanmakuSettingsPanel.qml
+        app/qml/panels/MonitoringStatusPanel.qml
+        app/qml/panels/WorkspacePresetsPanel.qml
+        app/qml/dialogs/AddRoomDialog.qml
+        app/qml/dialogs/GroupManagerDialog.qml
+        app/qml/dialogs/NotificationSettingsDialog.qml
+    RESOURCES
+        ${DOUYU_QML_ICON_ASSETS}
 )
 target_link_libraries(douyu_qml PRIVATE
     Qt6::Qml
@@ -59,24 +95,356 @@ target_link_libraries(douyu_qml PRIVATE
 
 add_executable(qml_engine_smoke_test
     tests/qml_engine_smoke_test.cpp
+    src/ui/mpv_quick_item.cpp
 )
 target_link_libraries(qml_engine_smoke_test PRIVATE
     Qt6::Core
     Qt6::Gui
     Qt6::Qml
     Qt6::Quick
+    Qt6::OpenGL
     Qt6::Test
+    remote_playback
+    mpv::mpv
 )
+target_include_directories(qml_engine_smoke_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 qt_add_resources(qml_engine_smoke_test qml_engine_test_resources
     PREFIX "/qml"
     BASE "${CMAKE_CURRENT_SOURCE_DIR}/app/qml"
-    FILES app/qml/Main.qml
+    FILES
+        app/qml/Main.qml
+        app/qml/components/AppHeader.qml
+        app/qml/components/WindowControls.qml
+        app/qml/components/RoomSidebar.qml
+        app/qml/components/RoomLibraryView.qml
+        app/qml/components/WorkspaceGrid.qml
+        app/qml/components/PrimaryRoomDivider.qml
+        app/qml/components/RoomTile.qml
+        app/qml/components/DanmakuOverlay.qml
+        app/qml/components/DanmakuLine.qml
+        app/qml/components/DanmakuLaneScheduler.js
+        app/qml/components/ToastViewport.qml
+        app/qml/panels/DanmakuSettingsPanel.qml
+        app/qml/panels/MonitoringStatusPanel.qml
+        app/qml/panels/WorkspacePresetsPanel.qml
+        app/qml/dialogs/AddRoomDialog.qml
+        app/qml/dialogs/GroupManagerDialog.qml
+        app/qml/dialogs/NotificationSettingsDialog.qml
+        ${DOUYU_QML_ICON_ASSETS}
+)
+add_custom_command(TARGET qml_engine_smoke_test POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${MPV_RUNTIME_DLL}"
+        "$<TARGET_FILE_DIR:qml_engine_smoke_test>/libmpv-2.dll"
 )
 add_test(NAME qml_engine_smoke_test COMMAND qml_engine_smoke_test)
 set_property(TEST qml_engine_smoke_test PROPERTY ENVIRONMENT_MODIFICATION
     "PATH=path_list_prepend:${QT_ROOT}/bin"
     "QT_PLUGIN_PATH=set:${QT_ROOT}/plugins"
     "QT_QPA_PLATFORM=set:offscreen"
+    "QML2_IMPORT_PATH=set:${QT_ROOT}/qml"
+    "QT_QUICK_CONTROLS_STYLE=set:Basic"
+)
+
+add_executable(qml_visual_smoke_test
+    tests/qml_visual_smoke_test.cpp
+    src/ui/mpv_quick_item.cpp
+)
+target_link_libraries(qml_visual_smoke_test PRIVATE
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Qml
+    Qt6::Quick
+    Qt6::OpenGL
+    Qt6::Test
+    remote_playback
+    mpv::mpv
+)
+target_include_directories(qml_visual_smoke_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_definitions(qml_visual_smoke_test PRIVATE
+    QML_VERIFICATION_DIR="${CMAKE_CURRENT_SOURCE_DIR}/out/verification/qml"
+)
+qt_add_resources(qml_visual_smoke_test qml_visual_smoke_test_resources
+    PREFIX "/qml"
+    BASE "${CMAKE_CURRENT_SOURCE_DIR}/app/qml"
+    FILES
+        app/qml/Main.qml
+        app/qml/components/AppHeader.qml
+        app/qml/components/WindowControls.qml
+        app/qml/components/RoomSidebar.qml
+        app/qml/components/RoomLibraryView.qml
+        app/qml/components/WorkspaceGrid.qml
+        app/qml/components/PrimaryRoomDivider.qml
+        app/qml/components/RoomTile.qml
+        app/qml/components/DanmakuOverlay.qml
+        app/qml/components/DanmakuLine.qml
+        app/qml/components/DanmakuLaneScheduler.js
+        app/qml/components/ToastViewport.qml
+        app/qml/panels/DanmakuSettingsPanel.qml
+        app/qml/panels/MonitoringStatusPanel.qml
+        app/qml/panels/WorkspacePresetsPanel.qml
+        app/qml/dialogs/AddRoomDialog.qml
+        app/qml/dialogs/GroupManagerDialog.qml
+        app/qml/dialogs/NotificationSettingsDialog.qml
+        ${DOUYU_QML_ICON_ASSETS}
+)
+add_custom_command(TARGET qml_visual_smoke_test POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${MPV_RUNTIME_DLL}"
+        "$<TARGET_FILE_DIR:qml_visual_smoke_test>/libmpv-2.dll"
+)
+add_test(NAME qml_visual_smoke_test COMMAND qml_visual_smoke_test)
+set_property(TEST qml_visual_smoke_test PROPERTY ENVIRONMENT_MODIFICATION
+    "PATH=path_list_prepend:${QT_ROOT}/bin"
+    "QT_PLUGIN_PATH=set:${QT_ROOT}/plugins"
+    "QML2_IMPORT_PATH=set:${QT_ROOT}/qml"
+    "QT_QUICK_CONTROLS_STYLE=set:Basic"
+)
+
+add_executable(qml_interaction_test
+    tests/qml_interaction_test.cpp
+    src/ui/mpv_quick_item.cpp
+    src/ui/room_list_model.cpp
+    src/ui/workspace_model.cpp
+)
+target_link_libraries(qml_interaction_test PRIVATE
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Qml
+    Qt6::Quick
+    Qt6::OpenGL
+    Qt6::Test
+    remote_playback
+    mpv::mpv
+)
+target_include_directories(qml_interaction_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+qt_add_resources(qml_interaction_test qml_interaction_test_resources
+    PREFIX "/qml"
+    BASE "${CMAKE_CURRENT_SOURCE_DIR}/app/qml"
+    FILES
+        app/qml/Main.qml
+        app/qml/components/AppHeader.qml
+        app/qml/components/WindowControls.qml
+        app/qml/components/RoomSidebar.qml
+        app/qml/components/RoomLibraryView.qml
+        app/qml/components/WorkspaceGrid.qml
+        app/qml/components/PrimaryRoomDivider.qml
+        app/qml/components/RoomTile.qml
+        app/qml/components/DanmakuOverlay.qml
+        app/qml/components/DanmakuLine.qml
+        app/qml/components/DanmakuLaneScheduler.js
+        app/qml/components/ToastViewport.qml
+        app/qml/panels/DanmakuSettingsPanel.qml
+        app/qml/panels/MonitoringStatusPanel.qml
+        app/qml/panels/WorkspacePresetsPanel.qml
+        app/qml/dialogs/AddRoomDialog.qml
+        app/qml/dialogs/GroupManagerDialog.qml
+        app/qml/dialogs/NotificationSettingsDialog.qml
+        ${DOUYU_QML_ICON_ASSETS}
+)
+add_custom_command(TARGET qml_interaction_test POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${MPV_RUNTIME_DLL}"
+        "$<TARGET_FILE_DIR:qml_interaction_test>/libmpv-2.dll"
+)
+add_test(NAME qml_interaction_test COMMAND qml_interaction_test)
+set_property(TEST qml_interaction_test PROPERTY ENVIRONMENT_MODIFICATION
+    "PATH=path_list_prepend:${QT_ROOT}/bin"
+    "QT_PLUGIN_PATH=set:${QT_ROOT}/plugins"
+    "QML2_IMPORT_PATH=set:${QT_ROOT}/qml"
+    "QT_QPA_PLATFORM=set:offscreen"
+    "QT_QUICK_CONTROLS_STYLE=set:Basic"
+)
+
+add_executable(qml_close_regression_test
+    tests/qml_close_regression_test.cpp
+    src/ui/app_controller.cpp
+    src/ui/room_list_model.cpp
+    src/ui/workspace_model.cpp
+    src/ui/monitoring_model.cpp
+    src/ui/mpv_quick_item.cpp
+    src/app/windows_notification_service.cpp
+    src/workspace/quality_policy.cpp
+    src/workspace/native_workspace_types.cpp
+    src/workspace/native_workspace_store.cpp
+    src/workspace/notification_policy.cpp
+    src/workspace/room_session.cpp
+    src/workspace/room_status_scheduler.cpp
+    src/workspace/multi_room_coordinator.cpp
+    src/danmaku/danmaku_controller.cpp
+)
+target_link_libraries(qml_close_regression_test PRIVATE
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Qml
+    Qt6::Quick
+    Qt6::OpenGL
+    Qt6::Test
+    douyu_danmaku
+    remote_playback
+    mpv::mpv
+)
+target_include_directories(qml_close_regression_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_definitions(qml_close_regression_test PRIVATE
+    DOUYU_TESTING
+    FAKE_STREAMGET_SERVICE_PATH="$<TARGET_FILE:fake_streamget_service>"
+)
+add_dependencies(qml_close_regression_test fake_streamget_service)
+qt_add_resources(qml_close_regression_test qml_close_regression_test_resources
+    PREFIX "/qml"
+    BASE "${CMAKE_CURRENT_SOURCE_DIR}/app/qml"
+    FILES
+        app/qml/Main.qml
+        app/qml/components/AppHeader.qml
+        app/qml/components/WindowControls.qml
+        app/qml/components/RoomSidebar.qml
+        app/qml/components/RoomLibraryView.qml
+        app/qml/components/WorkspaceGrid.qml
+        app/qml/components/PrimaryRoomDivider.qml
+        app/qml/components/RoomTile.qml
+        app/qml/components/DanmakuOverlay.qml
+        app/qml/components/DanmakuLine.qml
+        app/qml/components/DanmakuLaneScheduler.js
+        app/qml/components/ToastViewport.qml
+        app/qml/panels/DanmakuSettingsPanel.qml
+        app/qml/panels/MonitoringStatusPanel.qml
+        app/qml/panels/WorkspacePresetsPanel.qml
+        app/qml/dialogs/AddRoomDialog.qml
+        app/qml/dialogs/GroupManagerDialog.qml
+        app/qml/dialogs/NotificationSettingsDialog.qml
+        ${DOUYU_QML_ICON_ASSETS}
+)
+add_custom_command(TARGET qml_close_regression_test POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${MPV_RUNTIME_DLL}"
+        "$<TARGET_FILE_DIR:qml_close_regression_test>/libmpv-2.dll"
+)
+add_test(NAME qml_close_regression_test COMMAND qml_close_regression_test)
+set_property(TEST qml_close_regression_test PROPERTY ENVIRONMENT_MODIFICATION
+    "PATH=path_list_prepend:${QT_ROOT}/bin"
+    "QT_PLUGIN_PATH=set:${QT_ROOT}/plugins"
+    "QML2_IMPORT_PATH=set:${QT_ROOT}/qml"
+    "QT_QUICK_CONTROLS_STYLE=set:Basic"
+)
+
+add_executable(qml_danmaku_overlay_test
+    tests/qml_danmaku_overlay_test.cpp
+)
+target_link_libraries(qml_danmaku_overlay_test PRIVATE
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Qml
+    Qt6::Quick
+    Qt6::Test
+)
+qt_add_resources(qml_danmaku_overlay_test qml_danmaku_overlay_test_resources
+    PREFIX "/qml"
+    BASE "${CMAKE_CURRENT_SOURCE_DIR}/app/qml"
+    FILES
+        app/qml/components/DanmakuOverlay.qml
+        app/qml/components/DanmakuLine.qml
+        app/qml/components/DanmakuLaneScheduler.js
+)
+add_test(NAME qml_danmaku_overlay_test COMMAND qml_danmaku_overlay_test)
+set_property(TEST qml_danmaku_overlay_test PROPERTY ENVIRONMENT_MODIFICATION
+    "PATH=path_list_prepend:${QT_ROOT}/bin"
+    "QT_PLUGIN_PATH=set:${QT_ROOT}/plugins"
+    "QML2_IMPORT_PATH=set:${QT_ROOT}/qml"
+    "QT_QPA_PLATFORM=set:offscreen"
+    "QT_QUICK_CONTROLS_STYLE=set:Basic"
+)
+
+add_executable(room_list_model_test
+    tests/room_list_model_test.cpp
+    src/ui/room_list_model.cpp
+)
+target_link_libraries(room_list_model_test PRIVATE
+    Qt6::Core
+    Qt6::Test
+)
+target_include_directories(room_list_model_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+add_test(NAME room_list_model_test COMMAND room_list_model_test)
+
+add_executable(workspace_model_test
+    tests/workspace_model_test.cpp
+    src/ui/workspace_model.cpp
+    src/ui/monitoring_model.cpp
+)
+target_link_libraries(workspace_model_test PRIVATE
+    Qt6::Core
+    Qt6::Test
+)
+target_include_directories(workspace_model_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+add_test(NAME workspace_model_test COMMAND workspace_model_test)
+
+add_executable(app_controller_test
+    tests/app_controller_test.cpp
+    src/ui/app_controller.cpp
+    src/ui/room_list_model.cpp
+    src/ui/workspace_model.cpp
+    src/ui/monitoring_model.cpp
+    src/ui/mpv_quick_item.cpp
+    src/app/windows_notification_service.cpp
+    src/workspace/quality_policy.cpp
+    src/workspace/native_workspace_types.cpp
+    src/workspace/native_workspace_store.cpp
+    src/workspace/notification_policy.cpp
+    src/workspace/room_session.cpp
+    src/workspace/room_status_scheduler.cpp
+    src/workspace/multi_room_coordinator.cpp
+    src/danmaku/danmaku_controller.cpp
+)
+target_link_libraries(app_controller_test PRIVATE
+    Qt6::Core
+    Qt6::Quick
+    Qt6::OpenGL
+    Qt6::Test
+    douyu_danmaku
+    remote_playback
+    mpv::mpv
+)
+target_include_directories(app_controller_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_definitions(app_controller_test PRIVATE
+    DOUYU_TESTING
+    FAKE_STREAMGET_SERVICE_PATH="$<TARGET_FILE:fake_streamget_service>"
+)
+add_dependencies(app_controller_test fake_streamget_service)
+add_custom_command(TARGET app_controller_test POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${MPV_RUNTIME_DLL}"
+        "$<TARGET_FILE_DIR:app_controller_test>/libmpv-2.dll"
+)
+add_test(NAME app_controller_test COMMAND app_controller_test)
+set_property(TEST app_controller_test PROPERTY ENVIRONMENT_MODIFICATION
+    "PATH=path_list_prepend:${QT_ROOT}/bin"
+    "QT_PLUGIN_PATH=set:${QT_ROOT}/plugins"
+    "QML2_IMPORT_PATH=set:${QT_ROOT}/qml"
+)
+
+add_executable(mpv_quick_item_test
+    tests/mpv_quick_item_test.cpp
+    src/ui/mpv_quick_item.cpp
+)
+target_link_libraries(mpv_quick_item_test PRIVATE
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Quick
+    Qt6::OpenGL
+    Qt6::Test
+    remote_playback
+    mpv::mpv
+)
+target_include_directories(mpv_quick_item_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_definitions(mpv_quick_item_test PRIVATE DOUYU_TESTING)
+add_custom_command(TARGET mpv_quick_item_test POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${MPV_RUNTIME_DLL}"
+        "$<TARGET_FILE_DIR:mpv_quick_item_test>/libmpv-2.dll"
+)
+add_test(NAME mpv_quick_item_test COMMAND mpv_quick_item_test)
+set_property(TEST mpv_quick_item_test PROPERTY ENVIRONMENT_MODIFICATION
+    "PATH=path_list_prepend:${QT_ROOT}/bin"
+    "QT_PLUGIN_PATH=set:${QT_ROOT}/plugins"
     "QML2_IMPORT_PATH=set:${QT_ROOT}/qml"
 )
 
@@ -100,6 +468,59 @@ add_executable(stream_service_protocol_test
 target_link_libraries(stream_service_protocol_test PRIVATE stream_service Qt6::Core Qt6::Test)
 target_include_directories(stream_service_protocol_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 add_test(NAME stream_service_protocol_test COMMAND stream_service_protocol_test)
+
+add_executable(douyu_danmaku_protocol_test
+    tests/douyu_danmaku_protocol_test.cpp
+    src/danmaku/douyu_danmaku_protocol.cpp
+)
+target_link_libraries(douyu_danmaku_protocol_test PRIVATE Qt6::Core Qt6::Test)
+target_include_directories(douyu_danmaku_protocol_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+add_test(NAME douyu_danmaku_protocol_test COMMAND douyu_danmaku_protocol_test)
+set_tests_properties(douyu_danmaku_protocol_test PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${QT_ROOT}/bin"
+)
+
+add_executable(danmaku_governance_test
+    tests/danmaku_governance_test.cpp
+    src/danmaku/danmaku_types.cpp
+    src/danmaku/danmaku_governance.cpp
+)
+target_link_libraries(danmaku_governance_test PRIVATE Qt6::Core Qt6::Test)
+target_include_directories(danmaku_governance_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+add_test(NAME danmaku_governance_test COMMAND danmaku_governance_test)
+set_tests_properties(danmaku_governance_test PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${QT_ROOT}/bin"
+)
+
+add_library(douyu_danmaku STATIC
+    src/danmaku/douyu_danmaku_protocol.cpp
+    src/danmaku/danmaku_types.cpp
+    src/danmaku/danmaku_governance.cpp
+    src/danmaku/danmaku_socket.cpp
+    src/danmaku/danmaku_timer_scheduler.cpp
+    src/danmaku/douyu_danmaku_client.cpp
+    src/danmaku/danmaku_session_manager.cpp
+)
+target_link_libraries(douyu_danmaku PUBLIC Qt6::Core Qt6::WebSockets)
+target_include_directories(douyu_danmaku PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
+add_executable(douyu_danmaku_client_test
+    tests/douyu_danmaku_client_test.cpp
+)
+target_link_libraries(douyu_danmaku_client_test PRIVATE douyu_danmaku Qt6::Test)
+add_test(NAME douyu_danmaku_client_test COMMAND douyu_danmaku_client_test)
+set_tests_properties(douyu_danmaku_client_test PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${QT_ROOT}/bin"
+)
+
+add_executable(danmaku_session_manager_test
+    tests/danmaku_session_manager_test.cpp
+)
+target_link_libraries(danmaku_session_manager_test PRIVATE douyu_danmaku Qt6::Test)
+add_test(NAME danmaku_session_manager_test COMMAND danmaku_session_manager_test)
+set_tests_properties(danmaku_session_manager_test PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${QT_ROOT}/bin"
+)
 
 add_executable(fake_streamget_service
     tests/fake_streamget_service.cpp
@@ -147,26 +568,61 @@ add_executable(native_workspace_store_test
     src/workspace/native_workspace_types.cpp
     src/workspace/native_workspace_store.cpp
 )
-target_link_libraries(native_workspace_store_test PRIVATE Qt6::Core Qt6::Test)
+target_link_libraries(native_workspace_store_test PRIVATE douyu_danmaku Qt6::Core Qt6::Test)
 target_include_directories(native_workspace_store_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 add_test(NAME native_workspace_store_test COMMAND native_workspace_store_test)
+
+add_executable(room_status_scheduler_test
+    tests/room_status_scheduler_test.cpp
+    src/workspace/room_status_scheduler.cpp
+)
+target_link_libraries(room_status_scheduler_test PRIVATE Qt6::Core Qt6::Test)
+target_include_directories(room_status_scheduler_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+add_test(NAME room_status_scheduler_test COMMAND room_status_scheduler_test)
+
+add_executable(notification_policy_test
+    tests/notification_policy_test.cpp
+    src/workspace/notification_policy.cpp
+)
+target_link_libraries(notification_policy_test
+    PRIVATE
+        Qt6::Core
+        Qt6::Test
+)
+target_include_directories(notification_policy_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+add_test(NAME notification_policy_test COMMAND notification_policy_test)
+
+add_executable(windows_notification_service_test
+    tests/windows_notification_service_test.cpp
+    src/app/windows_notification_service.cpp
+    src/workspace/notification_policy.cpp
+)
+target_link_libraries(windows_notification_service_test
+    PRIVATE
+        Qt6::Core
+        Qt6::Test
+)
+target_include_directories(windows_notification_service_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+add_test(NAME windows_notification_service_test COMMAND windows_notification_service_test)
 
 add_executable(room_session_test
     tests/room_session_test.cpp
     src/workspace/room_session.cpp
-    src/media/player_surface.cpp
+    src/ui/mpv_quick_item.cpp
 )
 target_link_libraries(room_session_test
     PRIVATE
         remote_playback
-        Qt6::Widgets
-        Qt6::OpenGLWidgets
+        Qt6::Gui
+        Qt6::Quick
+        Qt6::OpenGL
         Qt6::Test
         mpv::mpv
 )
 target_include_directories(room_session_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 add_dependencies(room_session_test fake_streamget_service)
 target_compile_definitions(room_session_test PRIVATE
+    DOUYU_TESTING
     FAKE_STREAMGET_SERVICE_PATH="$<TARGET_FILE:fake_streamget_service>"
 )
 add_custom_command(TARGET room_session_test POST_BUILD
@@ -175,19 +631,26 @@ add_custom_command(TARGET room_session_test POST_BUILD
         "$<TARGET_FILE_DIR:room_session_test>/libmpv-2.dll"
 )
 add_test(NAME room_session_test COMMAND room_session_test)
+set_property(TEST room_session_test PROPERTY ENVIRONMENT_MODIFICATION
+    "PATH=path_list_prepend:${QT_ROOT}/bin"
+    "QT_PLUGIN_PATH=set:${QT_ROOT}/plugins"
+    "QML2_IMPORT_PATH=set:${QT_ROOT}/qml"
+)
 
 add_executable(multi_room_coordinator_test
     tests/multi_room_coordinator_test.cpp
     src/workspace/multi_room_coordinator.cpp
     src/workspace/room_session.cpp
+    src/workspace/room_status_scheduler.cpp
     src/workspace/quality_policy.cpp
-    src/media/player_surface.cpp
+    src/ui/mpv_quick_item.cpp
 )
 target_link_libraries(multi_room_coordinator_test
     PRIVATE
         remote_playback
-        Qt6::Widgets
-        Qt6::OpenGLWidgets
+        Qt6::Gui
+        Qt6::Quick
+        Qt6::OpenGL
         Qt6::Test
         mpv::mpv
 )
@@ -202,14 +665,12 @@ add_custom_command(TARGET multi_room_coordinator_test POST_BUILD
         "$<TARGET_FILE_DIR:multi_room_coordinator_test>/libmpv-2.dll"
 )
 add_test(NAME multi_room_coordinator_test COMMAND multi_room_coordinator_test)
-
-add_executable(room_management_dock_test
-    tests/room_management_dock_test.cpp
-    src/app/room_management_dock.cpp
+set_property(TEST multi_room_coordinator_test PROPERTY ENVIRONMENT_MODIFICATION
+    "PATH=path_list_prepend:${QT_ROOT}/bin"
+    "QT_PLUGIN_PATH=set:${QT_ROOT}/plugins"
+    "QML2_IMPORT_PATH=set:${QT_ROOT}/qml"
+    "QT_QPA_PLATFORM=set:offscreen"
 )
-target_link_libraries(room_management_dock_test PRIVATE Qt6::Widgets Qt6::OpenGLWidgets Qt6::Test)
-target_include_directories(room_management_dock_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-add_test(NAME room_management_dock_test COMMAND room_management_dock_test)
 
 option(DOUYU_BUILD_SERVICE_TESTS "Register Python StreamGet service tests" ON)
 if(DOUYU_BUILD_SERVICE_TESTS)
@@ -255,107 +716,105 @@ if(DOUYU_BUILD_MEDIA_SOURCE_TEST)
     add_test(NAME media_source_test COMMAND media_source_test)
 endif()
 
-option(DOUYU_BUILD_PLAYER_SURFACE_TEST "Build the PlayerSurface test" ON)
-if(DOUYU_BUILD_PLAYER_SURFACE_TEST)
-    add_executable(player_surface_test
-        tests/player_surface_test.cpp
-        src/media/player_surface.cpp
-    )
-
-    target_link_libraries(player_surface_test
-        PRIVATE
-            Qt6::Widgets
-            Qt6::OpenGLWidgets
-            Qt6::Test
-            remote_playback
-            mpv::mpv
-    )
-
-    target_include_directories(player_surface_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-    add_dependencies(player_surface_test fake_streamget_service)
-    target_compile_definitions(player_surface_test PRIVATE
-        FAKE_STREAMGET_SERVICE_PATH="$<TARGET_FILE:fake_streamget_service>"
-    )
-
-    add_custom_command(TARGET player_surface_test POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${MPV_RUNTIME_DLL}"
-            "$<TARGET_FILE_DIR:player_surface_test>/libmpv-2.dll"
-    )
-
-    add_test(NAME player_surface_test COMMAND player_surface_test)
-endif()
-
-option(DOUYU_BUILD_MAIN_WINDOW_TEST "Build the MainWindow test" ON)
-if(DOUYU_BUILD_MAIN_WINDOW_TEST)
-    add_executable(main_window_test
-        tests/main_window_test.cpp
-        src/app/main_window.cpp
-        src/app/room_management_dock.cpp
-        src/media/media_source.cpp
-        src/media/player_surface.cpp
-        src/workspace/quality_policy.cpp
-        src/workspace/room_session.cpp
-        src/workspace/multi_room_coordinator.cpp
-    )
-
-    target_link_libraries(main_window_test
-        PRIVATE
-            Qt6::Widgets
-            Qt6::OpenGLWidgets
-            Qt6::Test
-            remote_playback
-            mpv::mpv
-    )
-
-    target_include_directories(main_window_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-    add_dependencies(main_window_test fake_streamget_service)
-    target_compile_definitions(main_window_test PRIVATE
-        FAKE_STREAMGET_SERVICE_PATH="$<TARGET_FILE:fake_streamget_service>"
-    )
-
-    add_custom_command(TARGET main_window_test POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${MPV_RUNTIME_DLL}"
-            "$<TARGET_FILE_DIR:main_window_test>/libmpv-2.dll"
-    )
-
-    add_test(NAME main_window_test COMMAND main_window_test)
-endif()
-
 add_executable(douyu_monitor_native
     app/main.cpp
-    src/app/main_window.cpp
-    src/app/room_management_dock.cpp
     src/media/media_source.cpp
-    src/media/player_surface.cpp
     src/workspace/quality_policy.cpp
+    src/workspace/native_workspace_types.cpp
+    src/workspace/native_workspace_store.cpp
+    src/app/windows_notification_service.cpp
+    src/workspace/notification_policy.cpp
     src/workspace/room_session.cpp
+    src/workspace/room_status_scheduler.cpp
     src/workspace/multi_room_coordinator.cpp
+    src/danmaku/danmaku_controller.cpp
+    src/ui/mpv_quick_item.cpp
+    src/ui/app_controller.cpp
+    src/ui/room_list_model.cpp
+    src/ui/workspace_model.cpp
+    src/ui/monitoring_model.cpp
+)
+
+set_target_properties(douyu_monitor_native PROPERTIES
+    WIN32_EXECUTABLE TRUE
 )
 
 target_link_libraries(douyu_monitor_native
     PRIVATE
-        Qt6::Widgets
-        Qt6::OpenGLWidgets
+        Qt6::Gui
+        Qt6::Qml
+        Qt6::Quick
+        Qt6::QuickControls2
+        Qt6::OpenGL
+        douyu_qml
+        douyu_qmlplugin
+        douyu_danmaku
         remote_playback
         mpv::mpv
 )
 
+qt_import_qml_plugins(douyu_monitor_native)
+
 target_include_directories(douyu_monitor_native PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
+if(WIN32)
+    target_link_libraries(app_controller_test PRIVATE Shell32 User32)
+    target_link_libraries(qml_close_regression_test PRIVATE Shell32 User32)
+    target_link_libraries(windows_notification_service_test PRIVATE Shell32 User32)
+    target_link_libraries(douyu_monitor_native PRIVATE Shell32 User32)
+endif()
 
 add_custom_command(TARGET douyu_monitor_native POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${MPV_RUNTIME_DLL}"
         "$<TARGET_FILE_DIR:douyu_monitor_native>/libmpv-2.dll"
+    COMMAND "${CMAKE_COMMAND}"
+        -DSERVICE_SOURCE:FILEPATH=${CMAKE_CURRENT_SOURCE_DIR}/out/service/streamget_service.exe
+        -DSERVICE_DEST:FILEPATH=$<TARGET_FILE_DIR:douyu_monitor_native>/streamget_service.exe
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/copy_streamget_service.cmake"
+    VERBATIM
 )
 
 if(WIN32 AND EXISTS "${QT_ROOT}/bin/windeployqt.exe")
+    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+        set(DOUYU_QT_DEPLOY_MODE --debug)
+        set(DOUYU_QT_PLATFORM_PLUGIN qwindowsd.dll)
+        set(DOUYU_QT_STALE_PLATFORM_PLUGIN qwindows.dll)
+        set(DOUYU_QT_CORE_DLL Qt6Cored.dll)
+    else()
+        set(DOUYU_QT_DEPLOY_MODE --release)
+        set(DOUYU_QT_PLATFORM_PLUGIN qwindows.dll)
+        set(DOUYU_QT_STALE_PLATFORM_PLUGIN qwindowsd.dll)
+        set(DOUYU_QT_CORE_DLL Qt6Core.dll)
+    endif()
     add_custom_command(TARGET douyu_monitor_native POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E rm -f
+            "$<TARGET_FILE_DIR:douyu_monitor_native>/platforms/${DOUYU_QT_STALE_PLATFORM_PLUGIN}"
         COMMAND "${QT_ROOT}/bin/windeployqt.exe"
+            ${DOUYU_QT_DEPLOY_MODE}
+            --force
             --no-translations
             --no-compiler-runtime
             "$<TARGET_FILE:douyu_monitor_native>"
+        COMMAND "${CMAKE_COMMAND}"
+            -DRUNTIME_DIR:PATH=$<TARGET_FILE_DIR:douyu_monitor_native>
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/clean_forbidden_runtime_files.cmake"
+        COMMAND "${CMAKE_COMMAND}"
+            -DQT_DEPLOY_DIR:PATH=$<TARGET_FILE_DIR:douyu_monitor_native>
+            -DQT_PLATFORM_PLUGIN:STRING=${DOUYU_QT_PLATFORM_PLUGIN}
+            -DQT_CORE_DLL:STRING=${DOUYU_QT_CORE_DLL}
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/verify_qt_windows_deployment.cmake"
+        VERBATIM
+    )
+endif()
+
+if(WIN32 AND CMAKE_BUILD_TYPE STREQUAL "Release"
+   AND EXISTS "${QT_ROOT}/bin/windeployqt.exe")
+    add_custom_command(TARGET douyu_monitor_native POST_BUILD
+        COMMAND "${CMAKE_COMMAND}"
+            -DRUNTIME_DIR:PATH=$<TARGET_FILE_DIR:douyu_monitor_native>
+            -DRUNTIME_EXE:FILEPATH=$<TARGET_FILE:douyu_monitor_native>
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/verify_runtime_dependencies.cmake"
         VERBATIM
     )
 endif()
@@ -375,3 +834,22 @@ add_custom_command(TARGET mpv_dependency_probe POST_BUILD
         "$<TARGET_FILE_DIR:mpv_dependency_probe>/libmpv-2.dll"
 )
 add_test(NAME mpv_dependency_probe COMMAND mpv_dependency_probe)
+
+# Qt Test is an SDK-only dependency; keep the deployed application self-test
+# isolated while giving standalone Qt Test executables the matching runtime.
+set_tests_properties(
+    room_list_model_test
+    workspace_model_test
+    stream_service_protocol_test
+    streamget_process_client_test
+    remote_playback_controller_test
+    quality_policy_test
+    native_workspace_store_test
+    room_status_scheduler_test
+    notification_policy_test
+    windows_notification_service_test
+    media_source_test
+    native_self_test_media
+    PROPERTIES ENVIRONMENT_MODIFICATION
+        "PATH=path_list_prepend:${QT_ROOT}/bin"
+)

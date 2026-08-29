@@ -14,6 +14,15 @@ from native.service.protocol import (
 )
 
 
+def _configure_stdio() -> None:
+    # QProcess consumes the service protocol as UTF-8 regardless of the Windows code page.
+    for stream in (sys.stdin, sys.stdout):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="strict")
+        except (AttributeError, ValueError):
+            pass
+
+
 def _request_id_from_line(line: str) -> int:
     try:
         value = json.loads(line)
@@ -100,6 +109,7 @@ async def _stdout_emit(value: dict[str, Any]) -> None:
 
 
 async def main() -> int:
+    _configure_stdio()
     await run_service(_stdin_lines(), _stdout_emit, DouyuBackend())
     return 0
 

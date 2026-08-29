@@ -141,6 +141,28 @@ git add native/CMakeLists.txt native/app/main.cpp native/app/qml/Main.qml native
 git commit -m "feat: bootstrap Qt Quick application shell"
 ```
 
+### Execution sequencing repair: establish the renderer and player contract before the controller
+
+Task 4's controller command tests require a coordinator that can manage rooms
+without a QWidget surface parent. Task 6 requires the controller's player
+attachment invokables. Therefore the original Task 3 -> Task 4 -> Task 5 ->
+Task 6 ordering contains a dependency cycle and is replaced by this approved
+sequence: Task 3, Task 5, Task 2, Task 4, Task 6, Task 7, Task 8, Task 9.
+
+Task 5 first creates the real `MpvQuickItem`; Task 2 then introduces the QML
+player attachment path used by `AppController`. To keep the legacy entry point
+and its regression tests operational until Task 8, Task 2 retains an explicit
+legacy `QWidget`/`PlayerSurface` constructor overload as a temporary source
+compatibility path. The new no-widget constructor is the only path used by the
+QML controller. This is not a hybrid product UI or a renderer facade: it uses
+the real `MpvQuickItem` renderer, and Task 8 removes the legacy overload and
+all remaining QWidget UI code in one change.
+
+Do not introduce a hidden QWidget into `AppController`, a QWidget host for
+QML, or a fake player abstraction. Task 2 red tests start only after the real
+`MpvQuickItem` type exists; Task 4 then includes the player attach/detach
+invokables, and Task 6 supplies their QML lifecycle calls.
+
 ### Task 2: Decouple room policy from QWidget ownership
 
 **Files:**
@@ -517,10 +539,11 @@ git commit -m "feat: bridge workspace services to QML"
 - Create: `native/src/ui/mpv_quick_item.h`
 - Create: `native/src/ui/mpv_quick_item.cpp`
 - Create: `native/tests/mpv_quick_item_test.cpp`
-- Delete: `native/src/media/player_surface.h`
-- Delete: `native/src/media/player_surface.cpp`
-- Modify: `native/tests/room_session_test.cpp`
 - Modify: `native/CMakeLists.txt`
+
+Keep `native/src/media/player_surface.*` and its existing tests through Task 8.
+The old renderer remains only for the legacy compatibility constructor defined
+by the sequencing repair; Task 8 removes it with the QWidget application shell.
 
 - [ ] **Step 1: Port the renderer tests from the widget surface to a QQuickWindow.**
 
@@ -592,9 +615,8 @@ the assertion output.
 - [ ] **Step 5: Commit the renderer port.**
 
 ```powershell
-git add native/src/ui/mpv_quick_item.* native/tests/mpv_quick_item_test.cpp native/tests/room_session_test.cpp native/CMakeLists.txt
-git rm native/src/media/player_surface.h native/src/media/player_surface.cpp
-git commit -m "feat: render libmpv through Qt Quick items"
+git add native/src/ui/mpv_quick_item.* native/tests/mpv_quick_item_test.cpp native/CMakeLists.txt
+git commit -m "feat: add Qt Quick libmpv renderer"
 ```
 
 ### Task 6: Implement the Electron-parity QML shell and grid

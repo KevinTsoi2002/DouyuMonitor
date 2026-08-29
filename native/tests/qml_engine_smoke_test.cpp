@@ -5,6 +5,18 @@
 #include <QUrl>
 #include <QtTest/QtTest>
 
+#include "ui/mpv_quick_item.h"
+
+namespace {
+
+void registerQmlTypes()
+{
+    static const int registered = qmlRegisterType<MpvQuickItem>("DouyuNative", 1, 0, "MpvQuickItem");
+    Q_UNUSED(registered);
+}
+
+} // namespace
+
 class QmlEngineSmokeTest final : public QObject {
     Q_OBJECT
 
@@ -14,6 +26,7 @@ private slots:
 
 void QmlEngineSmokeTest::loadsMainQmlWithoutWarnings()
 {
+    registerQmlTypes();
     QQmlApplicationEngine engine;
     QSignalSpy warnings(&engine, &QQmlEngine::warnings);
     engine.load(QUrl(QStringLiteral("qrc:/qml/Main.qml")));

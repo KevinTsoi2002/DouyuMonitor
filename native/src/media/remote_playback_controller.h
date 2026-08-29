@@ -31,6 +31,7 @@ public:
 
 signals:
     void sourceReady(MediaSource source);
+    void variantsReady(QVector<StreamVariant> variants);
     void failed(QString errorCode);
     void stateChanged(State state);
 

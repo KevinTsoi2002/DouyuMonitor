@@ -3,6 +3,7 @@
 #include <QMetaType>
 #include <QString>
 #include <QVector>
+#include <QVariantList>
 
 #include "service/stream_service_protocol.h"
 #include "workspace/native_workspace_types.h"
@@ -31,6 +32,8 @@ struct RoomSnapshot {
     bool favorite = false;
     bool audioFocused = false;
     bool muted = true;
+    int volume = 100;
+    QVariantList availableQualities;
 };
 
 using RoomSnapshots = QVector<RoomSnapshot>;

@@ -1,5 +1,6 @@
 $ErrorActionPreference = 'Stop'
 $nativeRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$repoRoot = (Resolve-Path (Join-Path $nativeRoot '..')).Path
 $pythonExe = Join-Path $nativeRoot '.venv\Scripts\python.exe'
 $serviceScript = Join-Path $nativeRoot 'service\streamget_service.py'
 $distPath = Join-Path $nativeRoot 'out\service'
@@ -11,9 +12,13 @@ if (-not (Test-Path $pythonExe)) {
 }
 
 New-Item -ItemType Directory -Force -Path $distPath, $workPath | Out-Null
-& $pythonExe -m PyInstaller --noconfirm --clean --onefile --name streamget_service `
-    --distpath $distPath --workpath $workPath --specpath $workPath $serviceScript *> $null
-if ($LASTEXITCODE -ne 0 -or -not (Test-Path $outputExe)) {
+$previousErrorActionPreference = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+& $pythonExe -m PyInstaller --noconfirm --clean --onefile --log-level WARN --name streamget_service `
+    --paths $repoRoot --distpath $distPath --workpath $workPath --specpath $workPath $serviceScript 2>&1 | Out-Null
+$pyInstallerExitCode = $LASTEXITCODE
+$ErrorActionPreference = $previousErrorActionPreference
+if ($pyInstallerExitCode -ne 0 -or -not (Test-Path $outputExe)) {
     throw 'PyInstaller failed to build streamget_service.exe'
 }
 

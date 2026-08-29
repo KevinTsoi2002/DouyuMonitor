@@ -6,6 +6,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QRegularExpression>
 #include <QTimer>
 
 #include <atomic>
@@ -26,6 +27,7 @@ struct Options {
     QString crashOnceFile;
     int offlineAfter = 0;
     QString errorCode;
+    QVector<bool> searchScript;
 };
 
 Options parseOptions(const QStringList &arguments)
@@ -47,6 +49,15 @@ Options parseOptions(const QStringList &arguments)
             options.offlineAfter = qMax(0, arguments.at(++index).toInt());
         } else if (argument == QStringLiteral("--error-code") && index + 1 < arguments.size()) {
             options.errorCode = arguments.at(++index);
+        } else if (argument == QStringLiteral("--search-script") && index + 1 < arguments.size()) {
+            const QStringList states = arguments.at(++index).split(',', Qt::SkipEmptyParts);
+            for (const QString &state : states) {
+                if (state == QStringLiteral("online")) {
+                    options.searchScript.push_back(true);
+                } else if (state == QStringLiteral("offline")) {
+                    options.searchScript.push_back(false);
+                }
+            }
         }
     }
     return options;
@@ -99,6 +110,7 @@ int main(int argc, char **argv)
     QHash<quint64, QTimer *> pending;
     int requestCount = 0;
     int resolveCount = 0;
+    int searchCount = 0;
     QTimer poller;
     QObject::connect(&poller, &QTimer::timeout, &application, [&] {
         QList<QByteArray> current;
@@ -201,7 +213,28 @@ int main(int argc, char **argv)
                 QJsonObject response;
                 response.insert(QStringLiteral("requestId"), static_cast<qint64>(request->requestId));
                 response.insert(QStringLiteral("ok"), true);
-                response.insert(QStringLiteral("results"), QJsonArray());
+                QJsonArray results;
+                static const QRegularExpression roomIdPattern(QStringLiteral(R"(^[0-9]{1,20}$)"));
+                if (roomIdPattern.match(request->query).hasMatch()) {
+                    const int scriptIndex = options.searchScript.isEmpty()
+                        ? 0
+                        : qMin(searchCount, options.searchScript.size() - 1);
+                    const bool online = options.searchScript.isEmpty()
+                        ? true
+                        : options.searchScript.at(scriptIndex);
+                    ++searchCount;
+
+                    QJsonObject result;
+                    result.insert(QStringLiteral("roomId"), request->query);
+                    result.insert(QStringLiteral("anchorName"), QStringLiteral("Fake Anchor"));
+                    result.insert(QStringLiteral("title"), QStringLiteral("Fake Room"));
+                    result.insert(QStringLiteral("category"), QStringLiteral("Game"));
+                    result.insert(QStringLiteral("online"), online);
+                    result.insert(QStringLiteral("viewerLabel"), QStringLiteral("1,234"));
+                    result.insert(QStringLiteral("avatarUrl"), QStringLiteral("https://example.invalid/avatar.jpg"));
+                    results.append(result);
+                }
+                response.insert(QStringLiteral("results"), results);
                 emitObject(response);
             }
         }

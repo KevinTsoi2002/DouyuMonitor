@@ -1,21 +1,19 @@
 # Native M0 Bootstrap
 
-This directory is the start of the Qt + libmpv Windows x64 client. It is
-independent from the legacy Electron entrypoints.
+This directory contains the Qt Quick/QML + libmpv Windows x64 client.
 
 ## Current state
 
 - The vcpkg manifest is pinned to the local registry baseline recorded in
   `vcpkg-configuration.json`.
-- M0 only requests Qt GUI, OpenGL, Widgets and Testlib features.
-- `PlayerSurface` owns the GUI-thread libmpv handle and OpenGL render context.
-- `PlayerSurface` can load a local media file and reports the first rendered frame
-  for deterministic native playback tests.
+- The shipped runtime uses Qt GUI, QML, Qt Quick, OpenGL, and Testlib.
+- `MpvQuickItem` owns the GUI-thread libmpv handle and OpenGL render context.
+- `MpvQuickItem` can load a local media file and reports the first rendered frame
+  for deterministic playback tests.
 - Playback state is explicit: `Idle`, `Loading`, `Playing`, `Paused`, `Ended`,
   or `Error`; pause/resume uses libmpv's native property.
-- The single-window prototype exposes the pause/resume control through a Qt
-  toolbar button with native media icons.
-- `MainWindow` is a single-window prototype with one central `PlayerSurface`.
+- `Main.qml` is the shipped desktop shell and binds UI actions through
+  `AppController`.
 - libmpv is not included in vcpkg; CMake requires an explicitly selected
   `MPV_ROOT` containing the headers, runtime DLL and MSVC import library.
 
@@ -40,13 +38,27 @@ cmake --build --preset windows-x64-debug
 ctest --preset windows-x64-debug
 ```
 
-The dependency probe and the two GUI unit tests are covered by CTest. The
-`PlayerSurface` test uses a generated local PPM fixture; it never contacts a
-remote service or records a playback URL. The native executable also supports
-`--media <path>` for a local file and `--self-test`, which opens the window,
-waits for the OpenGL render context, and exits with a non-zero status if
-libmpv is not ready. Combining them makes the self-test wait for the first
-rendered frame as well.
+The Debug executable uses Qt debug libraries and requires the Visual Studio
+debug runtime when launched outside a developer prompt. For a normal
+double-clickable build, configure and build the Release preset instead:
+
+```powershell
+cmake --preset windows-x64-release
+cmake --build --preset windows-x64-release --target douyu_monitor_native
+.\native\out\build\windows-x64-release\douyu_monitor_native.exe
+```
+
+The post-build deployment runs `windeployqt` with the matching `--debug` or
+`--release` mode and fails the build if the matching Windows platform plugin is
+missing (`platforms/qwindowsd.dll` for Debug or `platforms/qwindows.dll` for
+Release). Do not copy Qt DLLs or platform plugins between the two build
+directories.
+
+The dependency probe and Qt Quick tests are covered by CTest. The native
+executable supports `--media <path>` during `--self-test`; the self-test loads
+the QML application, waits for a Qt Quick OpenGL render context, and exits
+with a non-zero status if libmpv is not ready. Combining the options makes the
+self-test wait for the first rendered frame as well.
 
 For a deterministic media lifecycle check, run:
 
@@ -56,17 +68,16 @@ ctest --test-dir native/out/build/windows-x64 --output-on-failure -R native_self
 ```
 
 The media self-test covers `load`, `first-frame`, `stop`, and `release`, and
-prints the fixed summary `native self-test passed: load first-frame stop
-release`. It uses only the supplied local path and does not print media paths,
-URLs, cookies, tokens, or raw libmpv diagnostics.
+prints a fixed Qt Quick renderer summary. It uses only the supplied local path
+and does not print media paths, URLs, cookies, tokens, or raw libmpv
+diagnostics.
 
 ## Qt-only StreamGet service
 
-The maintained product runtime is Qt + libmpv. The Qt application starts one
-`streamget_service.exe` child per application through `QProcess`; it does not
-use Node, Electron, React, or a TypeScript compatibility layer. The child owns
-Douyu discovery and StreamGet resolution, and communicates through private
-stdin/stdout JSONL.
+The maintained product runtime is Qt Quick/QML + C++ and libmpv. The Qt
+application starts one `streamget_service.exe` child per application through
+`QProcess`. The child owns Douyu discovery and StreamGet resolution, and
+communicates through private stdin/stdout JSONL.
 
 Bootstrap the pinned Python service environment from PowerShell:
 
@@ -92,3 +103,16 @@ require real Douyu credentials or network access.
 When Python is available during CMake configure, the service unit tests are
 registered as `streamget_service_python_tests`; disable them with
 `-DDOUYU_BUILD_SERVICE_TESTS=OFF` only for environments without Python.
+
+## Windows installer
+
+After building the Release target, create a self-contained Windows x64
+installer with the built-in IExpress tool:
+
+```powershell
+.\native\scripts\build-windows-installer.ps1
+```
+
+The output is `native\out\installer\DouyuMonitor-Setup.exe`. It installs the
+Qt Quick application and bundled StreamGet service under the current user's
+`%LOCALAPPDATA%\Programs\DouyuMonitor` and creates a Start Menu shortcut.
