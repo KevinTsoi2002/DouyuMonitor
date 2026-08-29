@@ -1778,3 +1778,12 @@ https://app.notion.com/p/3ca0f4bdec48813792fee023bdcc7342?pvs=204
 | 验证 | 安装器脚本重新执行成功；打包 stage 中的 Release 程序以 `--self-test` 启动并返回码 0；载荷扫描未发现 Electron/Chromium/Node/WebEngine 或测试文件。 |
 | 安装位置 | 当前用户 `%LOCALAPPDATA%\\Programs\\DouyuMonitor`，并创建开始菜单快捷方式。 |
 | 计划对照 | Windows 安装包已完成；仍需在提交前完成 Git 分支重命名、远端发布和用户环境真实斗鱼 1/4/6/9 路长时间验收。 |
+
+## 2026-08-29 - V0.2.0 发布准备
+
+| 项目 | 结果 |
+| --- | --- |
+| 版本 | CMake project 与 vcpkg manifest 已统一为 `0.2.0`。GitHub Release 标签使用 `V0.2.0`。 |
+| 构建 | Visual Studio x64 环境下重新配置并构建 Release 目标成功。 |
+| 验证 | Release CTest 28/28 通过；安装包 stage 的 `--self-test` 返回码 0；运行时载荷扫描无测试文件、构建残留或 Electron/Chromium/Node/WebEngine。 |
+| 产物 | `native/out/installer/DouyuMonitor-Setup.exe`，SHA-256：`AB84A9C70CE86986A4F6AF8084C5B114FCBA503319CBDFD5DD67041072053FD7`。 |
