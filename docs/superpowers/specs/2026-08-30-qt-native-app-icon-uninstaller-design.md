@@ -10,7 +10,7 @@
 
 ## 架构
 
-- `native/app/assets/douyu_monitor.svg` 是可维护的矢量源；构建辅助脚本从该设计生成 Windows 多尺寸 `douyu_monitor.ico`。
+- `native/app/assets/douyu_monitor.svg` 是可维护的矢量设计源；构建辅助脚本按同一几何设计生成 Windows 多尺寸 `douyu_monitor.ico`。
 - CMake 将 `.ico` 作为 Windows 资源嵌入主程序和独立卸载器；安装器与快捷方式引用该资源文件。
 - `douyu_monitor_uninstaller.exe` 为无控制台原生 C++ 程序。它显示确认对话框，清理当前用户的桌面/开始菜单快捷方式和“应用和功能”登记项；随后由隐藏的系统进程在它退出后删除安装目录。
 - 安装器在 `HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\DouyuMonitor` 写入当前用户卸载登记，使 Windows 设置中的“已安装的应用”可找到卸载入口。安装目录、开始菜单和桌面都提供程序入口。
@@ -27,4 +27,3 @@
 - 静态安装器回归测试覆盖图标、独立卸载器、开始菜单卸载项和卸载注册表写入。
 - CMake 编译主程序与卸载器，并在生成文件中检查两者的图标资源存在。
 - 临时目录安装验证检查两个 `.exe`、三个快捷方式路径和卸载注册表写入；清理后确认临时目录和登记项不存在。
-

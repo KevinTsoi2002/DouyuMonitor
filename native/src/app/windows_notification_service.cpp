@@ -33,7 +33,8 @@ public:
         icon.uID = 1;
         icon.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
         icon.uCallbackMessage = WM_APP + 1;
-        icon.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
+        icon.hIcon = LoadIconW(instance_, MAKEINTRESOURCEW(101));
+        if (icon.hIcon == nullptr) return;
         copy(icon.szTip, L"Douyu Monitor");
         iconAdded_ = Shell_NotifyIconW(NIM_ADD, &icon) != FALSE;
 #endif

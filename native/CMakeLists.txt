@@ -739,6 +739,16 @@ set_target_properties(douyu_monitor_native PROPERTIES
     WIN32_EXECUTABLE TRUE
 )
 
+if(WIN32)
+    target_sources(douyu_monitor_native PRIVATE app/resources/app_icon.rc)
+
+    add_executable(douyu_monitor_uninstaller WIN32
+        app/uninstaller_main.cpp
+        app/resources/app_icon.rc
+    )
+    target_link_libraries(douyu_monitor_uninstaller PRIVATE Shell32 Advapi32 Ole32 User32)
+endif()
+
 target_link_libraries(douyu_monitor_native
     PRIVATE
         Qt6::Gui

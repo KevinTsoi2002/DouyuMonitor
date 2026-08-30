@@ -8,6 +8,7 @@ $stageDir = Join-Path $stageRoot 'DouyuMonitor'
 $payloadZip = Join-Path $installerRoot 'DouyuMonitor-runtime.zip'
 $sedPath = Join-Path $installerRoot 'DouyuMonitor-setup.sed'
 $installerExe = Join-Path $installerRoot 'DouyuMonitor-Setup.exe'
+$appIconPath = Join-Path $nativeRoot 'app\assets\douyu_monitor.ico'
 
 if (-not (Test-Path (Join-Path $releaseDir 'douyu_monitor_native.exe'))) {
     throw "Release executable not found: $releaseDir\douyu_monitor_native.exe"
@@ -15,6 +16,10 @@ if (-not (Test-Path (Join-Path $releaseDir 'douyu_monitor_native.exe'))) {
 if (-not (Test-Path (Join-Path $releaseDir 'streamget_service.exe'))) {
     throw "Packaged StreamGet service not found: $releaseDir\streamget_service.exe"
 }
+if (-not (Test-Path (Join-Path $releaseDir 'douyu_monitor_uninstaller.exe'))) {
+    throw "Release uninstaller not found: $releaseDir\douyu_monitor_uninstaller.exe"
+}
+if (-not (Test-Path $appIconPath)) { throw "Application icon not found: $appIconPath" }
 
 Remove-Item $installerRoot -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $stageDir | Out-Null
@@ -23,6 +28,9 @@ Get-ChildItem $releaseDir -File | Where-Object {
     $_.Name -in @('douyu_monitor_native.exe', 'streamget_service.exe') -or
     ($_.Extension -eq '.dll' -and $_.Name -notlike 'test*')
 } | Copy-Item -Destination $stageDir
+Copy-Item (Join-Path $releaseDir 'douyu_monitor_uninstaller.exe') `
+    -Destination (Join-Path $stageDir 'Uninstall DouyuMonitor.exe')
+Copy-Item $appIconPath -Destination $stageDir
 
 foreach ($directory in @('platforms', 'qml', 'imageformats', 'iconengines', 'styles', 'tls', 'networkinformation', 'generic')) {
     $source = Join-Path $releaseDir $directory
@@ -57,13 +65,17 @@ $installLines = @(
     'Expand-Archive -LiteralPath (Join-Path $PSScriptRoot ''DouyuMonitor-runtime.zip'') -DestinationPath $extractRoot -Force',
     '$exe = Join-Path $target ''douyu_monitor_native.exe''',
     'if (-not (Test-Path $exe)) { throw ''Installed executable was not found.'' }',
-    '$uninstaller = Join-Path $target ''uninstall.ps1''',
+    '$uninstaller = Join-Path $target ''Uninstall DouyuMonitor.exe''',
+    'if (-not (Test-Path $uninstaller)) { throw ''Installed uninstaller was not found.'' }',
+    '$iconPath = Join-Path $target ''douyu_monitor.ico''',
+    'if (-not (Test-Path $iconPath)) { throw ''Installed application icon was not found.'' }',
     '$startMenuDir = Join-Path ([Environment]::GetFolderPath(''StartMenu'')) ''Programs\DouyuMonitor''',
     '$desktopShortcutPath = Join-Path ([Environment]::GetFolderPath(''Desktop'')) ''DouyuMonitor.lnk''',
     '$startMenuShortcutPath = Join-Path $startMenuDir ''DouyuMonitor.lnk''',
-    '$uninstallLines = @("Remove-Item -LiteralPath ''$startMenuShortcutPath'' -Force -ErrorAction SilentlyContinue", "Remove-Item -LiteralPath ''$desktopShortcutPath'' -Force -ErrorAction SilentlyContinue", "Remove-Item -LiteralPath (Split-Path -Parent $MyInvocation.MyCommand.Path) -Recurse -Force -ErrorAction SilentlyContinue")',
-    '$uninstallLines | Set-Content -LiteralPath $uninstaller -Encoding ASCII',
-    'if ($env:DOUYU_SKIP_SHORTCUTS -ne ''1'') { New-Item -ItemType Directory -Force -Path $startMenuDir | Out-Null; $shell = New-Object -ComObject WScript.Shell; $shortcut = $shell.CreateShortcut($startMenuShortcutPath); $shortcut.TargetPath = $exe; $shortcut.WorkingDirectory = $target; $shortcut.Description = ''DouyuMonitor''; $shortcut.Save(); $desktopShortcut = $shell.CreateShortcut($desktopShortcutPath); $desktopShortcut.TargetPath = $exe; $desktopShortcut.WorkingDirectory = $target; $desktopShortcut.Description = ''DouyuMonitor''; $desktopShortcut.Save() }',
+    '$uninstallShortcutPath = Join-Path $startMenuDir ''Uninstall DouyuMonitor.lnk''',
+    '$uninstallRegistryPath = ''HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\DouyuMonitor''',
+    'New-Item -Path $uninstallRegistryPath -Force | Out-Null; New-ItemProperty -Path $uninstallRegistryPath -Name ''DisplayName'' -Value ''DouyuMonitor'' -PropertyType String -Force | Out-Null; New-ItemProperty -Path $uninstallRegistryPath -Name ''DisplayVersion'' -Value ''0.2.0'' -PropertyType String -Force | Out-Null; New-ItemProperty -Path $uninstallRegistryPath -Name ''Publisher'' -Value ''DouyuMonitor'' -PropertyType String -Force | Out-Null; New-ItemProperty -Path $uninstallRegistryPath -Name ''InstallLocation'' -Value $target -PropertyType String -Force | Out-Null; New-ItemProperty -Path $uninstallRegistryPath -Name ''DisplayIcon'' -Value $iconPath -PropertyType String -Force | Out-Null; New-ItemProperty -Path $uninstallRegistryPath -Name ''UninstallString'' -Value (''"{0}"'' -f $uninstaller) -PropertyType String -Force | Out-Null; New-ItemProperty -Path $uninstallRegistryPath -Name ''NoModify'' -Value 1 -PropertyType DWord -Force | Out-Null; New-ItemProperty -Path $uninstallRegistryPath -Name ''NoRepair'' -Value 1 -PropertyType DWord -Force | Out-Null',
+    'if ($env:DOUYU_SKIP_SHORTCUTS -ne ''1'') { New-Item -ItemType Directory -Force -Path $startMenuDir | Out-Null; $shell = New-Object -ComObject WScript.Shell; $shortcut = $shell.CreateShortcut($startMenuShortcutPath); $shortcut.TargetPath = $exe; $shortcut.WorkingDirectory = $target; $shortcut.IconLocation = $iconPath; $shortcut.Description = ''DouyuMonitor''; $shortcut.Save(); $desktopShortcut = $shell.CreateShortcut($desktopShortcutPath); $desktopShortcut.TargetPath = $exe; $desktopShortcut.WorkingDirectory = $target; $desktopShortcut.IconLocation = $iconPath; $desktopShortcut.Description = ''DouyuMonitor''; $desktopShortcut.Save(); $uninstallShortcut = $shell.CreateShortcut($uninstallShortcutPath); $uninstallShortcut.TargetPath = $uninstaller; $uninstallShortcut.WorkingDirectory = $target; $uninstallShortcut.IconLocation = $iconPath; $uninstallShortcut.Description = ''Uninstall DouyuMonitor''; $uninstallShortcut.Save() }',
     'if ($env:DOUYU_SKIP_LAUNCH -ne ''1'') { [System.Windows.Forms.MessageBox]::Show("Installed to:`n$target", "DouyuMonitor") | Out-Null; Start-Process -FilePath $exe -WorkingDirectory $target }'
 )
 $installLines | Set-Content -LiteralPath $installScriptPath -Encoding ASCII

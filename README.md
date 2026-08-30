@@ -74,7 +74,7 @@ ctest --preset windows-x64-release
 .\scripts\build-windows-installer.ps1
 ```
 
-安装包输出到 `native/out/installer/DouyuMonitor-Setup.exe`。运行安装包时可选择安装目录；安装完成后会显示实际路径并启动程序，同时创建开始菜单和桌面快捷方式。静默/自动化验证可使用 `DOUYU_INSTALL_ROOT`、`DOUYU_SKIP_SHORTCUTS` 和 `DOUYU_SKIP_LAUNCH` 环境变量覆盖行为。
+安装包输出到 `native/out/installer/DouyuMonitor-Setup.exe`。运行安装包时可选择安装目录；安装完成后会显示实际路径并启动程序，同时创建开始菜单和桌面快捷方式。安装目录中提供 `Uninstall DouyuMonitor.exe`，开始菜单也提供“卸载 DouyuMonitor”；Windows 设置的“已安装的应用”可通过当前用户卸载登记找到它。静默/自动化验证可使用 `DOUYU_INSTALL_ROOT`、`DOUYU_SKIP_SHORTCUTS` 和 `DOUYU_SKIP_LAUNCH` 环境变量覆盖行为。
 
 ## StreamGet 服务
 
