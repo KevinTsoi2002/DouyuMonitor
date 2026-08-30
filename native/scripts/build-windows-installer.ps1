@@ -47,21 +47,24 @@ if (-not (Test-Path $payloadZip)) { throw 'Failed to create runtime payload arch
 $installScriptPath = Join-Path $installerRoot 'install.ps1'
 $installLines = @(
     '$ErrorActionPreference = ''Stop''',
+    'Add-Type -AssemblyName System.Windows.Forms',
     '$programRoot = Join-Path $env:LOCALAPPDATA ''Programs''',
-    '$target = Join-Path $programRoot ''DouyuMonitor''',
+    '$selectedRoot = $env:DOUYU_INSTALL_ROOT',
+    'if ([string]::IsNullOrWhiteSpace($selectedRoot)) { $dialog = New-Object System.Windows.Forms.FolderBrowserDialog; $dialog.Description = ''Choose the DouyuMonitor installation folder''; $dialog.ShowNewFolderButton = $true; $dialog.SelectedPath = $programRoot; if ($dialog.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) { exit 1 }; $selectedRoot = $dialog.SelectedPath }',
+    'if ([IO.Path]::GetFileName($selectedRoot).Equals(''DouyuMonitor'', [StringComparison]::OrdinalIgnoreCase)) { $target = $selectedRoot; $extractRoot = Split-Path -Parent $target } else { $target = Join-Path $selectedRoot ''DouyuMonitor''; $extractRoot = $selectedRoot }',
+    'New-Item -ItemType Directory -Force -Path $extractRoot | Out-Null',
     'if (Test-Path $target) { Remove-Item $target -Recurse -Force }',
-    'Expand-Archive -LiteralPath (Join-Path $PSScriptRoot ''DouyuMonitor-runtime.zip'') -DestinationPath $programRoot -Force',
+    'Expand-Archive -LiteralPath (Join-Path $PSScriptRoot ''DouyuMonitor-runtime.zip'') -DestinationPath $extractRoot -Force',
     '$exe = Join-Path $target ''douyu_monitor_native.exe''',
+    'if (-not (Test-Path $exe)) { throw ''Installed executable was not found.'' }',
     '$uninstaller = Join-Path $target ''uninstall.ps1''',
-    '$uninstallLines = @(''Remove-Item (Join-Path ([Environment]::GetFolderPath(''''StartMenu'''')) ''''Programs\Douyu Monitor.lnk'''') -Force -ErrorAction SilentlyContinue'', ''Remove-Item (Split-Path -Parent $MyInvocation.MyCommand.Path) -Recurse -Force -ErrorAction SilentlyContinue'')',
+    '$startMenuDir = Join-Path ([Environment]::GetFolderPath(''StartMenu'')) ''Programs\DouyuMonitor''',
+    '$desktopShortcutPath = Join-Path ([Environment]::GetFolderPath(''Desktop'')) ''DouyuMonitor.lnk''',
+    '$startMenuShortcutPath = Join-Path $startMenuDir ''DouyuMonitor.lnk''',
+    '$uninstallLines = @("Remove-Item -LiteralPath ''$startMenuShortcutPath'' -Force -ErrorAction SilentlyContinue", "Remove-Item -LiteralPath ''$desktopShortcutPath'' -Force -ErrorAction SilentlyContinue", "Remove-Item -LiteralPath (Split-Path -Parent $MyInvocation.MyCommand.Path) -Recurse -Force -ErrorAction SilentlyContinue")',
     '$uninstallLines | Set-Content -LiteralPath $uninstaller -Encoding ASCII',
-    '$shell = New-Object -ComObject WScript.Shell',
-    '$shortcutPath = Join-Path ([Environment]::GetFolderPath(''StartMenu'')) ''Programs\Douyu Monitor.lnk''',
-    '$shortcut = $shell.CreateShortcut($shortcutPath)',
-    '$shortcut.TargetPath = $exe',
-    '$shortcut.WorkingDirectory = $target',
-    '$shortcut.Description = ''Douyu Monitor''',
-    '$shortcut.Save()'
+    'if ($env:DOUYU_SKIP_SHORTCUTS -ne ''1'') { New-Item -ItemType Directory -Force -Path $startMenuDir | Out-Null; $shell = New-Object -ComObject WScript.Shell; $shortcut = $shell.CreateShortcut($startMenuShortcutPath); $shortcut.TargetPath = $exe; $shortcut.WorkingDirectory = $target; $shortcut.Description = ''DouyuMonitor''; $shortcut.Save(); $desktopShortcut = $shell.CreateShortcut($desktopShortcutPath); $desktopShortcut.TargetPath = $exe; $desktopShortcut.WorkingDirectory = $target; $desktopShortcut.Description = ''DouyuMonitor''; $desktopShortcut.Save() }',
+    'if ($env:DOUYU_SKIP_LAUNCH -ne ''1'') { [System.Windows.Forms.MessageBox]::Show("Installed to:`n$target", "DouyuMonitor") | Out-Null; Start-Process -FilePath $exe -WorkingDirectory $target }'
 )
 $installLines | Set-Content -LiteralPath $installScriptPath -Encoding ASCII
 
@@ -83,10 +86,10 @@ $sed = @(
     'FinishMessage="Douyu Monitor was installed."',
     "TargetName=$installerExe",
     'FriendlyName=Douyu Monitor',
-    'AppLaunched=powershell.exe -NoProfile -ExecutionPolicy Bypass -File install.ps1',
+    'AppLaunched=powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File install.ps1',
     'PostInstallCmd=<None>',
-    'AdminQuietInstCmd=powershell.exe -NoProfile -ExecutionPolicy Bypass -File install.ps1',
-    'UserQuietInstCmd=powershell.exe -NoProfile -ExecutionPolicy Bypass -File install.ps1',
+    'AdminQuietInstCmd=powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File install.ps1',
+    'UserQuietInstCmd=powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File install.ps1',
     'SourceFiles=SourceFiles',
     '[SourceFiles]',
     "SourceFiles0=$installerRoot",
@@ -99,7 +102,10 @@ $sed = @(
 )
 $sed | Set-Content -LiteralPath $sedPath -Encoding ASCII
 
-iexpress.exe /N /Q $sedPath | Out-Null
+$iexpress = Start-Process -FilePath 'iexpress.exe' -ArgumentList @('/N', $sedPath) -Wait -PassThru
+if ($iexpress.ExitCode -ne 0) { throw "IExpress failed with exit code $($iexpress.ExitCode)." }
+$deadline = (Get-Date).AddMinutes(10)
+while (-not (Test-Path $installerExe) -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 2 }
 if (-not (Test-Path $installerExe)) { throw 'IExpress failed to create DouyuMonitor-Setup.exe.' }
 
 Write-Output $installerExe

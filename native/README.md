@@ -93,7 +93,13 @@ native/out/build/windows-x64-release/douyu_monitor_native.exe
 native/out/installer/DouyuMonitor-Setup.exe
 ```
 
-安装器使用 Windows 自带 IExpress，安装到 `%LOCALAPPDATA%\\Programs\\DouyuMonitor` 并创建开始菜单快捷方式。运行时载荷校验会拒绝测试程序、构建残留以及 Electron、Chromium、Node、Qt WebEngine 文件。
+安装器使用 Windows 自带 IExpress。安装时可选择目标目录；完成后显示实际安装路径并启动程序，同时创建开始菜单和桌面快捷方式。自动化验证可设置 `DOUYU_INSTALL_ROOT`，并用 `DOUYU_SKIP_SHORTCUTS=1`、`DOUYU_SKIP_LAUNCH=1` 禁用交互副作用。运行时载荷校验会拒绝测试程序、构建残留以及 Electron、Chromium、Node、Qt WebEngine 文件。
+
+安装器脚本回归检查：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-installer-script.ps1
+```
 
 ## 验收边界
 

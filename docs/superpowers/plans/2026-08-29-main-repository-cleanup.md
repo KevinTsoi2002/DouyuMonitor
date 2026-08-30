@@ -85,3 +85,18 @@ Expected: 创建提交 `1f5f0a8`。
 Run: `git push origin main`
 
 Expected: 远端 `main` 从 `9754b47` 更新至 `1f5f0a8`。
+
+### Task 5: 修复 Windows 安装器入口
+
+**Files:**
+- Modify: `native/scripts/build-windows-installer.ps1`
+- Create: `native/scripts/test-installer-script.ps1`
+- Modify: `README.md`
+- Modify: `native/README.md`
+- Modify: `docs/文件职责索引.md`
+- Modify: `docs/superpowers/logs/2026-08-29-main-仓库整理日志.md`
+
+- [x] **Step 1: 支持选择安装目录与创建入口**
+- [x] **Step 2: 等待 IExpress 完整生成安装包**
+- [x] **Step 3: 添加脚本回归测试并更新中文文档**
+- [x] **Step 4: 临时目录安装验证、CTest 与推送**
