@@ -31,9 +31,6 @@ ApplicationWindow {
                                   ? appController.workspace.sidebarVisible
                                   : true
     readonly property int sidebarWidth: sidebarVisible ? 268 : 0
-    readonly property string layoutId: appController
-                                      ? appController.workspace.layoutId
-                                      : "grid-2x2"
     readonly property var roomModel: appController ? appController.rooms : previewRooms
     readonly property var libraryRooms: appController ? appController.libraryRooms : []
     readonly property var workspaceModel: appController ? appController.workspace : null
@@ -237,10 +234,8 @@ ApplicationWindow {
         anchors.bottom: parent.bottom
         controller: root.appController
         roomModel: root.roomModel
-        layoutId: root.layoutId
         layoutMode: root.workspaceModel ? root.workspaceModel.layoutMode : "auto"
         primaryRoomId: root.workspaceModel ? root.workspaceModel.primaryRoomId : "preview-1"
-        primaryRoomRatio: root.workspaceModel ? root.workspaceModel.primaryRoomRatio : 0.6
         canvasColor: root.canvasColor
         surfaceColor: root.surfaceColor
         borderColor: root.borderColor

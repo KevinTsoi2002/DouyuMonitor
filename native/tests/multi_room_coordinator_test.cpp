@@ -52,6 +52,7 @@ private slots:
     void refreshesRoomMetadataImmediatelyAfterAdd();
     void replacesRoomsInRequestedOrderAndReleasesRemovedSessions();
     void preservesManualLayoutWhenRoomCountChanges();
+    void reducesLayoutModesAndMigratesLegacyChoices();
 };
 
 void MultiRoomCoordinatorTest::acceptsNineRoomsAndRejectsTheTenth()
@@ -61,7 +62,7 @@ void MultiRoomCoordinatorTest::acceptsNineRoomsAndRejectsTheTenth()
 
     for (int index = 0; index < 9; ++index) QVERIFY(coordinator.addRoom(roomId(index)));
     QCOMPARE(coordinator.roomCount(), 9);
-    QCOMPARE(coordinator.layoutId(), QStringLiteral("grid-3x3"));
+    QCOMPARE(coordinator.layoutId(), QStringLiteral("auto"));
     QVERIFY(!coordinator.addRoom(QStringLiteral("999999")));
     QCOMPARE(coordinator.roomCount(), 9);
     client.shutdown();
@@ -182,7 +183,7 @@ void MultiRoomCoordinatorTest::removesRoomAndReflowsOrder()
     QVERIFY(coordinator.addRoom(QStringLiteral("63138")));
     QVERIFY(coordinator.removeRoom(QStringLiteral("63137")));
     QCOMPARE(coordinator.roomIds(), QStringList({QStringLiteral("63136"), QStringLiteral("63138")}));
-    QCOMPARE(coordinator.layoutId(), QStringLiteral("grid-2x2"));
+    QCOMPARE(coordinator.layoutId(), QStringLiteral("auto"));
     QVERIFY(coordinator.sessionForRoom(QStringLiteral("63137")) == nullptr);
     client.shutdown();
 }
@@ -511,12 +512,12 @@ void MultiRoomCoordinatorTest::preservesManualLayoutWhenRoomCountChanges()
     QVERIFY(QMetaObject::invokeMethod(&coordinator,
                                       "setLayout",
                                       Q_RETURN_ARG(bool, changed),
-                                      Q_ARG(QString, QStringLiteral("primary-two"))));
+                                      Q_ARG(QString, QStringLiteral("primary"))));
     QVERIFY(changed);
-    QCOMPARE(coordinator.layoutId(), QStringLiteral("primary-two"));
+    QCOMPARE(coordinator.layoutId(), QStringLiteral("primary"));
 
     QVERIFY(coordinator.addRoom(QStringLiteral("63138")));
-    QCOMPARE(coordinator.layoutId(), QStringLiteral("primary-two"));
+    QCOMPARE(coordinator.layoutId(), QStringLiteral("primary"));
 
     changed = true;
     QVERIFY(QMetaObject::invokeMethod(&coordinator,
@@ -524,6 +525,27 @@ void MultiRoomCoordinatorTest::preservesManualLayoutWhenRoomCountChanges()
                                       Q_RETURN_ARG(bool, changed),
                                       Q_ARG(QString, QStringLiteral("unsupported"))));
     QVERIFY(!changed);
+    client.shutdown();
+}
+
+void MultiRoomCoordinatorTest::reducesLayoutModesAndMigratesLegacyChoices()
+{
+    StreamgetProcessClient client(fakeServicePath());
+    MultiRoomCoordinator coordinator(&client);
+
+    QVERIFY(!coordinator.setLayout(QStringLiteral("auto")));
+    QCOMPARE(coordinator.layoutMode(), QStringLiteral("auto"));
+    QCOMPARE(coordinator.layoutId(), QStringLiteral("auto"));
+
+    QVERIFY(coordinator.setLayout(QStringLiteral("primary-two")));
+    QCOMPARE(coordinator.layoutMode(), QStringLiteral("primary"));
+    QCOMPARE(coordinator.layoutId(), QStringLiteral("primary"));
+
+    QVERIFY(coordinator.setLayout(QStringLiteral("grid-3x3")));
+    QCOMPARE(coordinator.layoutMode(), QStringLiteral("auto"));
+    QCOMPARE(coordinator.layoutId(), QStringLiteral("auto"));
+
+    QVERIFY(!coordinator.setLayout(QStringLiteral("unsupported")));
     client.shutdown();
 }
 

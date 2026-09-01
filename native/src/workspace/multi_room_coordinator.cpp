@@ -12,13 +12,22 @@ namespace {
 
 const QRegularExpression kRoomIdPattern(QStringLiteral(R"(^[0-9]{1,20}$)"));
 
-bool isSupportedLayout(const QString &layoutId)
+QString normalizeLayoutMode(const QString &layoutId)
 {
-    return layoutId == QStringLiteral("auto") || layoutId == QStringLiteral("single")
-        || layoutId == QStringLiteral("grid-2x2") || layoutId == QStringLiteral("grid-3x2")
-        || layoutId == QStringLiteral("grid-3x3") || layoutId == QStringLiteral("primary-two")
-        || layoutId == QStringLiteral("split-horizontal")
-        || layoutId == QStringLiteral("split-vertical");
+    const QString normalized = layoutId.trimmed().toLower();
+    if (normalized == QStringLiteral("primary")
+        || normalized == QStringLiteral("primary-two")) {
+        return QStringLiteral("primary");
+    }
+    if (normalized == QStringLiteral("auto") || normalized == QStringLiteral("single")
+        || normalized == QStringLiteral("grid-2x2")
+        || normalized == QStringLiteral("grid-3x2")
+        || normalized == QStringLiteral("grid-3x3")
+        || normalized == QStringLiteral("split-horizontal")
+        || normalized == QStringLiteral("split-vertical")) {
+        return QStringLiteral("auto");
+    }
+    return {};
 }
 
 double normalizedRatio(double ratio)
@@ -90,7 +99,9 @@ bool MultiRoomCoordinator::addRoom(const QString &roomId, StreamQuality userQual
 
 RoomCommandResult MultiRoomCoordinator::addRoomDetailed(const QString &roomId,
                                                          StreamQuality requestedQuality,
-                                                         RoomMetadata metadata)
+                                                         RoomMetadata metadata,
+                                                         bool favorite,
+                                                         int volume)
 {
     if (!isValidRoomId(roomId)) return RoomCommandResult::InvalidRoomId;
     if (sessions_.contains(roomId)) return RoomCommandResult::DuplicateRoomId;
@@ -99,6 +110,8 @@ RoomCommandResult MultiRoomCoordinator::addRoomDetailed(const QString &roomId,
 
     RoomSession *session = new RoomSession(client_, roomId, requestedQuality, this,
                                            std::move(metadata));
+    session->setFavorite(favorite);
+    session->setVolume(qBound(0, volume, 100));
     sessions_.insert(roomId, session);
     order_.append(roomId);
     connectSession(session);
@@ -108,7 +121,7 @@ RoomCommandResult MultiRoomCoordinator::addRoomDetailed(const QString &roomId,
     }
 
     const QString previousLayout = layoutId_;
-    if (layoutMode_ == QStringLiteral("auto")) layoutId_ = recommendedGridId(order_.size());
+    layoutId_ = layoutMode_;
     recomputeQuality();
     applyAudioFocus();
     if (session->state() == RoomSession::State::Idle) session->resolve();
@@ -145,7 +158,7 @@ RoomCommandResult MultiRoomCoordinator::removeRoomDetailed(const QString &roomId
     }
 
     const QString previousLayout = layoutId_;
-    if (layoutMode_ == QStringLiteral("auto")) layoutId_ = recommendedGridId(order_.size());
+    layoutId_ = layoutMode_;
     recomputeQuality();
     applyAudioFocus();
     delete session;
@@ -277,30 +290,47 @@ RoomCommandResult MultiRoomCoordinator::replaceRooms(const QVector<CoordinatorRo
         seen.insert(spec.roomId);
     }
 
-    const auto existingSessions = sessions_.values();
-    for (RoomSession *session : existingSessions) {
-        if (session == nullptr) continue;
-        QObject::disconnect(session, nullptr, this, nullptr);
-        session->release();
-        delete session;
+    const QSet<QString> targetIds = seen;
+    for (auto it = sessions_.begin(); it != sessions_.end();) {
+        if (targetIds.contains(it.key())) {
+            ++it;
+            continue;
+        }
+        RoomSession *session = it.value();
+        if (session != nullptr) {
+            QObject::disconnect(session, nullptr, this, nullptr);
+            session->release();
+            delete session;
+        }
+        it = sessions_.erase(it);
     }
-    sessions_.clear();
+
+    const QString previousAudio = audioRoomId_;
     order_.clear();
-    primaryRoomId_.clear();
-    audioRoomId_.clear();
-
+    order_.reserve(rooms.size());
     for (const CoordinatorRoomSpec &spec : rooms) {
-        auto *session = new RoomSession(client_, spec.roomId, spec.requestedQuality, this,
-                                        spec.metadata);
+        RoomSession *session = sessions_.value(spec.roomId, nullptr);
+        if (session == nullptr) {
+            session = new RoomSession(client_, spec.roomId, spec.requestedQuality, this,
+                                      spec.metadata);
+            sessions_.insert(spec.roomId, session);
+            connectSession(session);
+        } else {
+            session->setRequestedQuality(spec.requestedQuality);
+        }
         session->setFavorite(spec.favorite);
-        session->setVolume(spec.volume);
-        sessions_.insert(spec.roomId, session);
+        session->setVolume(qBound(0, spec.volume, 100));
         order_.append(spec.roomId);
-        connectSession(session);
-        if (primaryRoomId_.isEmpty()) primaryRoomId_ = spec.roomId;
     }
 
-    if (layoutMode_ == QStringLiteral("auto")) layoutId_ = recommendedGridId(order_.size());
+    primaryRoomId_ = order_.isEmpty() ? QString() : order_.front();
+    audioRoomId_ = audioMode_ == QStringLiteral("single")
+        ? (targetIds.contains(previousAudio)
+               ? previousAudio
+               : (order_.isEmpty() ? QString() : order_.front()))
+        : QString();
+
+    layoutId_ = layoutMode_;
     recomputeQuality();
     applyAudioFocus();
     scheduler_.synchronize(roomSnapshots());
@@ -347,17 +377,13 @@ double MultiRoomCoordinator::primaryRoomRatio() const noexcept
 
 bool MultiRoomCoordinator::setLayout(const QString &layoutId)
 {
-    const QString normalized = layoutId.trimmed().toLower();
-    if (!isSupportedLayout(normalized)) return false;
+    const QString normalized = normalizeLayoutMode(layoutId);
+    if (normalized.isEmpty()) return false;
 
     const QString previousLayout = layoutId_;
     const QString previousMode = layoutMode_;
     layoutMode_ = normalized;
-    if (normalized == QStringLiteral("auto")) {
-        layoutId_ = recommendedGridId(order_.size());
-    } else {
-        layoutId_ = normalized;
-    }
+    layoutId_ = normalized;
     if (previousLayout != layoutId_) emit layoutChanged(layoutId_);
     return previousLayout != layoutId_ || previousMode != layoutMode_;
 }

@@ -94,6 +94,10 @@ private slots:
     void publishesCommandFailureToToast();
     void restoresLayoutAndRatioFromWorkspacePreset();
     void persistsGlobalAudioPolicy();
+    void preservesFavoriteWhenReaddingLibraryRoom();
+    void appliesWorkspacePresetToAllRoomsRepeatedly();
+    void restoresPresetRoomsMissingFromLibrary();
+    void defersRequestedRoomRemovalUntilEventLoop();
 };
 
 void AppControllerTest::addsRoomsThroughModelAndRejectsTheTenth()
@@ -110,6 +114,21 @@ void AppControllerTest::addsRoomsThroughModelAndRejectsTheTenth()
 
     QCOMPARE(controller.addRoom(QStringLiteral("999999")), QStringLiteral("最多添加 9 个房间"));
     QCOMPARE(controller.rooms()->rowCount(), 9);
+}
+
+void AppControllerTest::defersRequestedRoomRemovalUntilEventLoop()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSettings settings(directory.filePath(QStringLiteral("workspace.ini")), QSettings::IniFormat);
+    FakeNotificationSink sink;
+    AppController controller(fakeServicePath(), &settings, &sink);
+
+    QCOMPARE(controller.addRoom(QStringLiteral("63136")), QString());
+    QVERIFY(QMetaObject::invokeMethod(&controller, "requestRemoveRoom",
+                                      Q_ARG(QString, QStringLiteral("63136"))));
+    QCOMPARE(controller.rooms()->rowCount(), 1);
+    QTRY_COMPARE(controller.rooms()->rowCount(), 0);
 }
 
 void AppControllerTest::recordsOpenedRoomsForTheLibraryHistory()
@@ -211,7 +230,7 @@ void AppControllerTest::restoresLayoutAndRatioFromWorkspacePreset()
     QVERIFY(QMetaObject::invokeMethod(&controller,
                                       "setLayout",
                                       Q_RETURN_ARG(bool, changed),
-                                      Q_ARG(QString, QStringLiteral("primary-two"))));
+                                      Q_ARG(QString, QStringLiteral("primary"))));
     QVERIFY(changed);
     QVERIFY(QMetaObject::invokeMethod(&controller,
                                       "setPrimaryRoomRatio",
@@ -227,7 +246,7 @@ void AppControllerTest::restoresLayoutAndRatioFromWorkspacePreset()
                                       Q_ARG(QString, QStringLiteral("grid-3x3"))));
     QVERIFY(changed);
     QVERIFY(controller.applyWorkspacePreset(presetId).isEmpty());
-    QCOMPARE(controller.workspace()->layoutId(), QStringLiteral("primary-two"));
+    QCOMPARE(controller.workspace()->layoutId(), QStringLiteral("primary"));
     QCOMPARE(controller.workspace()->primaryRoomRatio(), 0.67);
 }
 
@@ -245,6 +264,87 @@ void AppControllerTest::persistsGlobalAudioPolicy()
     QVERIFY(controller.workspace()->globalMuted());
     QVERIFY(!controller.setAudioMode(QStringLiteral("unsupported")));
     QCOMPARE(controller.workspace()->audioMode(), QStringLiteral("multi"));
+}
+
+void AppControllerTest::preservesFavoriteWhenReaddingLibraryRoom()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSettings settings(directory.filePath(QStringLiteral("workspace.ini")), QSettings::IniFormat);
+    FakeNotificationSink sink;
+    AppController controller(fakeServicePath(), &settings, &sink);
+
+    QCOMPARE(controller.addRoom(QStringLiteral("63136")), QString());
+    QCOMPARE(controller.setFavorite(QStringLiteral("63136"), true), QString());
+    QCOMPARE(controller.removeRoom(QStringLiteral("63136")), QString());
+    QCOMPARE(controller.libraryRooms().first().toMap().value(QStringLiteral("favorite")).toBool(), true);
+
+    QCOMPARE(controller.addRoom(QStringLiteral("63136")), QString());
+    QCOMPARE(controller.libraryRooms().first().toMap().value(QStringLiteral("favorite")).toBool(), true);
+    QCOMPARE(controller.rooms()->data(controller.rooms()->index(0, 0), RoomListModel::FavoriteRole).toBool(), true);
+}
+
+void AppControllerTest::appliesWorkspacePresetToAllRoomsRepeatedly()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSettings settings(directory.filePath(QStringLiteral("workspace.ini")), QSettings::IniFormat);
+    FakeNotificationSink sink;
+    AppController controller(fakeServicePath(), &settings, &sink);
+
+    QCOMPARE(controller.addRoom(QStringLiteral("63136")), QString());
+    QCOMPARE(controller.addRoom(QStringLiteral("63137")), QString());
+    QCOMPARE(controller.addRoom(QStringLiteral("63138")), QString());
+    QCOMPARE(controller.addRoom(QStringLiteral("63139")), QString());
+    QCOMPARE(controller.addRoom(QStringLiteral("63140")), QString());
+    const QString presetId = controller.saveWorkspacePreset(QStringLiteral("五路"));
+    QVERIFY(!presetId.isEmpty());
+
+    QCOMPARE(controller.addRoom(QStringLiteral("63141")), QString());
+    QCOMPARE(controller.applyWorkspacePreset(presetId), QString());
+    QCOMPARE(controller.rooms()->rowCount(), 5);
+    QCOMPARE(controller.rooms()->data(controller.rooms()->index(0, 0), RoomListModel::RoomIdRole).toString(),
+             QStringLiteral("63136"));
+    QCOMPARE(controller.rooms()->data(controller.rooms()->index(1, 0), RoomListModel::RoomIdRole).toString(),
+             QStringLiteral("63137"));
+    QCOMPARE(controller.rooms()->data(controller.rooms()->index(2, 0), RoomListModel::RoomIdRole).toString(),
+             QStringLiteral("63138"));
+    QCOMPARE(controller.rooms()->data(controller.rooms()->index(3, 0), RoomListModel::RoomIdRole).toString(),
+             QStringLiteral("63139"));
+    QCOMPARE(controller.rooms()->data(controller.rooms()->index(4, 0), RoomListModel::RoomIdRole).toString(),
+             QStringLiteral("63140"));
+
+    QCOMPARE(controller.applyWorkspacePreset(presetId), QString());
+    QCOMPARE(controller.rooms()->rowCount(), 5);
+    QCOMPARE(controller.rooms()->data(controller.rooms()->index(0, 0), RoomListModel::RoomIdRole).toString(),
+             QStringLiteral("63136"));
+    QCOMPARE(controller.rooms()->data(controller.rooms()->index(1, 0), RoomListModel::RoomIdRole).toString(),
+             QStringLiteral("63137"));
+}
+
+void AppControllerTest::restoresPresetRoomsMissingFromLibrary()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSettings settings(directory.filePath(QStringLiteral("workspace.ini")), QSettings::IniFormat);
+    settings.setValue(
+        QStringLiteral("DouyuMonitor/nativeWorkspaceV1"),
+        QByteArray(R"JSON({"version":2,"library":[{"roomId":"63136","metadata":{"roomId":"63136","anchorName":"主播 1","title":"标题 1","category":"游戏","viewerLabel":"1"},"requestedQuality":"auto","favorite":false,"lastOpenedAtMs":0,"volume":100,"danmakuEnabled":true}],"groups":[],"activeRoomIds":["63136"],"activeGroupId":"","primaryRoomId":"63136","audioRoomId":"63136","presets":[{"id":"p1","name":"五路预设","layoutId":"grid-3x2","activeGroupId":"","primaryRoomId":"63136","audioRoomId":"63136","roomIds":["63136","63137","63138","63139","63140"],"sidebarVisible":true,"danmakuEnabled":true}]})JSON"));
+    FakeNotificationSink sink;
+
+    AppController controller(fakeServicePath(), &settings, &sink);
+    QCOMPARE(controller.workspace()->presets().size(), 1);
+    QCOMPARE(controller.applyWorkspacePreset(QStringLiteral("p1")), QString());
+    QCOMPARE(controller.rooms()->rowCount(), 5);
+    QCOMPARE(controller.workspace()->primaryRoomId(), QStringLiteral("63136"));
+    QCOMPARE(controller.rooms()->data(controller.rooms()->index(4, 0), RoomListModel::RoomIdRole).toString(),
+             QStringLiteral("63140"));
+
+    QCOMPARE(controller.removeRoom(QStringLiteral("63136")), QString());
+    QCOMPARE(controller.rooms()->rowCount(), 4);
+    QCOMPARE(controller.workspace()->primaryRoomId(), QStringLiteral("63137"));
+    QCOMPARE(controller.rooms()->data(controller.rooms()->index(0, 0), RoomListModel::RoomIdRole).toString(),
+             QStringLiteral("63137"));
 }
 
 void AppControllerTest::persistsNotificationPreferenceAndUpdatesMonitoringState()

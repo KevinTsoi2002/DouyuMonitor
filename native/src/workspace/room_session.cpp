@@ -171,8 +171,12 @@ bool RoomSession::attachPlayer(MpvQuickItem *player)
         detachPlayer(player);
         return false;
     }
-    if (!pendingSource_.has_value()) return true;
-    return startPendingSource();
+    if (pendingSource_.has_value()) return startPendingSource();
+    if (!activeSource_.has_value()) return true;
+    if (player_->loadSource(*activeSource_)) return true;
+
+    onControllerFailed(QStringLiteral("PLAYER_FAILED"));
+    return false;
 }
 
 void RoomSession::detachPlayer(MpvQuickItem *player)
@@ -203,6 +207,7 @@ void RoomSession::cancel()
     if (controller_ == nullptr) return;
     controller_->cancel();
     pendingSource_.reset();
+    activeSource_.reset();
     setState(State::Idle);
 }
 
@@ -211,6 +216,7 @@ void RoomSession::stop()
     if (controller_ != nullptr) controller_->stop();
     if (player_ != nullptr) player_->release();
     pendingSource_.reset();
+    activeSource_.reset();
     setPlaybackHealth(RoomPlaybackHealth::Pending);
     setState(State::Idle);
 }
@@ -218,8 +224,11 @@ void RoomSession::stop()
 void RoomSession::release()
 {
     if (controller_ != nullptr) controller_->release();
-    if (player_ != nullptr) player_->release();
+    // The QML scene owns the player. Releasing its libmpv core from the
+    // session can race the scene graph while the delegate is being removed.
+    if (player_ != nullptr) detachPlayer(player_);
     pendingSource_.reset();
+    activeSource_.reset();
     setState(State::Idle);
 }
 
@@ -258,6 +267,7 @@ bool RoomSession::startPendingSource()
         onControllerFailed(QStringLiteral("PLAYER_FAILED"));
         return false;
     }
+    activeSource_ = pendingSource_;
     pendingSource_.reset();
     setLiveStatus(RoomLiveStatus::Online);
     setPlaybackHealth(RoomPlaybackHealth::Playing);
@@ -271,6 +281,7 @@ void RoomSession::onControllerFailed(QString errorCode)
     if (errorCode == QStringLiteral("ROOM_OFFLINE")) {
         if (player_ != nullptr) player_->stop();
         pendingSource_.reset();
+        activeSource_.reset();
         if (liveStatus_ == RoomLiveStatus::Unknown) {
             setLiveStatus(RoomLiveStatus::Offline);
         }
@@ -279,6 +290,7 @@ void RoomSession::onControllerFailed(QString errorCode)
         return;
     }
     pendingSource_.reset();
+    activeSource_.reset();
     setPlaybackHealth(RoomPlaybackHealth::Error);
     setState(State::Error);
     emit failed(std::move(errorCode));

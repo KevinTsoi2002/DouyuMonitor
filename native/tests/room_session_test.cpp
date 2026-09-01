@@ -31,6 +31,7 @@ private slots:
     void mapsQuickPlayerFailureToPlaybackError();
     void acceptsSourceAndReportsReady();
     void defersResolvedSourceUntilQuickPlayerIsAttached();
+    void replaysActiveSourceWhenQuickPlayerIsReattached();
     void cancelSuppressesLateSource();
     void releasesSessionWithQuickPlayer();
     void mapsControllerErrorsWithoutRawDiagnostics();
@@ -174,6 +175,29 @@ void RoomSessionTest::defersResolvedSourceUntilQuickPlayerIsAttached()
     client.shutdown();
 }
 
+void RoomSessionTest::replaysActiveSourceWhenQuickPlayerIsReattached()
+{
+    StreamgetProcessClient client(fakeServicePath());
+    RoomSession session(&client, QStringLiteral("63136"), StreamQuality::Auto);
+    const auto source = MediaSource::fromDescriptor(QCoreApplication::applicationFilePath());
+    MpvQuickItem firstPlayer;
+    MpvQuickItem replacementPlayer;
+
+    QVERIFY(source.has_value());
+    QVERIFY(session.attachPlayer(&firstPlayer));
+    QVERIFY(QMetaObject::invokeMethod(&session, "onControllerSourceReady", Qt::DirectConnection,
+                                      Q_ARG(MediaSource, *source)));
+    QCOMPARE(session.state(), RoomSession::State::Ready);
+
+    session.detachPlayer(&firstPlayer);
+    QVERIFY(session.attachPlayer(&replacementPlayer));
+    QTRY_VERIFY_WITH_TIMEOUT(replacementPlayer.playbackState() == MpvQuickItem::PlaybackState::Loading
+                                 || replacementPlayer.playbackState()
+                                        == MpvQuickItem::PlaybackState::Error,
+                             1000);
+    client.shutdown();
+}
+
 void RoomSessionTest::cancelSuppressesLateSource()
 {
     StreamgetProcessClient client(fakeServicePath(),
@@ -198,6 +222,7 @@ void RoomSessionTest::releasesSessionWithQuickPlayer()
     QVERIFY(session->attachPlayer(&player));
     session->release();
     QCOMPARE(session->state(), RoomSession::State::Idle);
+    QCOMPARE(session->player(), nullptr);
     QCOMPARE(player.playbackState(), MpvQuickItem::PlaybackState::Idle);
     delete session;
     client.shutdown();

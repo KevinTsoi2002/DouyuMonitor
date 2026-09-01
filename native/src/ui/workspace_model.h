@@ -77,7 +77,7 @@ signals:
 private:
     AppController *controller_ = nullptr;
     bool sidebarVisible_ = true;
-    QString layoutId_ = QStringLiteral("single");
+    QString layoutId_ = QStringLiteral("auto");
     QString layoutMode_ = QStringLiteral("auto");
     double primaryRoomRatio_ = 0.6;
     QString primaryRoomId_;

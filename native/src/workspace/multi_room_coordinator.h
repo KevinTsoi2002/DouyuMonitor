@@ -46,7 +46,9 @@ public:
     bool setGlobalMuted(bool muted);
     RoomCommandResult addRoomDetailed(const QString &roomId,
                                       StreamQuality requestedQuality = StreamQuality::Auto,
-                                      RoomMetadata metadata = {});
+                                      RoomMetadata metadata = {},
+                                      bool favorite = false,
+                                      int volume = 100);
     RoomCommandResult removeRoomDetailed(const QString &roomId);
     RoomCommandResult setPrimaryRoomDetailed(const QString &roomId);
     RoomCommandResult setRequestedQuality(const QString &roomId,
@@ -99,7 +101,7 @@ private:
     QString audioRoomId_;
     QString audioMode_ = QStringLiteral("single");
     bool globalMuted_ = false;
-    QString layoutId_ = QStringLiteral("single");
+    QString layoutId_ = QStringLiteral("auto");
     QString layoutMode_ = QStringLiteral("auto");
     double primaryRoomRatio_ = 0.6;
     RoomStatusScheduler scheduler_;

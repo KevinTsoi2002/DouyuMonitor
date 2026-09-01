@@ -60,6 +60,9 @@ public:
 signals:
     void playbackFailed();
 
+protected:
+    void geometryChange(const QRectF &newGeometry, const QRectF &oldGeometry) override;
+
 private:
     struct MpvRenderState;
     class MpvRenderer;
