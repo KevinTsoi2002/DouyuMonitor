@@ -16,6 +16,7 @@ Rectangle {
     readonly property var workspaceModel: root.controller ? root.controller.workspace : null
 
     height: 44
+    z: 100
     color: "#0f141a"
     border.color: "#343b45"
     border.width: 1
@@ -145,7 +146,9 @@ Rectangle {
             Accessible.name: "声音总控"
             ToolTip.visible: hovered
             ToolTip.text: Accessible.name
-            onClicked: soundMasterPopover.open()
+            onClicked: soundMasterPopover.visible
+                       ? soundMasterPopover.close()
+                       : soundMasterPopover.open()
             contentItem: Image {
                 anchors.centerIn: parent
                 width: 16
@@ -180,23 +183,29 @@ Rectangle {
         controller: root.controller
     }
 
-    Popup {
+    Rectangle {
         id: soundMasterPopover
         objectName: "soundMasterPopover"
         width: 176
-        padding: 8
-        x: Math.max(8, soundMasterButton.x - width + soundMasterButton.width)
-        y: root.height + 4
-        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
+        height: audioModeControl.implicitHeight + 16
+        visible: false
+        z: 100
+        color: "#141a21"
+        border.color: "#343b45"
+        radius: 6
+        property point soundAnchor: Qt.point(actionButtons.x + soundMasterButton.x,
+                                             root.height + 4)
+        x: Math.max(12, root.width - width - 72)
+        y: root.height + 8
 
-        background: Rectangle {
-            radius: 6
-            color: "#141a21"
-            border.color: "#343b45"
-        }
+        function open() { visible = true }
+        function close() { visible = false }
 
-        contentItem: Column {
+        Column {
+            id: audioModeControl
             objectName: "audioModeControl"
+            anchors.fill: parent
+            anchors.margins: 8
             spacing: 3
 
             ToolButton {
@@ -257,59 +266,17 @@ Rectangle {
 
         MenuItem {
             objectName: "autoLayoutOption"
-            text: "自动推荐"
+            text: "自动布局"
             checkable: true
             checked: root.workspaceModel ? root.workspaceModel.layoutMode === "auto" : true
             onTriggered: if (root.controller) root.controller.setLayout("auto")
         }
         MenuItem {
-            objectName: "singleLayoutOption"
-            text: "单画面"
+            objectName: "primaryLayoutOption"
+            text: "主直播间 + 辅直播间"
             checkable: true
-            checked: root.workspaceModel ? root.workspaceModel.layoutMode === "single" : false
-            onTriggered: if (root.controller) root.controller.setLayout("single")
-        }
-        MenuItem {
-            objectName: "grid2LayoutOption"
-            text: "2×2 网格"
-            checkable: true
-            checked: root.workspaceModel ? root.workspaceModel.layoutMode === "grid-2x2" : false
-            onTriggered: if (root.controller) root.controller.setLayout("grid-2x2")
-        }
-        MenuItem {
-            objectName: "grid3LayoutOption"
-            text: "3×2 网格"
-            checkable: true
-            checked: root.workspaceModel ? root.workspaceModel.layoutMode === "grid-3x2" : false
-            onTriggered: if (root.controller) root.controller.setLayout("grid-3x2")
-        }
-        MenuItem {
-            objectName: "grid3x3LayoutOption"
-            text: "3×3 网格"
-            checkable: true
-            checked: root.workspaceModel ? root.workspaceModel.layoutMode === "grid-3x3" : false
-            onTriggered: if (root.controller) root.controller.setLayout("grid-3x3")
-        }
-        MenuItem {
-            objectName: "primaryTwoLayoutOption"
-            text: "主画面 + 辅助画面"
-            checkable: true
-            checked: root.workspaceModel ? root.workspaceModel.layoutMode === "primary-two" : false
-            onTriggered: if (root.controller) root.controller.setLayout("primary-two")
-        }
-        MenuItem {
-            objectName: "splitHorizontalLayoutOption"
-            text: "横向两分屏"
-            checkable: true
-            checked: root.workspaceModel ? root.workspaceModel.layoutMode === "split-horizontal" : false
-            onTriggered: if (root.controller) root.controller.setLayout("split-horizontal")
-        }
-        MenuItem {
-            objectName: "splitVerticalLayoutOption"
-            text: "纵向两分屏"
-            checkable: true
-            checked: root.workspaceModel ? root.workspaceModel.layoutMode === "split-vertical" : false
-            onTriggered: if (root.controller) root.controller.setLayout("split-vertical")
+            checked: root.workspaceModel ? root.workspaceModel.layoutMode === "primary" : false
+            onTriggered: if (root.controller) root.controller.setLayout("primary")
         }
     }
 }

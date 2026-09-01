@@ -173,6 +173,17 @@ QStringList normalizeRoomIds(const QStringList &roomIds, const QSet<QString> &kn
     return normalized;
 }
 
+QStringList normalizePresetRoomIds(const QStringList &roomIds, int limit)
+{
+    QStringList normalized;
+    for (const QString &roomId : roomIds) {
+        if (!isValidRoomId(roomId) || normalized.contains(roomId)) continue;
+        normalized.push_back(roomId);
+        if (normalized.size() == limit) break;
+    }
+    return normalized;
+}
+
 DanmakuGovernanceOverride normalizeOverride(const DanmakuGovernanceOverride &raw)
 {
     DanmakuGovernanceOverride result = raw;
@@ -243,7 +254,7 @@ NativeWorkspaceSnapshot normalize(NativeWorkspaceSnapshot snapshot)
             || presetIds.contains(preset.id)) {
             continue;
         }
-        preset.roomIds = normalizeRoomIds(preset.roomIds, knownIds, kMaxActiveRooms);
+        preset.roomIds = normalizePresetRoomIds(preset.roomIds, kMaxActiveRooms);
         preset.danmaku.display =
             DanmakuGovernance::validatedDisplaySettings(preset.danmaku.display);
         preset.danmaku.governance =

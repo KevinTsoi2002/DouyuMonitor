@@ -46,6 +46,7 @@ private slots:
     void rendersOneLocalFrameAndReleasesCleanly();
     void doesNotRestoreMediaStateAfterReleaseDuringLoad();
     void rendersLocalFramePixelsIntoTheQuickFramebuffer();
+    void keepsRenderingAfterItemResize();
     void ignoresRetiredLocalLoadFailureAfterSourceSwitch();
     void destroysMpvCoreAfterRenderContextRelease();
     void doesNotPlaceRemoteAddressInFailureText();
@@ -124,6 +125,48 @@ void MpvQuickItemTest::rendersLocalFramePixelsIntoTheQuickFramebuffer()
     QTRY_VERIFY_WITH_TIMEOUT(item->isRenderContextReady(), 10000);
     QVERIFY(item->loadLocalMedia(fixture));
     QTRY_VERIFY_WITH_TIMEOUT(item->isFirstFrameRendered(), 10000);
+
+    QTRY_VERIFY_WITH_TIMEOUT([&window] {
+        window.update();
+        const QImage frame = window.grabWindow();
+        if (frame.isNull()) return false;
+        const QColor centerPixel = frame.pixelColor(frame.width() / 2, frame.height() / 2);
+        return centerPixel.red() > 200 && centerPixel.green() < 80 && centerPixel.blue() < 80;
+    }(), 5000);
+}
+
+void MpvQuickItemTest::keepsRenderingAfterItemResize()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString fixture = makeY4mFixture(directory);
+    QVERIFY(!fixture.isEmpty());
+
+    QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
+    QQuickWindow window;
+    window.resize(320, 240);
+    auto *item = new MpvQuickItem(window.contentItem());
+    item->setWidth(320);
+    item->setHeight(240);
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+
+    QTRY_VERIFY_WITH_TIMEOUT(item->isRenderContextReady(), 10000);
+    QVERIFY(item->loadLocalMedia(fixture));
+    QTRY_VERIFY_WITH_TIMEOUT(item->isFirstFrameRendered(), 10000);
+
+    item->setWidth(160);
+    item->setHeight(120);
+    item->setX(80);
+    item->setY(60);
+    QTest::qWait(100);
+    item->setWidth(0);
+    item->setHeight(0);
+    QTest::qWait(100);
+    item->setWidth(320);
+    item->setHeight(240);
+    item->setX(0);
+    item->setY(0);
 
     QTRY_VERIFY_WITH_TIMEOUT([&window] {
         window.update();

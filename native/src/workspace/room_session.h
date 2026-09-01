@@ -96,6 +96,7 @@ private:
     RemotePlaybackController *controller_ = nullptr;
     QPointer<MpvQuickItem> player_;
     std::optional<MediaSource> pendingSource_;
+    std::optional<MediaSource> activeSource_;
     QVariantList availableQualities_;
 };
 

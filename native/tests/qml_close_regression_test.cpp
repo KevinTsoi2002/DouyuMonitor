@@ -83,6 +83,7 @@ class QmlCloseRegressionTest final : public QObject {
 
 private slots:
     void closesNineAttachedPlayersWithoutLingeringCallbacks();
+    void removesAttachedPlayersWhileWindowRemainsOpen();
 };
 
 void QmlCloseRegressionTest::closesNineAttachedPlayersWithoutLingeringCallbacks()
@@ -129,6 +130,41 @@ void QmlCloseRegressionTest::closesNineAttachedPlayersWithoutLingeringCallbacks(
     engine.reset();
     QTest::qWait(250);
     QTRY_COMPARE_WITH_TIMEOUT(controller.attachedPlayerCountForTest(), 0, 5000);
+    QVERIFY(!controller.serviceProcessRunningForTest());
+}
+
+void QmlCloseRegressionTest::removesAttachedPlayersWhileWindowRemainsOpen()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSettings settings(directory.filePath(QStringLiteral("workspace.ini")), QSettings::IniFormat);
+    AppController controller(fakeServicePath(), &settings);
+    QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
+    auto engine = std::make_unique<QQmlApplicationEngine>();
+
+    QQuickWindow *window = loadWindowWithFakeRooms(*engine, controller, 3);
+    QVERIFY(window != nullptr);
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+    QTRY_COMPARE_WITH_TIMEOUT(controller.attachedPlayerCountForTest(), 3, 5000);
+
+    QCOMPARE(controller.removeRoom(QStringLiteral("63137")), QString());
+    QTRY_COMPARE_WITH_TIMEOUT(controller.rooms()->rowCount(), 2, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(controller.attachedPlayerCountForTest(), 2, 5000);
+    QVERIFY(window->isVisible());
+
+    QCOMPARE(controller.removeRoom(QStringLiteral("63136")), QString());
+    QTRY_COMPARE_WITH_TIMEOUT(controller.rooms()->rowCount(), 1, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(controller.attachedPlayerCountForTest(), 1, 5000);
+    QVERIFY(window->isVisible());
+
+    QCOMPARE(controller.removeRoom(QStringLiteral("63138")), QString());
+    QTRY_COMPARE_WITH_TIMEOUT(controller.rooms()->rowCount(), 0, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(controller.attachedPlayerCountForTest(), 0, 5000);
+    QVERIFY(window->isVisible());
+
+    window->close();
+    engine.reset();
+    QTest::qWait(250);
     QVERIFY(!controller.serviceProcessRunningForTest());
 }
 

@@ -30,6 +30,13 @@ Rectangle {
         }
     }
 
+    function requestRoomRemoval(roomId) {
+        const controller = root.controller
+        const requestedRoomId = String(roomId || "")
+        if (!controller || requestedRoomId.length === 0) return
+        controller.requestRemoveRoom(requestedRoomId)
+    }
+
     function groupSubset(start, limit) {
         const groups = root.workspaceModel ? root.workspaceModel.groups : []
         const result = []
@@ -370,7 +377,7 @@ Rectangle {
                         width: 23; height: 23
                         Accessible.name: "移除房间"
                         ToolTip.visible: hovered; ToolTip.text: Accessible.name
-                        onClicked: if (root.controller) root.controller.removeRoom(roomRow.roomId)
+                        onClicked: root.requestRoomRemoval(roomRow.roomId)
                         contentItem: Image { anchors.centerIn: parent; width: 15; height: 15; source: Qt.resolvedUrl("../assets/icons/x.svg"); opacity: parent.hovered ? 1 : 0.62 }
                         background: Rectangle { radius: 3; color: parent.hovered ? "#4b1c1c" : "transparent" }
                     }

@@ -168,9 +168,12 @@ public:
 
     QOpenGLFramebufferObject *createFramebufferObject(const QSize &size) override
     {
+        // Layout transitions can briefly report a zero-sized tile. Keep the
+        // framebuffer valid so the next non-zero geometry can render again.
+        const QSize safeSize(qMax(1, size.width()), qMax(1, size.height()));
         QOpenGLFramebufferObjectFormat format;
         format.setAttachment(QOpenGLFramebufferObject::CombinedDepthStencil);
-        return new QOpenGLFramebufferObject(size, format);
+        return new QOpenGLFramebufferObject(safeSize, format);
     }
 
     void synchronize(QQuickFramebufferObject *item) override
@@ -249,6 +252,7 @@ MpvQuickItem::MpvQuickItem(QQuickItem *parent)
     , renderState_(std::make_shared<MpvRenderState>(this))
 {
     setMirrorVertically(true);
+    setTextureFollowsItemSize(true);
     mpv_ = mpv_create();
     if (mpv_ == nullptr) {
         errorCode_ = QStringLiteral("PLAYER_UNAVAILABLE");
@@ -286,6 +290,17 @@ MpvQuickItem::~MpvQuickItem()
     release();
     scheduleCoreTeardown();
     mpv_ = nullptr;
+}
+
+void MpvQuickItem::geometryChange(const QRectF &newGeometry, const QRectF &oldGeometry)
+{
+    QQuickFramebufferObject::geometryChange(newGeometry, oldGeometry);
+    if (newGeometry.width() > 0.0 && newGeometry.height() > 0.0
+        && renderState_ != nullptr && renderState_->acceptUpdates.load()) {
+        // A transient zero-size FBO may have consumed the last mpv update.
+        // Request a fresh scene-graph pass when the tile becomes visible again.
+        update();
+    }
 }
 
 QQuickFramebufferObject::Renderer *MpvQuickItem::createRenderer() const

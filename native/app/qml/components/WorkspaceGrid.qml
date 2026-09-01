@@ -6,10 +6,8 @@ Item {
 
     property var controller: null
     property var roomModel: null
-    property string layoutId: "grid-2x2"
     property string layoutMode: "auto"
     property string primaryRoomId: ""
-    property real primaryRoomRatio: 0.6
     property color canvasColor: "#16191f"
     property color surfaceColor: "#1f242c"
     property color borderColor: "#343b45"
@@ -17,117 +15,137 @@ Item {
     property color textColor: "#f4f6f8"
     property color mutedTextColor: "#9ba5b1"
     readonly property int roomCount: roomRepeater.count
-    readonly property string resolvedLayoutId: resolveLayoutId()
-    readonly property bool primaryFocus: resolvedLayoutId === "primary-two" && roomCount > 1
-    readonly property bool focusVertical: layoutSurface.width > 0 && layoutSurface.width <= 820
-    readonly property int secondaryCount: Math.max(0, roomCount - 1)
-    readonly property int secondaryColumns: secondaryCount <= 3 ? 1 : 2
-    readonly property int secondaryRows: Math.max(1, Math.ceil(secondaryCount / secondaryColumns))
-
-    function recommendedLayout(count) {
-        if (count <= 1) return "single"
-        if (count <= 4) return "grid-2x2"
-        if (count <= 6) return "grid-3x2"
-        return "grid-3x3"
+    function autoRowCounts(count) {
+        const rows = [[], [1], [2], [3], [2, 2], [3, 2], [3, 3], [4, 3], [4, 4], [3, 3, 3]]
+        return rows[Math.max(0, Math.min(9, count))]
     }
 
-    function resolveLayoutId() {
-        var selected = layoutMode === "auto" ? recommendedLayout(roomCount) : layoutMode
-        if (selected === "single" && roomCount > 1) return recommendedLayout(roomCount)
-        if (selected === "grid-2x2" && roomCount > 4) return recommendedLayout(roomCount)
-        if (selected === "grid-3x2" && roomCount > 6) return recommendedLayout(roomCount)
-        if ((selected === "split-horizontal" || selected === "split-vertical") && roomCount > 2) return recommendedLayout(roomCount)
-        return selected
+    function primarySecondaryRowCounts(count) {
+        const rows = [[], [], [1], [1, 1], [1, 1, 1], [2, 2], [3, 2], [3, 3], [4, 3], [4, 4]]
+        return rows[Math.max(0, Math.min(9, count))]
     }
 
-    function gridColumns() {
-        if (resolvedLayoutId === "single") return 1
-        return resolvedLayoutId === "grid-3x2" || resolvedLayoutId === "grid-3x3" ? 3 : 2
+    function primaryWidthFor(count) {
+        if (count <= 1) return 1
+        if (count <= 4) return 2 / 3
+        return count >= 8 ? 3 / 5 : 1 / 2
     }
 
-    function secondaryIndex(index) {
-        var result = 0
-        for (var i = 0; i < index; ++i) {
-            var item = roomRepeater.itemAt(i)
-            if (item && item.roomId !== primaryRoomId) ++result
+    function primaryZoneWidths(count) {
+        if (count <= 4) return { left: 0, center: primaryWidthFor(count), right: 1 - primaryWidthFor(count) }
+        const side = count >= 8 ? 1 : 1
+        const center = count >= 8 ? 3 : 2
+        const total = side * 2 + center
+        return { left: side / total, center: center / total, right: side / total }
+    }
+
+    function primarySideCounts(count) {
+        if (count <= 4) return { left: 0, right: Math.max(0, count - 1) }
+        if (count === 5) return { left: 2, right: 2 }
+        if (count === 6) return { left: 2, right: 3 }
+        if (count === 7) return { left: 3, right: 3 }
+        if (count === 8) return { left: 3, right: 4 }
+        return { left: 4, right: 4 }
+    }
+
+    function primaryIndex() {
+        if (primaryRoomId.length === 0) return 0
+        for (var i = 0; i < roomRepeater.count; ++i) {
+            var tile = roomRepeater.itemAt(i)
+            if (tile && tile.roomId === primaryRoomId) return i
         }
-        return result
+        return 0
     }
 
-    function tileX(index, roomId) {
-        var gap = 8
-        var width = layoutSurface.width
-        if (primaryFocus) {
-            if (focusVertical) {
-                if (roomId === primaryRoomId) return 0
-                var verticalSecondaryWidth = Math.max(0, width - gap * (secondaryColumns - 1))
-                var verticalCellWidth = Math.max(0, verticalSecondaryWidth / secondaryColumns)
-                return (secondaryIndex(index) % secondaryColumns) * (verticalCellWidth + gap)
+    function rowAndColumnFor(itemIndex, rows) {
+        var remaining = itemIndex
+        for (var row = 0; row < rows.length; ++row) {
+            if (remaining < rows[row]) return { row: row, column: remaining }
+            remaining -= rows[row]
+        }
+        return { row: 0, column: 0 }
+    }
+
+    function geometryFor(index, roomId) {
+        const gap = 8
+        const width = Math.max(0, layoutSurface.width)
+        const height = Math.max(0, layoutSurface.height)
+        const count = Math.min(9, roomRepeater.count)
+        if (count === 0) return { x: 0, y: 0, width: 0, height: 0 }
+
+        if (layoutMode === "primary") {
+            const activePrimaryIndex = primaryIndex()
+            const zones = primaryZoneWidths(count)
+            if (index === activePrimaryIndex) {
+                if (count <= 4) {
+                    const primaryWidth = count === 1
+                        ? width
+                        : Math.max(0, width - gap) * primaryWidthFor(count)
+                    return { x: 0, y: 0, width: primaryWidth, height: height }
+                }
+                const availableWidth = Math.max(0, width - gap * 2)
+                const leftWidth = availableWidth * zones.left
+                return {
+                    x: leftWidth + gap,
+                    y: 0,
+                    width: availableWidth * zones.center,
+                    height: height,
+                }
             }
-            var ratioWidth = Math.max(0, width * primaryRoomRatio - gap / 2)
-            if (roomId === primaryRoomId) return 0
-            var horizontalSecondaryWidth = Math.max(0, width - ratioWidth - gap)
-            var horizontalCellWidth = Math.max(0, (horizontalSecondaryWidth - gap * (secondaryColumns - 1)) / secondaryColumns)
-            return ratioWidth + gap + (secondaryIndex(index) % secondaryColumns) * (horizontalCellWidth + gap)
-        }
-        var columns = gridColumns()
-        var cellWidth = Math.max(0, (width - gap * (columns - 1)) / columns)
-        if (resolvedLayoutId === "split-vertical") return 0
-        return (index % columns) * (cellWidth + gap)
-    }
 
-    function tileY(index, roomId) {
-        var gap = 8
-        var height = layoutSurface.height
-        if (primaryFocus) {
-            if (focusVertical) {
-                var ratioHeight = Math.max(0, height * primaryRoomRatio - gap / 2)
-                if (roomId === primaryRoomId) return 0
-                var secondaryHeight = Math.max(0, height - ratioHeight - gap)
-                var cellHeight = Math.max(0, (secondaryHeight - gap * (secondaryRows - 1)) / secondaryRows)
-                return ratioHeight + gap + Math.floor(secondaryIndex(index) / secondaryColumns) * (cellHeight + gap)
+            const secondaryIndex = index < activePrimaryIndex ? index : index - 1
+            if (count <= 4) {
+                const rows = primarySecondaryRowCounts(count)
+                const position = rowAndColumnFor(secondaryIndex, rows)
+                const rowHeight = Math.max(0, (height - gap * (rows.length - 1)) / rows.length)
+                const columns = rows[position.row]
+                const primaryWidth = Math.max(0, width - gap) * primaryWidthFor(count)
+                const secondaryX = primaryWidth + gap
+                const secondaryWidth = Math.max(0, width - secondaryX)
+                const tileWidth = Math.max(0, (secondaryWidth - gap * (columns - 1)) / columns)
+                return {
+                    x: secondaryX + position.column * (tileWidth + gap),
+                    y: position.row * (rowHeight + gap),
+                    width: tileWidth,
+                    height: rowHeight,
+                }
             }
-            if (roomId === primaryRoomId) return 0
-            var desktopCellHeight = Math.max(0, (height - gap * (secondaryRows - 1)) / secondaryRows)
-            return Math.floor(secondaryIndex(index) / secondaryColumns) * (desktopCellHeight + gap)
-        }
-        var columns = gridColumns()
-        var rows = Math.max(1, Math.ceil(roomCount / columns))
-        var cellHeight = Math.max(0, (height - gap * (rows - 1)) / rows)
-        if (resolvedLayoutId === "split-vertical") return index * (cellHeight + gap)
-        return Math.floor(index / columns) * (cellHeight + gap)
-    }
 
-    function tileWidth(index, roomId) {
-        var gap = 8
-        if (primaryFocus) {
-            if (focusVertical) {
-                if (roomId === primaryRoomId) return Math.max(0, layoutSurface.width)
-                var verticalSecondaryWidth = Math.max(0, layoutSurface.width - gap * (secondaryColumns - 1))
-                return Math.max(0, verticalSecondaryWidth / secondaryColumns)
+            const sides = primarySideCounts(count)
+            const layoutZones = primaryZoneWidths(count)
+            const availableWidth = Math.max(0, width - gap * 2)
+            const leftWidth = availableWidth * layoutZones.left
+            const centerWidth = availableWidth * layoutZones.center
+            const rightWidth = availableWidth * layoutZones.right
+            const leftX = 0
+            const centerX = leftWidth + gap
+            const rightX = centerX + centerWidth + gap
+            const leftCount = sides.left
+            const rightIndex = secondaryIndex - leftCount
+            const side = secondaryIndex < leftCount ? "left" : "right"
+            const sideCount = side === "left" ? sides.left : sides.right
+            const sideIndex = side === "left" ? secondaryIndex : rightIndex
+            const totalUnits = side === "left" ? sides.left : sides.right
+            const unitHeight = Math.max(0, (height - gap * (totalUnits - 1)) / totalUnits)
+            return {
+                x: side === "left" ? leftX : rightX,
+                y: sideIndex * (unitHeight + gap),
+                width: side === "left" ? leftWidth : rightWidth,
+                height: unitHeight,
             }
-            if (roomId === primaryRoomId) return Math.max(0, layoutSurface.width * primaryRoomRatio - gap / 2)
-            var horizontalSecondaryWidth = Math.max(0, layoutSurface.width - layoutSurface.width * primaryRoomRatio - gap)
-            return Math.max(0, (horizontalSecondaryWidth - gap * (secondaryColumns - 1)) / secondaryColumns)
         }
-        var columns = gridColumns()
-        return Math.max(0, (layoutSurface.width - gap * (columns - 1)) / columns)
-    }
 
-    function tileHeight(index, roomId) {
-        var gap = 8
-        if (primaryFocus) {
-            if (focusVertical) {
-                if (roomId === primaryRoomId) return Math.max(0, layoutSurface.height * primaryRoomRatio - gap / 2)
-                var verticalSecondaryHeight = Math.max(0, layoutSurface.height - layoutSurface.height * primaryRoomRatio - gap)
-                return Math.max(0, (verticalSecondaryHeight - gap * (secondaryRows - 1)) / secondaryRows)
-            }
-            if (roomId === primaryRoomId) return Math.max(0, layoutSurface.height)
-            return Math.max(0, (layoutSurface.height - gap * (secondaryRows - 1)) / secondaryRows)
+        const rows = autoRowCounts(count)
+        const position = rowAndColumnFor(index, rows)
+        const rowHeight = Math.max(0, (height - gap * (rows.length - 1)) / rows.length)
+        const columns = rows[position.row]
+        const tileWidth = Math.max(0, (width - gap * (columns - 1)) / columns)
+        return {
+            x: position.column * (tileWidth + gap),
+            y: position.row * (rowHeight + gap),
+            width: tileWidth,
+            height: rowHeight,
         }
-        var columns = gridColumns()
-        var rows = Math.max(1, Math.ceil(roomCount / columns))
-        return Math.max(0, (layoutSurface.height - gap * (rows - 1)) / rows)
     }
 
     Rectangle { anchors.fill: parent; color: root.canvasColor }
@@ -144,10 +162,11 @@ Item {
             model: root.roomModel
 
             delegate: RoomTile {
-                x: root.tileX(index, roomId)
-                y: root.tileY(index, roomId)
-                width: root.tileWidth(index, roomId)
-                height: root.tileHeight(index, roomId)
+                readonly property var tileGeometry: root.geometryFor(index, roomId)
+                x: tileGeometry.x
+                y: tileGeometry.y
+                width: tileGeometry.width
+                height: tileGeometry.height
                 controller: root.controller
                 borderColor: root.borderColor
                 accentColor: root.accentColor
@@ -156,18 +175,6 @@ Item {
             }
         }
 
-        PrimaryRoomDivider {
-            id: primaryRoomDivider
-            objectName: "primaryRoomDivider"
-            visible: root.primaryFocus && root.secondaryCount > 0
-            orientation: root.focusVertical ? "horizontal" : "vertical"
-            value: root.primaryRoomRatio
-            controller: root.controller
-            x: root.focusVertical ? 0 : Math.max(0, layoutSurface.width * root.primaryRoomRatio - width / 2)
-            y: root.focusVertical ? Math.max(0, layoutSurface.height * root.primaryRoomRatio - height / 2) : 0
-            width: root.focusVertical ? layoutSurface.width : 12
-            height: root.focusVertical ? 12 : layoutSurface.height
-        }
     }
 
     Column {

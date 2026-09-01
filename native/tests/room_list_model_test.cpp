@@ -26,6 +26,7 @@ class RoomListModelTest final : public QObject {
 private slots:
     void exposesSafeRoleNames();
     void updatesOneChangedRoomWithoutModelReset();
+    void removesRoomWithoutResettingSurvivingDelegates();
     void exposesSafeDanmakuPresentationRoles();
     void exposesAvailableQualityOptionsWithoutPlaybackUrl();
 };
@@ -58,6 +59,24 @@ void RoomListModelTest::updatesOneChangedRoomWithoutModelReset()
     QCOMPARE(changes.count(), 1);
     QCOMPARE(model.data(model.index(1, 0), RoomListModel::AnchorNameRole).toString(),
              QStringLiteral("主播 B"));
+}
+
+void RoomListModelTest::removesRoomWithoutResettingSurvivingDelegates()
+{
+    RoomListModel model;
+    QSignalSpy resets(&model, &QAbstractItemModel::modelReset);
+    QSignalSpy removals(&model, &QAbstractItemModel::rowsRemoved);
+    model.applySnapshots({makeSnapshot(QStringLiteral("63136"), true),
+                          makeSnapshot(QStringLiteral("63137"), false)});
+    resets.clear();
+
+    model.applySnapshots({makeSnapshot(QStringLiteral("63136"), true)});
+
+    QCOMPARE(resets.count(), 0);
+    QCOMPARE(removals.count(), 1);
+    QCOMPARE(model.rowCount(), 1);
+    QCOMPARE(model.data(model.index(0, 0), RoomListModel::RoomIdRole).toString(),
+             QStringLiteral("63136"));
 }
 
 void RoomListModelTest::exposesSafeDanmakuPresentationRoles()

@@ -35,6 +35,7 @@ FocusScope {
     property color mutedTextColor: "#9ba5b1"
     property bool menuOpen: false
     property bool controlsVisible: true
+    property string attachedPlayerRoomId: ""
     readonly property string displayAnchorName: root.anchorName.trim().length > 0 ? root.anchorName : root.roomId
     readonly property string displayTitle: root.title.trim().length > 0 ? root.title : "斗鱼直播间"
     readonly property string displayCategory: root.category.trim().length > 0 ? root.category : "未分类"
@@ -74,6 +75,29 @@ FocusScope {
         controlsTimer.restart()
     }
 
+    function attachPlayerForCurrentRoom(player) {
+        if (!player || !root.controller || root.roomId.trim().length === 0) return
+        if (root.attachedPlayerRoomId === root.roomId) return
+        if (root.attachedPlayerRoomId.length > 0) {
+            root.controller.detachPlayer(root.attachedPlayerRoomId, player)
+        }
+        root.controller.attachPlayer(root.roomId, player)
+        root.attachedPlayerRoomId = root.roomId
+    }
+
+    function detachAttachedPlayer(player) {
+        if (!player || !root.controller || root.attachedPlayerRoomId.length === 0) return
+        root.controller.detachPlayer(root.attachedPlayerRoomId, player)
+        root.attachedPlayerRoomId = ""
+    }
+
+    function requestRoomRemoval(roomId) {
+        const controller = root.controller
+        const requestedRoomId = String(roomId || "")
+        if (!controller || requestedRoomId.length === 0) return
+        controller.requestRemoveRoom(requestedRoomId)
+    }
+
     Rectangle {
         anchors.fill: parent
         radius: 7
@@ -83,15 +107,14 @@ FocusScope {
         clip: true
 
         Loader {
+            id: playerLoader
             anchors.fill: parent
             active: root.controller !== null
             sourceComponent: Component {
                 MpvQuickItem {
                     id: player
-                    Component.onCompleted: root.controller.attachPlayer(root.roomId, player)
-                    Component.onDestruction: {
-                        if (root.controller) root.controller.detachPlayer(root.roomId, player)
-                    }
+                    Component.onCompleted: root.attachPlayerForCurrentRoom(player)
+                    Component.onDestruction: root.detachAttachedPlayer(player)
                 }
             }
         }
@@ -204,7 +227,7 @@ FocusScope {
                 ToolButton {
                     width: parent.width; height: 27
                     Accessible.name: "移除房间"
-                    onClicked: { if (root.controller) root.controller.removeRoom(root.roomId); root.menuOpen = false }
+                    onClicked: { root.menuOpen = false; root.requestRoomRemoval(root.roomId) }
                     contentItem: Text { text: "移除房间"; color: parent.hovered ? "#ff9b92" : "#d6dde5"; leftPadding: 6; verticalAlignment: Text.AlignVCenter; font.pixelSize: 10 }
                     background: Rectangle { radius: 4; color: parent.hovered ? "#4b1c1c" : "transparent" }
                 }
@@ -379,5 +402,9 @@ FocusScope {
     onActiveFocusChanged: {
         if (activeFocus) revealControls()
         else if (!menuOpen) controlsTimer.restart()
+    }
+
+    onRoomIdChanged: {
+        if (playerLoader.item) attachPlayerForCurrentRoom(playerLoader.item)
     }
 }

@@ -147,6 +147,16 @@ void RoomListModel::applySnapshots(const RoomSnapshots &snapshots)
         return;
     }
 
+    if (entries_.isEmpty() && !snapshots.isEmpty()) {
+        beginInsertRows({}, 0, snapshots.size() - 1);
+        entries_.reserve(snapshots.size());
+        for (const RoomSnapshot &snapshot : snapshots) {
+            entries_.append({snapshot, {}});
+        }
+        endInsertRows();
+        return;
+    }
+
     for (int row = entries_.size() - 1; row >= 0; --row) {
         if (incomingIds.contains(entries_.at(row).snapshot.roomId)) continue;
         beginRemoveRows({}, row, row);

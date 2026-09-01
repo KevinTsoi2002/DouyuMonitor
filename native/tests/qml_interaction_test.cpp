@@ -2,6 +2,7 @@
 #include <QQmlComponent>
 #include <QQuickWindow>
 #include <QQuickItem>
+#include <QPointF>
 #include <QSize>
 #include <QtTest/QtTest>
 
@@ -112,6 +113,18 @@ class FakeRoomController final : public QObject {
     Q_OBJECT
 
 public:
+    Q_INVOKABLE void attachPlayer(const QString &roomId, MpvQuickItem *player)
+    {
+        Q_UNUSED(player);
+        attachedRooms.push_back(roomId);
+    }
+
+    Q_INVOKABLE void detachPlayer(const QString &roomId, MpvQuickItem *player)
+    {
+        Q_UNUSED(player);
+        detachedRooms.push_back(roomId);
+    }
+
     Q_INVOKABLE QString setVolume(const QString &roomId, int volume)
     {
         lastVolumeRoom = roomId;
@@ -131,11 +144,25 @@ public:
         return {};
     }
 
+    Q_INVOKABLE QString removeRoom(const QString &roomId)
+    {
+        removedRoom = roomId;
+        return {};
+    }
+
+    Q_INVOKABLE void requestRemoveRoom(const QString &roomId)
+    {
+        removedRoom = roomId;
+    }
+
     QString lastVolumeRoom;
     int lastVolume = -1;
     QString refreshedRoom;
     QString movedRoom;
     int movedDelta = 0;
+    QString removedRoom;
+    QStringList attachedRooms;
+    QStringList detachedRooms;
 };
 
 void registerQmlTypes()
@@ -197,6 +224,15 @@ QVariantMap roomTileProperties(const QString &danmakuState)
     };
 }
 
+QList<QQuickItem *> roomTiles(QQuickItem *surface)
+{
+    QList<QQuickItem *> tiles;
+    for (QQuickItem *child : surface->childItems()) {
+        if (child->property("roomId").isValid()) tiles.push_back(child);
+    }
+    return tiles;
+}
+
 } // namespace
 
 class QmlInteractionTest final : public QObject {
@@ -218,17 +254,22 @@ private slots:
     void rendersAndActivatesGroupTabs();
     void exposesGroupMemberManagementControls();
     void rendersAndAddsSearchCandidate();
-    void exposesLayoutMenuAndPrimaryDivider();
-    void laysOutPrimaryRoomAcrossFullHeight();
+    void exposesOnlyAutomaticAndPrimaryLayoutOptions();
+    void laysOutFiveAutomaticRoomsInThreeAndTwoRows();
+    void laysOutPrimaryRoomsAcrossFullHeight();
     void exposesGlobalAudioControls();
     void distinguishesWorkspaceAndLayoutActions();
     void groupsSoundControlsAndExposesFullscreen();
+    void positionsSoundPopoverLikeDanmakuPanel();
     void truncatesLongRoomTitleBeforeActions();
     void exposesRoomVolumeAndRefreshControls();
+    void defersRoomRemovalUntilAfterQmlHandlerReturns();
+    void rebindsPlayerWhenRoomIdentityChanges();
     void rendersFallbackMetadataAndUnknownStatus();
     void exposesRoomOrderingControls();
     void disablesOrderingAtListBoundaries();
     void exposesRoomDragAndDropSurface();
+    void refreshesRoomSidebarAfterPresetLikeModelUpdate();
 };
 
 void QmlInteractionTest::opensAddRoomDialogAndRejectsInvalidRoomId()
@@ -584,7 +625,7 @@ void QmlInteractionTest::rendersAndAddsSearchCandidate()
     QCOMPARE(controller.addedRoomId, QStringLiteral("63136"));
 }
 
-void QmlInteractionTest::exposesLayoutMenuAndPrimaryDivider()
+void QmlInteractionTest::exposesOnlyAutomaticAndPrimaryLayoutOptions()
 {
     QQmlApplicationEngine engine;
     QQuickWindow *window = loadWindow(engine);
@@ -598,30 +639,15 @@ void QmlInteractionTest::exposesLayoutMenuAndPrimaryDivider()
     QVERIFY(layoutMenu != nullptr);
     QTRY_VERIFY(layoutMenu->property("visible").toBool());
 
-    QObject *primaryOption = window->findChild<QObject *>(QStringLiteral("primaryTwoLayoutOption"));
-    QVERIFY(primaryOption != nullptr);
-
-    registerQmlTypes();
-    QQuickWindow hostWindow;
-    hostWindow.resize(QSize(640, 480));
-    hostWindow.show();
-    QQmlComponent component(&engine,
-                            QUrl(QStringLiteral("qrc:/qml/components/WorkspaceGrid.qml")));
-    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
-    QVariantMap first = roomTileProperties(QStringLiteral("idle"));
-    QVariantMap second = first;
-    second[QStringLiteral("roomId")] = QStringLiteral("63137");
-    second[QStringLiteral("anchorName")] = QStringLiteral("主播 2");
-    std::unique_ptr<QObject> grid(component.createWithInitialProperties({
-        {QStringLiteral("parent"), QVariant::fromValue(hostWindow.contentItem())},
-        {QStringLiteral("roomModel"), QVariantList{first, second}},
-        {QStringLiteral("layoutMode"), QStringLiteral("primary-two")},
-        {QStringLiteral("primaryRoomId"), QStringLiteral("63136")},
-    }));
-    QVERIFY2(grid != nullptr, qPrintable(component.errorString()));
-    QObject *divider = grid->findChild<QObject *>(QStringLiteral("primaryRoomDivider"));
-    QVERIFY(divider != nullptr);
-    QTRY_VERIFY(divider->property("visible").toBool());
+    QVERIFY(window->findChild<QObject *>(QStringLiteral("autoLayoutOption")) != nullptr);
+    QVERIFY(window->findChild<QObject *>(QStringLiteral("primaryLayoutOption")) != nullptr);
+    QVERIFY(window->findChild<QObject *>(QStringLiteral("singleLayoutOption")) == nullptr);
+    QVERIFY(window->findChild<QObject *>(QStringLiteral("grid2LayoutOption")) == nullptr);
+    QVERIFY(window->findChild<QObject *>(QStringLiteral("grid3LayoutOption")) == nullptr);
+    QVERIFY(window->findChild<QObject *>(QStringLiteral("grid3x3LayoutOption")) == nullptr);
+    QVERIFY(window->findChild<QObject *>(QStringLiteral("primaryTwoLayoutOption")) == nullptr);
+    QVERIFY(window->findChild<QObject *>(QStringLiteral("splitHorizontalLayoutOption")) == nullptr);
+    QVERIFY(window->findChild<QObject *>(QStringLiteral("splitVerticalLayoutOption")) == nullptr);
 }
 
 void QmlInteractionTest::closesToastFromQml()
@@ -727,7 +753,7 @@ void QmlInteractionTest::groupsSoundControlsAndExposesFullscreen()
 
     FakeHeaderController controller;
     QQuickWindow hostWindow;
-    hostWindow.resize(QSize(800, 120));
+    hostWindow.resize(QSize(800, 320));
     hostWindow.show();
     std::unique_ptr<QObject> header(component.createWithInitialProperties({
         {QStringLiteral("parent"), QVariant::fromValue(hostWindow.contentItem())},
@@ -742,14 +768,65 @@ void QmlInteractionTest::groupsSoundControlsAndExposesFullscreen()
     QVERIFY(!popover->property("visible").toBool());
     click(sound);
     QTRY_VERIFY(popover->property("visible").toBool());
+    const QPointF popupAnchor = popover->property("soundAnchor").toPointF();
+    qInfo() << "sound anchor" << popupAnchor << "header height" << header->property("height")
+            << "sound height" << sound->property("height");
+    QVERIFY(popupAnchor.x() >= 0);
+    QVERIFY(popupAnchor.y() >= 0);
+    auto *soundItem = qobject_cast<QQuickItem *>(sound);
+    auto *headerItem = qobject_cast<QQuickItem *>(header.get());
+    QVERIFY(soundItem != nullptr);
+    QVERIFY(headerItem != nullptr);
+    QVERIFY(headerItem->z() > 0);
+    const QPointF buttonInHeader = soundItem->mapToItem(headerItem, 0, 0);
+    QVERIFY(qAbs(popupAnchor.x() - buttonInHeader.x()) < 1.0);
+    QVERIFY(qAbs(popupAnchor.y() - header->property("height").toDouble() - 4.0) < 1.0);
+    const qreal popupX = popover->property("x").toDouble();
+    QVERIFY(popupX > 0);
+    QVERIFY(popupX + popover->property("width").toDouble() <= hostWindow.width());
     QVERIFY(header->findChild<QObject *>(QStringLiteral("globalMuteButton")) != nullptr);
     QVERIFY(header->findChild<QObject *>(QStringLiteral("audioSingleButton")) != nullptr);
     QVERIFY(header->findChild<QObject *>(QStringLiteral("audioMultiButton")) != nullptr);
+
+    click(sound);
+    QTRY_VERIFY(!popover->property("visible").toBool());
 
     QObject *fullscreen = header->findChild<QObject *>(QStringLiteral("fullscreenButton"));
     QVERIFY(fullscreen != nullptr);
     QVERIFY(QMetaObject::invokeMethod(fullscreen, "clicked"));
     QVERIFY(controller.fullScreenToggled);
+}
+
+void QmlInteractionTest::positionsSoundPopoverLikeDanmakuPanel()
+{
+    registerQmlTypes();
+    QQmlApplicationEngine engine;
+    QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qml/components/AppHeader.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+
+    FakeHeaderController controller;
+    QQuickWindow hostWindow;
+    hostWindow.resize(QSize(800, 320));
+    hostWindow.show();
+    std::unique_ptr<QObject> header(component.createWithInitialProperties({
+        {QStringLiteral("parent"), QVariant::fromValue(hostWindow.contentItem())},
+        {QStringLiteral("width"), 800},
+        {QStringLiteral("controller"), QVariant::fromValue(static_cast<QObject *>(&controller))},
+    }));
+    QVERIFY2(header != nullptr, qPrintable(component.errorString()));
+    QObject *sound = header->findChild<QObject *>(QStringLiteral("soundMasterButton"));
+    QObject *popover = header->findChild<QObject *>(QStringLiteral("soundMasterPopover"));
+    QVERIFY(sound != nullptr);
+    QVERIFY(popover != nullptr);
+    click(sound);
+    QTRY_VERIFY(popover->property("visible").toBool());
+    const qreal expectedX = std::max<qreal>(12.0, hostWindow.width()
+                                                     - popover->property("width").toDouble()
+                                                     - 72.0);
+    QCOMPARE(popover->property("x").toDouble(), expectedX);
+    QCOMPARE(popover->property("y").toDouble(), header->property("height").toDouble() + 8.0);
+    click(sound);
+    QTRY_VERIFY(!popover->property("visible").toBool());
 }
 
 void QmlInteractionTest::truncatesLongRoomTitleBeforeActions()
@@ -796,6 +873,56 @@ void QmlInteractionTest::exposesRoomVolumeAndRefreshControls()
 
     QVERIFY(QMetaObject::invokeMethod(refresh, "clicked"));
     QCOMPARE(controller.refreshedRoom, QStringLiteral("63136"));
+}
+
+void QmlInteractionTest::defersRoomRemovalUntilAfterQmlHandlerReturns()
+{
+    registerQmlTypes();
+    WorkspaceModel workspace(nullptr);
+    FakeRoomController controller;
+    QQmlApplicationEngine engine;
+    QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qml/components/RoomSidebar.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+
+    RoomListModel roomModel;
+    RoomSnapshot snapshot;
+    snapshot.roomId = QStringLiteral("63136");
+    snapshot.metadata.roomId = snapshot.roomId;
+    roomModel.applySnapshots({snapshot});
+
+    std::unique_ptr<QObject> sidebar(component.createWithInitialProperties({
+        {QStringLiteral("controller"), QVariant::fromValue(static_cast<QObject *>(&controller))},
+        {QStringLiteral("workspaceModel"), QVariant::fromValue(static_cast<QObject *>(&workspace))},
+        {QStringLiteral("roomModel"), QVariant::fromValue(static_cast<QObject *>(&roomModel))},
+    }));
+    QVERIFY2(sidebar != nullptr, qPrintable(component.errorString()));
+
+    QVERIFY(QMetaObject::invokeMethod(sidebar.get(),
+                                      "requestRoomRemoval",
+                                      Q_ARG(QVariant, QStringLiteral("63136"))));
+    QCOMPARE(controller.removedRoom, QStringLiteral("63136"));
+}
+
+void QmlInteractionTest::rebindsPlayerWhenRoomIdentityChanges()
+{
+    registerQmlTypes();
+    QQmlApplicationEngine engine;
+    QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qml/components/RoomTile.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+
+    FakeRoomController controller;
+    QVariantMap properties = roomTileProperties(QStringLiteral("connected"));
+    properties[QStringLiteral("controller")] = QVariant::fromValue(static_cast<QObject *>(&controller));
+    std::unique_ptr<QObject> tile(component.createWithInitialProperties(properties));
+    QVERIFY2(tile != nullptr, qPrintable(component.errorString()));
+    const QStringList initialAttachment{QStringLiteral("63136")};
+    QTRY_COMPARE(controller.attachedRooms, initialAttachment);
+
+    tile->setProperty("roomId", QStringLiteral("63137"));
+    const QStringList expectedDetach{QStringLiteral("63136")};
+    const QStringList expectedAttachments{QStringLiteral("63136"), QStringLiteral("63137")};
+    QTRY_COMPARE(controller.detachedRooms, expectedDetach);
+    QTRY_COMPARE(controller.attachedRooms, expectedAttachments);
 }
 
 void QmlInteractionTest::rendersFallbackMetadataAndUnknownStatus()
@@ -973,7 +1100,64 @@ void QmlInteractionTest::exposesRoomDragAndDropSurface()
     QVERIFY(row->findChild<QObject *>(QStringLiteral("roomDropArea")) != nullptr);
 }
 
-void QmlInteractionTest::laysOutPrimaryRoomAcrossFullHeight()
+void QmlInteractionTest::refreshesRoomSidebarAfterPresetLikeModelUpdate()
+{
+    registerQmlTypes();
+    WorkspaceModel workspace(nullptr);
+    RoomListModel roomModel;
+    RoomSnapshot first;
+    first.roomId = QStringLiteral("63136");
+    first.metadata.roomId = first.roomId;
+    first.metadata.anchorName = QStringLiteral("主播 1");
+    first.liveStatus = RoomLiveStatus::Online;
+    roomModel.applySnapshots({first});
+
+    FakeRoomController controller;
+    QQmlApplicationEngine engine;
+    QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qml/components/RoomSidebar.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    QQuickWindow hostWindow;
+    hostWindow.resize(QSize(360, 640));
+    hostWindow.show();
+    std::unique_ptr<QObject> sidebar(component.createWithInitialProperties({
+        {QStringLiteral("parent"), QVariant::fromValue(hostWindow.contentItem())},
+        {QStringLiteral("width"), 360},
+        {QStringLiteral("height"), 640},
+        {QStringLiteral("controller"), QVariant::fromValue(static_cast<QObject *>(&controller))},
+        {QStringLiteral("workspaceModel"), QVariant::fromValue(static_cast<QObject *>(&workspace))},
+        {QStringLiteral("roomModel"), QVariant::fromValue(static_cast<QObject *>(&roomModel))},
+    }));
+    QVERIFY2(sidebar != nullptr, qPrintable(component.errorString()));
+    QObject *list = sidebar->findChild<QObject *>(QStringLiteral("roomList"));
+    QVERIFY(list != nullptr);
+    QTRY_COMPARE(list->property("count").toInt(), 1);
+
+    QVector<RoomSnapshot> fiveRooms;
+    for (int i = 0; i < 5; ++i) {
+        RoomSnapshot room = first;
+        room.roomId = QStringLiteral("6313%1").arg(i + 6);
+        room.metadata.roomId = room.roomId;
+        room.metadata.anchorName = QStringLiteral("主播 %1").arg(i + 1);
+        fiveRooms.push_back(room);
+    }
+    roomModel.applySnapshots(fiveRooms);
+    QTRY_COMPARE(list->property("count").toInt(), 5);
+
+    fiveRooms.removeFirst();
+    roomModel.applySnapshots(fiveRooms);
+    QTRY_COMPARE(list->property("count").toInt(), 4);
+    QTRY_VERIFY(([&]() {
+        QQuickItem *firstRow = nullptr;
+        if (!QMetaObject::invokeMethod(list, "itemAtIndex",
+                                       Q_RETURN_ARG(QQuickItem *, firstRow), Q_ARG(int, 0))) {
+            return false;
+        }
+        return firstRow != nullptr
+               && firstRow->property("roomId").toString() == QStringLiteral("63137");
+    })());
+}
+
+void QmlInteractionTest::laysOutFiveAutomaticRoomsInThreeAndTwoRows()
 {
     registerQmlTypes();
     QQmlApplicationEngine engine;
@@ -986,36 +1170,118 @@ void QmlInteractionTest::laysOutPrimaryRoomAcrossFullHeight()
     hostWindow.show();
 
     QVariantList rooms;
-    for (int i = 0; i < 9; ++i) {
+    for (int i = 0; i < 5; ++i) {
         QVariantMap room = roomTileProperties(QStringLiteral("idle"));
         room[QStringLiteral("roomId")] = QStringLiteral("6313%1").arg(i + 6);
-        room[QStringLiteral("anchorName")] = QStringLiteral("主播 %1").arg(i + 1);
         rooms.push_back(room);
     }
-
     std::unique_ptr<QObject> grid(component.createWithInitialProperties({
         {QStringLiteral("parent"), QVariant::fromValue(hostWindow.contentItem())},
         {QStringLiteral("width"), 1280},
         {QStringLiteral("height"), 720},
         {QStringLiteral("roomModel"), rooms},
-        {QStringLiteral("layoutMode"), QStringLiteral("primary-two")},
-        {QStringLiteral("primaryRoomId"), QStringLiteral("63136")},
-        {QStringLiteral("primaryRoomRatio"), 0.6},
+        {QStringLiteral("layoutMode"), QStringLiteral("auto")},
     }));
     QVERIFY2(grid != nullptr, qPrintable(component.errorString()));
 
-    QQuickItem *primary = nullptr;
-    QQuickItem *secondary = nullptr;
-    for (QQuickItem *child : grid->findChild<QQuickItem *>(QStringLiteral("layoutSurface"))->childItems()) {
-        if (child->property("roomId").toString() == QStringLiteral("63136")) primary = child;
-        if (child->property("roomId").toString() == QStringLiteral("63137")) secondary = child;
+    auto *surface = grid->findChild<QQuickItem *>(QStringLiteral("layoutSurface"));
+    QVERIFY(surface != nullptr);
+    const auto tiles = roomTiles(surface);
+    QCOMPARE(tiles.size(), 5);
+    QCOMPARE(tiles.at(0)->y(), 0.0);
+    QCOMPARE(tiles.at(1)->y(), 0.0);
+    QCOMPARE(tiles.at(2)->y(), 0.0);
+    QVERIFY(tiles.at(3)->y() > tiles.at(0)->y());
+    QCOMPARE(tiles.at(3)->y(), tiles.at(4)->y());
+    QVERIFY(tiles.at(3)->width() > tiles.at(0)->width());
+    QVERIFY(qAbs((tiles.at(3)->x() + tiles.at(3)->width()) - (tiles.at(4)->x())) > 1.0);
+    QVERIFY(tiles.at(4)->x() > tiles.at(3)->x());
+    QVERIFY(tiles.at(4)->x() + tiles.at(4)->width() <= surface->width() + 0.1);
+}
+
+void QmlInteractionTest::laysOutPrimaryRoomsAcrossFullHeight()
+{
+    registerQmlTypes();
+    QQmlApplicationEngine engine;
+    QQmlComponent component(&engine,
+                            QUrl(QStringLiteral("qrc:/qml/components/WorkspaceGrid.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+
+    QQuickWindow hostWindow;
+    hostWindow.resize(QSize(1280, 720));
+    hostWindow.show();
+
+    for (const int count : {1, 2, 3, 4, 5, 6, 7, 8, 9}) {
+        QVariantList rooms;
+        for (int i = 0; i < count; ++i) {
+            QVariantMap room = roomTileProperties(QStringLiteral("idle"));
+            room[QStringLiteral("roomId")] = QStringLiteral("6313%1").arg(i + 6);
+            room[QStringLiteral("anchorName")] = QStringLiteral("主播 %1").arg(i + 1);
+            rooms.push_back(room);
+        }
+
+        std::unique_ptr<QObject> grid(component.createWithInitialProperties({
+            {QStringLiteral("parent"), QVariant::fromValue(hostWindow.contentItem())},
+            {QStringLiteral("width"), 1280},
+            {QStringLiteral("height"), 720},
+            {QStringLiteral("roomModel"), rooms},
+            {QStringLiteral("layoutMode"), QStringLiteral("primary")},
+            {QStringLiteral("primaryRoomId"), QStringLiteral("63136")},
+        }));
+        QVERIFY2(grid != nullptr, qPrintable(component.errorString()));
+
+        auto *surface = grid->findChild<QQuickItem *>(QStringLiteral("layoutSurface"));
+        QVERIFY(surface != nullptr);
+        const auto tiles = roomTiles(surface);
+        QCOMPARE(tiles.size(), count);
+        QQuickItem *primary = nullptr;
+        for (QQuickItem *tile : tiles) {
+            if (tile->property("roomId").toString() == QStringLiteral("63136")) {
+                primary = tile;
+                break;
+            }
+        }
+        QVERIFY(primary != nullptr);
+        QCOMPARE(primary->y(), 0.0);
+        QVERIFY(qAbs(primary->height() - surface->height()) < 0.1);
+
+        if (count == 1) {
+            QVERIFY(qAbs(primary->width() - surface->width()) < 0.1);
+            continue;
+        }
+
+        if (count <= 4) {
+            QCOMPARE(primary->x(), 0.0);
+            QVERIFY(tiles.at(1)->x() > primary->x() + primary->width());
+            QCOMPARE(tiles.at(1)->x(), tiles.at(count - 1)->x());
+            if (count > 2) QVERIFY(tiles.at(count - 1)->y() > tiles.at(1)->y());
+        } else {
+            QVERIFY(primary->x() > 0.0);
+            QVERIFY(primary->x() + primary->width() < surface->width());
+            const int leftCount = count == 5 || count == 6 ? 2 : (count == 7 || count == 8 ? 3 : 4);
+            const int rightCount = count - 1 - leftCount;
+            for (int i = 0; i < leftCount; ++i) {
+                QVERIFY(tiles.at(i + 1)->x() < primary->x());
+                QVERIFY(tiles.at(i + 1)->y() >= 0.0);
+            }
+            for (int i = 0; i < rightCount; ++i) {
+                QVERIFY(tiles.at(leftCount + i + 1)->x() > primary->x() + primary->width());
+                QVERIFY(tiles.at(leftCount + i + 1)->y() >= 0.0);
+            }
+            if (count == 8) {
+                for (int i = 1; i < rightCount; ++i) {
+                    QVERIFY(tiles.at(leftCount + i + 1)->y() > tiles.at(leftCount + i)->y());
+                }
+                QVERIFY(qAbs(primary->width() - (surface->width() - 2.0 * 8.0) * 3.0 / 5.0) < 0.1);
+            }
+            if (count == 9) {
+                for (int i = 1; i < rightCount; ++i) {
+                    QVERIFY(tiles.at(leftCount + i + 1)->y() > tiles.at(leftCount + i)->y());
+                }
+                QVERIFY(qAbs(primary->width() - (surface->width() - 2.0 * 8.0) * 3.0 / 5.0) < 0.1);
+            }
+        }
     }
-    QVERIFY(primary != nullptr);
-    QVERIFY(secondary != nullptr);
-    QVERIFY(primary->height() > secondary->height() * 1.8);
-    QVERIFY(qAbs(primary->y()) < 1.0);
-    QVERIFY(qAbs(secondary->y()) < 1.0);
-    QVERIFY(secondary->x() > primary->x() + primary->width());
 }
 
 QTEST_MAIN(QmlInteractionTest)

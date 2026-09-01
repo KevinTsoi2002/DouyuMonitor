@@ -3,6 +3,7 @@
 #include <QDateTime>
 #include <QRegularExpression>
 #include <QSettings>
+#include <QTimer>
 #include <QUrl>
 #include <QUuid>
 #include <QWindow>
@@ -219,7 +220,13 @@ void AppController::setMainWindow(QWindow *window)
 
 QString AppController::addRoom(const QString &roomId)
 {
-    const RoomCommandResult result = coordinator_->addRoomDetailed(roomId);
+    const NativeRoomRecord *record = libraryRecord(roomId);
+    const RoomCommandResult result = coordinator_->addRoomDetailed(
+        roomId,
+        record != nullptr ? record->requestedQuality : StreamQuality::Auto,
+        record != nullptr ? record->metadata : RoomMetadata{},
+        record != nullptr && record->favorite,
+        record != nullptr ? record->volume : 100);
     if (result == RoomCommandResult::Accepted) {
         touchHistory(roomId);
         persistWorkspace();
@@ -266,8 +273,13 @@ QString AppController::addRoomCandidate(const QString &roomId)
     const auto candidate = searchCandidates_.constFind(roomId);
     if (candidate == searchCandidates_.cend()) return addRoom(roomId);
 
+    const NativeRoomRecord *record = libraryRecord(roomId);
     const RoomCommandResult result = coordinator_->addRoomDetailed(
-        roomId, StreamQuality::Auto, candidate.value());
+        roomId,
+        record != nullptr ? record->requestedQuality : StreamQuality::Auto,
+        candidate.value(),
+        record != nullptr && record->favorite,
+        record != nullptr ? record->volume : 100);
     if (result == RoomCommandResult::Accepted) {
         touchHistory(roomId);
         persistWorkspace();
@@ -280,6 +292,16 @@ QString AppController::removeRoom(const QString &roomId)
     const RoomCommandResult result = coordinator_->removeRoomDetailed(roomId);
     if (result == RoomCommandResult::Accepted) persistWorkspace();
     return commandMessage(result);
+}
+
+void AppController::requestRemoveRoom(const QString &roomId)
+{
+    const QString requestedRoomId = roomId.trimmed();
+    if (requestedRoomId.isEmpty()) return;
+
+    QTimer::singleShot(0, this, [this, requestedRoomId] {
+        removeRoom(requestedRoomId);
+    });
 }
 
 QString AppController::setPrimaryRoom(const QString &roomId)
@@ -587,7 +609,17 @@ QString AppController::applyWorkspacePreset(const QString &presetId)
     targetRooms.reserve(preset.roomIds.size());
     for (const QString &roomId : preset.roomIds) {
         const NativeRoomRecord *record = libraryRecord(roomId);
-        if (record == nullptr) continue;
+        NativeRoomRecord fallback;
+        if (record == nullptr) {
+            fallback.roomId = roomId;
+            fallback.metadata.roomId = roomId;
+            fallback.metadata.anchorName = roomId;
+            fallback.requestedQuality = StreamQuality::Auto;
+            fallback.volume = 100;
+            fallback.danmakuEnabled = true;
+            snapshot_.library.push_back(fallback);
+            record = &snapshot_.library.back();
+        }
         targetRooms.push_back({record->roomId,
                                record->requestedQuality,
                                record->metadata,

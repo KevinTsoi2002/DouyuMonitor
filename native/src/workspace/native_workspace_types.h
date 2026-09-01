@@ -64,7 +64,7 @@ struct NativeDanmakuConfiguration {
 struct NativeWorkspacePreset {
     QString id;
     QString name;
-    QString layoutId = QStringLiteral("single");
+    QString layoutId = QStringLiteral("auto");
     QString activeGroupId;
     QString primaryRoomId;
     QString audioRoomId;
