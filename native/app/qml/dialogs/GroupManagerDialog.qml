@@ -12,6 +12,8 @@ Dialog {
     property string selectedGroupId: ""
     readonly property bool validName: groupNameInput.text.trim().length > 0
                                      && groupNameInput.text.trim().length <= 30
+    readonly property var activeGroup: root.selectedGroup()
+    readonly property int activeMemberCount: activeGroup ? activeGroup.roomIds.length : 0
     modal: true
     title: "管理分组"
     width: 440
@@ -34,6 +36,10 @@ Dialog {
             }
         }
         return roomId
+    }
+
+    function roomInSelectedGroup(roomId) {
+        return root.activeGroup !== null && root.activeGroup.roomIds.indexOf(roomId) >= 0
     }
 
     contentItem: Column {
@@ -119,11 +125,15 @@ Dialog {
         }
 
         Text {
+            id: groupCapacityLabel
+            objectName: "groupCapacityLabel"
             width: parent.width
             color: "#f4f6f8"
             font.bold: true
             font.pixelSize: 11
-            text: root.selectedGroupId.length > 0 ? "分组成员" : "请选择分组"
+            text: root.selectedGroupId.length > 0
+                  ? "分组成员 " + root.activeMemberCount + "/9"
+                  : "请选择分组"
         }
 
         ListView {
@@ -248,6 +258,78 @@ Dialog {
                 onClicked: {
                     root.controller.assignRoomToGroup(roomIdInput.text.trim(), root.selectedGroupId)
                     roomIdInput.clear()
+                }
+            }
+        }
+
+        Text {
+            objectName: "groupManagerStatus"
+            width: parent.width
+            color: "#9ba5b1"
+            font.pixelSize: 10
+            text: root.selectedGroupId.length > 0
+                  ? "可从收藏与历史记录中选择房间；同一房间可加入多个分组"
+                  : "先选择一个分组"
+            wrapMode: Text.WordWrap
+        }
+
+        ListView {
+            id: groupLibraryList
+            objectName: "groupLibraryList"
+            width: parent.width
+            height: 110
+            clip: true
+            spacing: 3
+            model: root.libraryRooms
+            visible: root.selectedGroupId.length > 0
+
+            delegate: Rectangle {
+                required property var modelData
+                width: groupLibraryList.width
+                height: 32
+                color: "#171d25"
+                border.color: "#343b45"
+                radius: 4
+
+                Row {
+                    anchors.fill: parent
+                    anchors.margins: 4
+                    spacing: 5
+                    Text {
+                        width: parent.width - addLibraryRoomButton.width - 8
+                        anchors.verticalCenter: parent.verticalCenter
+                        color: "#d6dde5"
+                        elide: Text.ElideRight
+                        font.pixelSize: 10
+                        text: (modelData.anchorName && modelData.anchorName.length > 0)
+                              ? modelData.anchorName : modelData.roomId
+                    }
+                    ToolButton {
+                        id: addLibraryRoomButton
+                        width: 24
+                        height: 24
+                        enabled: root.controller !== null
+                                 && !root.roomInSelectedGroup(modelData.roomId)
+                                 && root.activeMemberCount < 9
+                        Accessible.name: "添加到分组"
+                        ToolTip.visible: hovered
+                        ToolTip.text: enabled ? Accessible.name : "已在分组中或分组已满"
+                        onClicked: {
+                            const message = root.controller.assignRoomToGroup(modelData.roomId,
+                                                                                root.selectedGroupId)
+                            if (message && root.workspaceModel) {
+                                root.workspaceModel.setLastMessage(message, "error", 2400)
+                            }
+                        }
+                        contentItem: Image {
+                            anchors.centerIn: parent
+                            width: 14
+                            height: 14
+                            source: Qt.resolvedUrl("../assets/icons/plus.svg")
+                            opacity: parent.enabled ? 1 : 0.35
+                        }
+                        background: Rectangle { radius: 3; color: parent.hovered ? "#2a211c" : "transparent" }
+                    }
                 }
             }
         }

@@ -14,6 +14,8 @@ Rectangle {
     property color textColor: "#f4f6f8"
     property color mutedTextColor: "#9ba5b1"
     property string viewMode: "current"
+    property string draggedRoomId: ""
+    property int dropInsertionIndex: -1
     signal addRoomRequested()
     signal groupManagementRequested()
 
@@ -35,6 +37,15 @@ Rectangle {
         const requestedRoomId = String(roomId || "")
         if (!controller || requestedRoomId.length === 0) return
         controller.requestRemoveRoom(requestedRoomId)
+    }
+
+    function resetRoomDrag(row) {
+        if (row) {
+            row.x = 0
+            row.y = 0
+        }
+        draggedRoomId = ""
+        dropInsertionIndex = -1
     }
 
     function groupSubset(start, limit) {
@@ -279,6 +290,17 @@ Rectangle {
                     Drag.hotSpot.y: height / 2
 
                     Rectangle {
+                        objectName: "roomDropInsertionIndicator"
+                        x: 0
+                        y: -2
+                        width: parent.width
+                        height: 2
+                        color: root.accentColor
+                        visible: root.draggedRoomId.length > 0
+                                 && root.dropInsertionIndex === roomRow.index
+                    }
+
+                    Rectangle {
                         anchors.fill: parent
                         radius: 5
                         color: roomMouse.containsMouse ? "#252c34" : "transparent"
@@ -391,10 +413,16 @@ Rectangle {
                         anchors.fill: parent
                         onDropped: function(drop) {
                             const source = drop.source
-                            if (!source || source === roomRow || !root.controller) return
+                            if (!source || source === roomRow || !root.controller) {
+                                root.resetRoomDrag(roomRow)
+                                return
+                            }
                             const delta = roomRow.index - source.index
                             if (delta !== 0) root.controller.moveRoom(source.roomId, delta)
+                            root.resetRoomDrag(source)
                         }
+                        onEntered: if (drag.source && drag.source !== roomRow) root.dropInsertionIndex = roomRow.index
+                        onExited: if (root.dropInsertionIndex === roomRow.index) root.dropInsertionIndex = -1
                     }
 
                     MouseArea {
@@ -407,10 +435,11 @@ Rectangle {
                         cursorShape: Qt.OpenHandCursor
                         drag.target: roomRow
                         drag.axis: Drag.YAxis
-                        onPressed: cursorShape = Qt.ClosedHandCursor
+                        onPressed: {
+                            root.draggedRoomId = roomRow.roomId
+                        }
                         onReleased: {
-                            cursorShape = Qt.OpenHandCursor
-                            roomRow.x = 0
+                            root.resetRoomDrag(roomRow)
                         }
                     }
                 }

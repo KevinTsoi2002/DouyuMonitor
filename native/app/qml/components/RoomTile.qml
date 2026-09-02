@@ -152,8 +152,12 @@ FocusScope {
             Behavior on opacity { NumberAnimation { duration: 150 } }
 
             Row {
+                id: roomTopMetadata
+                objectName: "roomTopMetadata"
                 anchors.left: parent.left
                 anchors.leftMargin: 9
+                anchors.right: roomTopActions.left
+                anchors.rightMargin: 4
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 7
                 Rectangle {
@@ -169,6 +173,8 @@ FocusScope {
             }
 
             ToolButton {
+                id: roomTopActions
+                objectName: "roomTopActions"
                 anchors.right: parent.right
                 anchors.rightMargin: 7
                 anchors.verticalCenter: parent.verticalCenter

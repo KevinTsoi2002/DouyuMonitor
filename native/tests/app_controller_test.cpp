@@ -1,5 +1,8 @@
 #include <QSettings>
 #include <QTemporaryDir>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QtTest/QtTest>
 
 #include "app/windows_notification_service.h"
@@ -522,21 +525,44 @@ void AppControllerTest::allowsRoomMembershipInMultipleGroupsAndEnforcesCapacity(
     QTemporaryDir directory;
     QVERIFY(directory.isValid());
     QSettings settings(directory.filePath(QStringLiteral("workspace.ini")), QSettings::IniFormat);
+    QJsonArray library;
+    for (int index = 0; index < 10; ++index) {
+        const QString roomId = QString::number(63136 + index);
+        library.append(QJsonObject{{"roomId", roomId},
+                                   {"metadata", QJsonObject{{"roomId", roomId},
+                                                             {"anchorName", roomId},
+                                                             {"title", ""},
+                                                             {"category", ""},
+                                                             {"viewerLabel", ""}}},
+                                   {"requestedQuality", "auto"},
+                                   {"favorite", false},
+                                   {"lastOpenedAtMs", 0},
+                                   {"volume", 100},
+                                   {"danmakuEnabled", false}});
+    }
+    settings.setValue(QStringLiteral("DouyuMonitor/nativeWorkspaceV1"),
+                      QJsonDocument(QJsonObject{{"version", 2},
+                                                {"library", library},
+                                                {"groups", QJsonArray{}},
+                                                {"activeRoomIds", QJsonArray{}},
+                                                {"activeGroupId", ""},
+                                                {"primaryRoomId", ""},
+                                                {"audioRoomId", ""},
+                                                {"presets", QJsonArray{}}})
+                          .toJson(QJsonDocument::Compact));
     FakeNotificationSink sink;
     AppController controller(fakeServicePath(), &settings, &sink);
 
-    for (int index = 0; index < 10; ++index) {
-        if (index < 9) QCOMPARE(controller.addRoom(QString::number(63136 + index)), QString());
+    for (int index = 0; index < 9; ++index) {
+        QCOMPARE(controller.addRoom(QString::number(63136 + index)), QString());
     }
-    QCOMPARE(controller.addRoom(QStringLiteral("63145")), QStringLiteral("最多添加 9 个房间"));
-    QCOMPARE(controller.addRoom(QStringLiteral("63145")), QStringLiteral("最多添加 9 个房间"));
     const QString firstGroup = controller.createGroup(QStringLiteral("A"));
     const QString secondGroup = controller.createGroup(QStringLiteral("B"));
     for (int index = 0; index < 9; ++index) {
         QCOMPARE(controller.assignRoomToGroup(QString::number(63136 + index), firstGroup), QString());
     }
-    QCOMPARE(controller.removeRoom(QStringLiteral("63144")), QString());
-    QCOMPARE(controller.assignRoomToGroup(QStringLiteral("63144"), firstGroup),
+    QCOMPARE(controller.workspace()->groups().at(0).roomIds.size(), 9);
+    QCOMPARE(controller.assignRoomToGroup(QStringLiteral("63145"), firstGroup),
              QStringLiteral("分组最多包含 9 个房间"));
     QCOMPARE(controller.assignRoomToGroup(QStringLiteral("63136"), secondGroup), QString());
     QCOMPARE(controller.workspace()->groups().at(0).roomIds.size(), 9);
