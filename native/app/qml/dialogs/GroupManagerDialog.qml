@@ -77,6 +77,7 @@ Dialog {
 
         ListView {
             id: groupList
+            objectName: "groupManagerList"
             width: parent.width
             height: 190
             clip: true
@@ -84,6 +85,7 @@ Dialog {
             spacing: 4
 
             delegate: Rectangle {
+                objectName: "groupManagerRow"
                 required property var modelData
                 width: groupList.width
                 height: 42
@@ -92,18 +94,21 @@ Dialog {
                 radius: 4
 
                 Row {
+                    z: 2
                     anchors.fill: parent
                     anchors.margins: 7
                     spacing: 6
                     Text { width: parent.width - activateButton.width - deleteButton.width - 12; anchors.verticalCenter: parent.verticalCenter; text: modelData.name; color: "#f4f6f8"; elide: Text.ElideRight }
                     Button {
                         id: activateButton
+                        objectName: "activateButton"
                         text: modelData.active ? "当前" : "启用"
                         enabled: root.controller !== null && !modelData.active
                         onClicked: root.controller.setActiveGroup(modelData.id)
                     }
                     Button {
                         id: deleteButton
+                        objectName: "deleteButton"
                         text: "删除"
                         enabled: root.controller !== null
                         onClicked: {
@@ -114,7 +119,12 @@ Dialog {
                 }
 
                 MouseArea {
-                    anchors.fill: parent
+                    objectName: "groupManagerRowMouseArea"
+                    anchors.left: parent.left
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    x: 7
+                    width: parent.width - activateButton.width - deleteButton.width - 26
                     acceptedButtons: Qt.LeftButton
                     onClicked: {
                         root.selectedGroupId = modelData.id

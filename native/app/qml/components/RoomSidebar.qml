@@ -288,6 +288,15 @@ Rectangle {
                     Drag.source: roomRow
                     Drag.hotSpot.x: width / 2
                     Drag.hotSpot.y: height / 2
+                    property bool dragTargetIsDelegate: roomDragHandle.drag.target === roomRow
+
+                    Item {
+                        id: roomDragProxy
+                        objectName: "roomDragProxy"
+                        width: roomRow.width
+                        height: roomRow.height
+                        visible: false
+                    }
 
                     Rectangle {
                         objectName: "roomDropInsertionIndicator"
@@ -433,13 +442,13 @@ Rectangle {
                         anchors.bottom: parent.bottom
                         width: 22
                         cursorShape: Qt.OpenHandCursor
-                        drag.target: roomRow
+                        drag.target: roomDragProxy
                         drag.axis: Drag.YAxis
                         onPressed: {
                             root.draggedRoomId = roomRow.roomId
                         }
                         onReleased: {
-                            root.resetRoomDrag(roomRow)
+                            root.resetRoomDrag(roomDragProxy)
                         }
                     }
                 }

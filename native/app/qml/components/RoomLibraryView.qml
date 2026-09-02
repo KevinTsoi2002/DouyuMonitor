@@ -64,6 +64,14 @@ Item {
             Drag.hotSpot.x: width / 2
             Drag.hotSpot.y: height / 2
 
+            Item {
+                id: libraryDragProxy
+                objectName: "libraryDragProxy"
+                width: roomRow.width
+                height: roomRow.height
+                visible: false
+            }
+
             Rectangle {
                 objectName: "libraryDropInsertionIndicator"
                 x: 0
@@ -169,13 +177,13 @@ Item {
                 width: 22
                 enabled: root.favoritesOnly
                 cursorShape: Qt.OpenHandCursor
-                drag.target: roomRow
+                drag.target: libraryDragProxy
                 drag.axis: Drag.YAxis
                 onPressed: {
                     root.draggedRoomId = entry.roomId
                 }
                 onReleased: {
-                    root.resetDrag(roomRow)
+                    root.resetDrag(libraryDragProxy)
                 }
             }
 

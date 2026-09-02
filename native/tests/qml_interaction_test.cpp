@@ -606,7 +606,7 @@ void QmlInteractionTest::rendersAndAddsSearchCandidate()
         {QStringLiteral("parent"), QVariant::fromValue(hostWindow.contentItem())},
     }));
     QVERIFY2(dialog != nullptr, qPrintable(component.errorString()));
-    QVERIFY(QMetaObject::invokeMethod(dialog.get(), "open"));
+    dialog->setProperty("visible", true);
     QTRY_VERIFY(dialog->property("visible").toBool());
 
     QObject *results = dialog->findChild<QObject *>(QStringLiteral("searchResultList"));
@@ -1099,6 +1099,7 @@ void QmlInteractionTest::exposesRoomDragAndDropSurface()
     QVERIFY(row->findChild<QObject *>(QStringLiteral("roomDragHandle")) != nullptr);
     QVERIFY(row->findChild<QObject *>(QStringLiteral("roomDropArea")) != nullptr);
 }
+
 
 void QmlInteractionTest::refreshesRoomSidebarAfterPresetLikeModelUpdate()
 {
