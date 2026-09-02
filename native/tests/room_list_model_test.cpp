@@ -29,6 +29,7 @@ private slots:
     void removesRoomWithoutResettingSurvivingDelegates();
     void exposesSafeDanmakuPresentationRoles();
     void exposesAvailableQualityOptionsWithoutPlaybackUrl();
+    void exposesMultipleGroupMemberships();
 };
 
 void RoomListModelTest::exposesSafeRoleNames()
@@ -124,6 +125,19 @@ void RoomListModelTest::exposesAvailableQualityOptionsWithoutPlaybackUrl()
     QVERIFY(!options.first().toMap().contains(QStringLiteral("playbackUrl")));
     QCOMPARE(options.first().toMap().value(QStringLiteral("label")).toString(),
              QStringLiteral("高清"));
+}
+
+void RoomListModelTest::exposesMultipleGroupMemberships()
+{
+    RoomListModel model;
+    model.applySnapshots({makeSnapshot(QStringLiteral("63136"), false)});
+    RoomPresentationSettings presentation;
+    presentation.groupIds = {QStringLiteral("group-a"), QStringLiteral("group-b")};
+    model.applyPresentationSettings({{QStringLiteral("63136"), presentation}});
+
+    const QModelIndex index = model.index(0, 0);
+    QCOMPARE(model.data(index, RoomListModel::GroupIdsRole).toStringList(),
+             QStringList({QStringLiteral("group-a"), QStringLiteral("group-b")}));
 }
 
 QTEST_GUILESS_MAIN(RoomListModelTest)

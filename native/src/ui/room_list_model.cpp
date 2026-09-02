@@ -78,6 +78,8 @@ QVariant RoomListModel::data(const QModelIndex &index, int role) const
         return entry.settings.danmakuEnabled;
         case GroupIdRole:
             return entry.settings.groupId;
+        case GroupIdsRole:
+            return entry.settings.groupIds;
     case DanmakuStateRole:
         return entry.settings.danmakuState;
     case DanmakuErrorCodeRole:
@@ -122,6 +124,7 @@ QHash<int, QByteArray> RoomListModel::roleNames() const
         {AvailableQualitiesRole, "availableQualities"},
         {DanmakuEnabledRole, "danmakuEnabled"},
         {GroupIdRole, "groupId"},
+        {GroupIdsRole, "groupIds"},
         {DanmakuStateRole, "danmakuState"},
         {DanmakuErrorCodeRole, "danmakuErrorCode"},
         {DanmakuRecentRateRole, "danmakuRecentRate"},
@@ -207,6 +210,7 @@ void RoomListModel::applyPresentationSettings(
             changedRoles.append(DanmakuEnabledRole);
         }
         if (entry.settings.groupId != updated.groupId) changedRoles.append(GroupIdRole);
+        if (entry.settings.groupIds != updated.groupIds) changedRoles.append(GroupIdsRole);
         if (entry.settings.danmakuState != updated.danmakuState) {
             changedRoles.append(DanmakuStateRole);
         }

@@ -10,6 +10,7 @@ struct RoomPresentationSettings {
     int volume = 100;
     bool danmakuEnabled = false;
     QString groupId;
+    QStringList groupIds;
     QString danmakuState = QStringLiteral("idle");
     QString danmakuErrorCode = QStringLiteral("NONE");
     qreal danmakuRecentRate = 0;
@@ -46,6 +47,7 @@ public:
         AvailableQualitiesRole,
         DanmakuEnabledRole,
         GroupIdRole,
+        GroupIdsRole,
         DanmakuStateRole,
         DanmakuErrorCodeRole,
         DanmakuRecentRateRole,

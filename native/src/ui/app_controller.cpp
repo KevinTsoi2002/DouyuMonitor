@@ -1018,7 +1018,8 @@ void AppController::refreshPresentation()
         RoomPresentationSettings presentation;
         presentation.volume = record != nullptr ? record->volume : room.volume;
         presentation.danmakuEnabled = record != nullptr && record->danmakuEnabled;
-        presentation.groupId = groupForRoom(room.roomId);
+        presentation.groupIds = groupIdsForRoom(room.roomId);
+        presentation.groupId = presentation.groupIds.value(0);
         presentation.danmakuState = status.value(QStringLiteral("state")).toString();
         presentation.danmakuErrorCode = status.value(QStringLiteral("errorCode")).toString();
         presentation.danmakuRecentRate = stats.value(QStringLiteral("recentRate")).toDouble();
@@ -1087,12 +1088,13 @@ const NativeRoomRecord *AppController::libraryRecord(const QString &roomId) cons
     return nullptr;
 }
 
-QString AppController::groupForRoom(const QString &roomId) const
+QStringList AppController::groupIdsForRoom(const QString &roomId) const
 {
+    QStringList result;
     for (const NativeRoomGroup &group : snapshot_.groups) {
-        if (group.roomIds.contains(roomId)) return group.id;
+        if (group.roomIds.contains(roomId)) result.push_back(group.id);
     }
-    return {};
+    return result;
 }
 
 QString AppController::commandMessage(RoomCommandResult result) const

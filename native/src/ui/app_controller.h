@@ -127,7 +127,7 @@ private:
     void touchHistory(const QString &roomId);
     NativeRoomRecord *libraryRecord(const QString &roomId);
     const NativeRoomRecord *libraryRecord(const QString &roomId) const;
-    QString groupForRoom(const QString &roomId) const;
+    QStringList groupIdsForRoom(const QString &roomId) const;
     QString commandMessage(RoomCommandResult result) const;
     static bool isValidQuality(int quality) noexcept;
     static bool isValidName(const QString &name) noexcept;
