@@ -40,6 +40,8 @@ struct NativeRoomRecord {
     qint64 lastOpenedAtMs = 0;
     int volume = 100;
     bool danmakuEnabled = false;
+    qint64 favoriteAddedAtMs = 0;
+    qint64 favoriteSortOrder = 0;
 
     bool operator==(const NativeRoomRecord &) const = default;
 };
@@ -79,7 +81,7 @@ struct NativeWorkspacePreset {
 };
 
 struct NativeWorkspaceSnapshot {
-    int version = 3;
+    int version = 4;
     QVector<NativeRoomRecord> library;
     QVector<NativeRoomGroup> groups;
     QVector<NativeWorkspacePreset> presets;

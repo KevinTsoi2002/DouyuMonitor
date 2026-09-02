@@ -27,6 +27,8 @@ NativeWorkspaceSnapshot fixtureWorkspace()
     first.requestedQuality = StreamQuality::High;
     first.favorite = true;
     first.lastOpenedAtMs = 1'700'000'000'000;
+    first.favoriteAddedAtMs = 1'700'000'000'000;
+    first.favoriteSortOrder = 1'700'000'000'000;
 
     NativeRoomRecord second;
     second.roomId = QStringLiteral("63137");
@@ -65,6 +67,8 @@ private slots:
     void migratesVersionTwoDanmakuSettingsSafely();
     void roundTripsVersionThreeDanmakuSettingsAndOverrides();
     void roundTripsAudioModeAndGlobalMute();
+    void roundTripsFavoriteAddedTimeAndManualOrder();
+    void migratesVersionThreeFavoritesWithoutLosingMembership();
 };
 
 void NativeWorkspaceStoreTest::roundTripsSafeWorkspaceState()
@@ -162,6 +166,47 @@ void NativeWorkspaceStoreTest::roundTripsAudioModeAndGlobalMute()
     QVERIFY(loaded.globalMuted);
     QCOMPARE(loaded.presets.front().audioMode, QStringLiteral("multi"));
     QVERIFY(loaded.presets.front().globalMuted);
+}
+
+void NativeWorkspaceStoreTest::roundTripsFavoriteAddedTimeAndManualOrder()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSettings settings(directory.filePath(QStringLiteral("workspace.ini")), QSettings::IniFormat);
+    NativeWorkspaceStore store(&settings);
+    NativeWorkspaceSnapshot snapshot = fixtureWorkspace();
+    snapshot.library.front().favoriteAddedAtMs = 1'700'000'000'010;
+    snapshot.library.front().favoriteSortOrder = 20;
+    snapshot.library.back().favorite = false;
+    snapshot.library.back().favoriteAddedAtMs = 0;
+    snapshot.library.back().favoriteSortOrder = 0;
+
+    QVERIFY(store.save(snapshot));
+    const NativeWorkspaceSnapshot loaded = store.load();
+    QCOMPARE(loaded.library.front().favoriteAddedAtMs, qint64(1'700'000'000'010));
+    QCOMPARE(loaded.library.front().favoriteSortOrder, qint64(20));
+    QCOMPARE(loaded.library.back().favoriteAddedAtMs, qint64(0));
+    QCOMPARE(loaded.library.back().favoriteSortOrder, qint64(0));
+}
+
+void NativeWorkspaceStoreTest::migratesVersionThreeFavoritesWithoutLosingMembership()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSettings settings(directory.filePath(QStringLiteral("workspace.ini")), QSettings::IniFormat);
+    settings.setValue(
+        QStringLiteral("DouyuMonitor/nativeWorkspaceV1"),
+        QByteArray(R"JSON({"version":3,"library":[{"roomId":"63136","metadata":{"roomId":"63136","anchorName":"主播","title":"标题","category":"游戏","viewerLabel":"1"},"requestedQuality":"auto","favorite":true,"lastOpenedAtMs":1700000000010,"volume":100,"danmakuEnabled":true}],"groups":[{"id":"a","name":"A","roomIds":["63136"]},{"id":"b","name":"B","roomIds":["63136"]}],"activeRoomIds":["63136"],"activeGroupId":"a","primaryRoomId":"63136","audioRoomId":"63136","presets":[],"danmaku":{"globalEnabled":true,"display":{"durationSeconds":8,"fontSize":24,"opacity":0.85,"region":"top","density":"normal","fontFamily":"simhei","rendering":"native"},"governance":{"enabled":true,"keywordBlacklist":[],"duplicateWindowSeconds":3,"peakProtectionEnabled":true},"roomOverrides":{}},"layoutId":"auto","primaryRoomRatio":0.6,"sidebarVisible":true,"audioMode":"single","globalMuted":false})JSON"));
+    NativeWorkspaceStore store(&settings);
+
+    const NativeWorkspaceSnapshot loaded = store.load();
+    QCOMPARE(loaded.library.size(), 1);
+    QVERIFY(loaded.library.front().favorite);
+    QCOMPARE(loaded.library.front().favoriteAddedAtMs, qint64(1'700'000'000'010));
+    QVERIFY(loaded.library.front().favoriteSortOrder > 0);
+    QCOMPARE(loaded.groups.size(), 2);
+    QCOMPARE(loaded.groups.at(0).roomIds, QStringList({QStringLiteral("63136")}));
+    QCOMPARE(loaded.groups.at(1).roomIds, QStringList({QStringLiteral("63136")}));
 }
 
 void NativeWorkspaceStoreTest::loadsVersionOneSnapshotsWithoutPresets()
