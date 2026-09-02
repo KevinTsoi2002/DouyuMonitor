@@ -156,6 +156,15 @@ QVariantList AppController::libraryRooms() const
 
     std::sort(records.begin(), records.end(), [](const NativeRoomRecord *left,
                                                  const NativeRoomRecord *right) {
+        if (left->favorite != right->favorite) return left->favorite > right->favorite;
+        if (left->favorite) {
+            if (left->favoriteSortOrder != right->favoriteSortOrder) {
+                return left->favoriteSortOrder < right->favoriteSortOrder;
+            }
+            if (left->favoriteAddedAtMs != right->favoriteAddedAtMs) {
+                return left->favoriteAddedAtMs < right->favoriteAddedAtMs;
+            }
+        }
         if (left->lastOpenedAtMs != right->lastOpenedAtMs) {
             return left->lastOpenedAtMs > right->lastOpenedAtMs;
         }
@@ -174,6 +183,8 @@ QVariantList AppController::libraryRooms() const
             {QStringLiteral("viewerLabel"), metadata.viewerLabel},
             {QStringLiteral("avatarUrl"), metadata.avatarUrl},
             {QStringLiteral("favorite"), record->favorite},
+            {QStringLiteral("favoriteAddedAtMs"), record->favoriteAddedAtMs},
+            {QStringLiteral("favoriteSortOrder"), record->favoriteSortOrder},
             {QStringLiteral("lastOpenedAtMs"), record->lastOpenedAtMs},
             {QStringLiteral("active"), snapshot_.activeRoomIds.contains(record->roomId)},
         });
@@ -355,6 +366,44 @@ QString AppController::setFavorite(const QString &roomId, bool favorite)
         return commandMessage(RoomCommandResult::RoomNotFound);
     }
     if (!coordinator_->setFavorite(roomId, favorite)) return {};
+    if (NativeRoomRecord *record = libraryRecord(roomId)) {
+        record->favorite = favorite;
+        if (favorite) {
+            const qint64 now = QDateTime::currentMSecsSinceEpoch();
+            record->favoriteAddedAtMs = now;
+            record->favoriteSortOrder = now;
+        } else {
+            record->favoriteAddedAtMs = 0;
+            record->favoriteSortOrder = 0;
+        }
+        emit libraryRoomsChanged();
+    }
+    persistWorkspace();
+    return {};
+}
+
+QString AppController::moveFavoriteRoom(const QString &roomId, int targetIndex)
+{
+    NativeRoomRecord *record = libraryRecord(roomId);
+    if (record == nullptr || !record->favorite) return commandMessage(RoomCommandResult::RoomNotFound);
+    QVector<NativeRoomRecord *> favorites;
+    for (NativeRoomRecord &candidate : snapshot_.library) {
+        if (candidate.favorite) favorites.push_back(&candidate);
+    }
+    std::sort(favorites.begin(), favorites.end(), [](const NativeRoomRecord *left,
+                                                     const NativeRoomRecord *right) {
+        if (left->favoriteSortOrder != right->favoriteSortOrder) {
+            return left->favoriteSortOrder < right->favoriteSortOrder;
+        }
+        return left->roomId < right->roomId;
+    });
+    const int clampedIndex = qBound(0, targetIndex, favorites.size() - 1);
+    const int currentIndex = favorites.indexOf(record);
+    if (currentIndex < 0 || currentIndex == clampedIndex) return {};
+    favorites.removeAt(currentIndex);
+    favorites.insert(clampedIndex, record);
+    for (int index = 0; index < favorites.size(); ++index) favorites[index]->favoriteSortOrder = index + 1;
+    emit libraryRoomsChanged();
     persistWorkspace();
     return {};
 }
@@ -448,7 +497,8 @@ QString AppController::assignRoomToGroup(const QString &roomId, const QString &g
                                });
     if (target == snapshot_.groups.end()) return commandMessage(RoomCommandResult::RoomNotFound);
     const bool wasActive = snapshot_.activeGroupId == groupId;
-    for (NativeRoomGroup &group : snapshot_.groups) group.roomIds.removeAll(roomId);
+    if (target->roomIds.contains(roomId)) return {};
+    if (target->roomIds.size() >= 9) return QStringLiteral("分组最多包含 9 个房间");
     target->roomIds.push_back(roomId);
     if (wasActive) {
         setActiveGroup(groupId);

@@ -87,6 +87,7 @@ private slots:
     void stopsDanmakuBeforeServiceShutdown();
     void activatesGroupAndReplacesActiveRoomSet();
     void managesGroupMembersAndOrder();
+    void allowsRoomMembershipInMultipleGroupsAndEnforcesCapacity();
     void assignsLibraryRoomToActiveGroupAfterSwitch();
     void restoresActiveGroupMembershipInOrder();
     void searchesRoomCandidatesAndAddsMetadata();
@@ -95,6 +96,7 @@ private slots:
     void restoresLayoutAndRatioFromWorkspacePreset();
     void persistsGlobalAudioPolicy();
     void preservesFavoriteWhenReaddingLibraryRoom();
+    void ordersFavoritesByManualOrderAndMovesThem();
     void appliesWorkspacePresetToAllRoomsRepeatedly();
     void restoresPresetRoomsMissingFromLibrary();
     void defersRequestedRoomRemovalUntilEventLoop();
@@ -282,6 +284,31 @@ void AppControllerTest::preservesFavoriteWhenReaddingLibraryRoom()
     QCOMPARE(controller.addRoom(QStringLiteral("63136")), QString());
     QCOMPARE(controller.libraryRooms().first().toMap().value(QStringLiteral("favorite")).toBool(), true);
     QCOMPARE(controller.rooms()->data(controller.rooms()->index(0, 0), RoomListModel::FavoriteRole).toBool(), true);
+}
+
+void AppControllerTest::ordersFavoritesByManualOrderAndMovesThem()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSettings settings(directory.filePath(QStringLiteral("workspace.ini")), QSettings::IniFormat);
+    FakeNotificationSink sink;
+    AppController controller(fakeServicePath(), &settings, &sink);
+
+    QCOMPARE(controller.addRoom(QStringLiteral("63136")), QString());
+    QCOMPARE(controller.addRoom(QStringLiteral("63137")), QString());
+    QCOMPARE(controller.addRoom(QStringLiteral("63138")), QString());
+    QCOMPARE(controller.setFavorite(QStringLiteral("63136"), true), QString());
+    QCOMPARE(controller.setFavorite(QStringLiteral("63137"), true), QString());
+
+    QCOMPARE(controller.libraryRooms().at(0).toMap().value(QStringLiteral("roomId")).toString(),
+             QStringLiteral("63136"));
+    QCOMPARE(controller.libraryRooms().at(1).toMap().value(QStringLiteral("roomId")).toString(),
+             QStringLiteral("63137"));
+    QCOMPARE(controller.moveFavoriteRoom(QStringLiteral("63137"), 0), QString());
+    QCOMPARE(controller.libraryRooms().at(0).toMap().value(QStringLiteral("roomId")).toString(),
+             QStringLiteral("63137"));
+    QCOMPARE(controller.libraryRooms().at(1).toMap().value(QStringLiteral("roomId")).toString(),
+             QStringLiteral("63136"));
 }
 
 void AppControllerTest::appliesWorkspacePresetToAllRoomsRepeatedly()
@@ -487,6 +514,33 @@ void AppControllerTest::managesGroupMembersAndOrder()
              QStringList({QStringLiteral("63137"), QStringLiteral("63136")}));
     QCOMPARE(controller.removeRoomFromGroup(groupId, QStringLiteral("63137")), QString());
     QCOMPARE(controller.workspace()->groups().first().roomIds,
+             QStringList({QStringLiteral("63136")}));
+}
+
+void AppControllerTest::allowsRoomMembershipInMultipleGroupsAndEnforcesCapacity()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSettings settings(directory.filePath(QStringLiteral("workspace.ini")), QSettings::IniFormat);
+    FakeNotificationSink sink;
+    AppController controller(fakeServicePath(), &settings, &sink);
+
+    for (int index = 0; index < 10; ++index) {
+        if (index < 9) QCOMPARE(controller.addRoom(QString::number(63136 + index)), QString());
+    }
+    QCOMPARE(controller.addRoom(QStringLiteral("63145")), QStringLiteral("最多添加 9 个房间"));
+    QCOMPARE(controller.addRoom(QStringLiteral("63145")), QStringLiteral("最多添加 9 个房间"));
+    const QString firstGroup = controller.createGroup(QStringLiteral("A"));
+    const QString secondGroup = controller.createGroup(QStringLiteral("B"));
+    for (int index = 0; index < 9; ++index) {
+        QCOMPARE(controller.assignRoomToGroup(QString::number(63136 + index), firstGroup), QString());
+    }
+    QCOMPARE(controller.removeRoom(QStringLiteral("63144")), QString());
+    QCOMPARE(controller.assignRoomToGroup(QStringLiteral("63144"), firstGroup),
+             QStringLiteral("分组最多包含 9 个房间"));
+    QCOMPARE(controller.assignRoomToGroup(QStringLiteral("63136"), secondGroup), QString());
+    QCOMPARE(controller.workspace()->groups().at(0).roomIds.size(), 9);
+    QCOMPARE(controller.workspace()->groups().at(1).roomIds,
              QStringList({QStringLiteral("63136")}));
 }
 

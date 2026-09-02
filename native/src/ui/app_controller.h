@@ -68,6 +68,7 @@ public:
     Q_INVOKABLE bool setGlobalMuted(bool muted);
     Q_INVOKABLE QString setQuality(const QString &roomId, int quality);
     Q_INVOKABLE QString setFavorite(const QString &roomId, bool favorite);
+    Q_INVOKABLE QString moveFavoriteRoom(const QString &roomId, int targetIndex);
     Q_INVOKABLE QString moveRoom(const QString &roomId, int delta);
     Q_INVOKABLE QString retryPlayback(const QString &roomId);
     Q_INVOKABLE QString setVolume(const QString &roomId, int volume);
