@@ -53,6 +53,7 @@ Item {
         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
         delegate: Item {
+            id: roomRow
             required property var modelData
 
             readonly property var entry: modelData
