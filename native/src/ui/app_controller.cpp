@@ -950,10 +950,6 @@ void AppController::onRoomStatusRefreshed(const QString &roomId, bool online)
                                           : QStringLiteral("房间已下播"),
                                    QStringLiteral("success"),
                                    4200);
-    } else {
-        workspace_->setLastMessage(QStringLiteral("房间数据已更新"),
-                                   QStringLiteral("success"),
-                                   3200);
     }
 }
 

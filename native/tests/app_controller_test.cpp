@@ -701,10 +701,8 @@ void AppControllerTest::projectsRefreshedRoomMetadataAndStatus()
              QStringLiteral("1,234"));
     QCOMPARE(controller.rooms()->data(room, RoomListModel::AvatarUrlRole).toUrl(),
              QUrl(QStringLiteral("https://example.invalid/avatar.jpg")));
-    QTRY_COMPARE_WITH_TIMEOUT(controller.workspace()->lastMessage(),
-                              QStringLiteral("房间数据已更新"),
-                              3000);
-    QCOMPARE(controller.workspace()->lastMessageLevel(), QStringLiteral("success"));
+    QTest::qWait(150);
+    QCOMPARE(controller.workspace()->lastMessage(), QString());
 }
 
 void AppControllerTest::publishesCommandFailureToToast()
