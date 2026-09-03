@@ -166,13 +166,23 @@ bool RoomSession::attachPlayer(MpvQuickItem *player)
     player_ = player;
     connect(player_, &MpvQuickItem::playbackFailed,
             this, &RoomSession::onSurfacePlaybackFailed);
+    connect(player_, &MpvQuickItem::renderContextReady, this, [this, player] {
+        if (player_ != player || !pendingSource_.has_value()) return;
+        startPendingSource();
+    });
 
     if (!player_->setMuted(!audioFocused_) || !player_->setVolume(volume_)) {
         detachPlayer(player);
         return false;
     }
-    if (pendingSource_.has_value()) return startPendingSource();
+    if (pendingSource_.has_value()) {
+        return player_->isRenderContextReady() ? startPendingSource() : true;
+    }
     if (!activeSource_.has_value()) return true;
+    if (!player_->isRenderContextReady()) {
+        pendingSource_ = activeSource_;
+        return true;
+    }
     if (player_->loadSource(*activeSource_)) return true;
 
     onControllerFailed(QStringLiteral("PLAYER_FAILED"));
@@ -235,7 +245,7 @@ void RoomSession::release()
 void RoomSession::onControllerSourceReady(MediaSource source)
 {
     pendingSource_ = std::move(source);
-    if (player_ != nullptr) {
+    if (player_ != nullptr && player_->isRenderContextReady()) {
         startPendingSource();
         return;
     }
@@ -263,6 +273,7 @@ void RoomSession::onControllerVariantsReady(QVector<StreamVariant> variants)
 bool RoomSession::startPendingSource()
 {
     if (player_ == nullptr || !pendingSource_.has_value()) return false;
+    if (!player_->isRenderContextReady()) return true;
     if (!player_->loadSource(*pendingSource_)) {
         onControllerFailed(QStringLiteral("PLAYER_FAILED"));
         return false;

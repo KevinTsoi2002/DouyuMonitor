@@ -29,9 +29,10 @@ private slots:
     void acceptsMetadataWithOptionalEmptyPresentationFields();
     void dropsUnsafeAvatarUrlFromMetadata();
     void mapsQuickPlayerFailureToPlaybackError();
-    void acceptsSourceAndReportsReady();
+    void acceptsSourceAndKeepsItPendingWithoutRenderContext();
     void defersResolvedSourceUntilQuickPlayerIsAttached();
-    void replaysActiveSourceWhenQuickPlayerIsReattached();
+    void defersResolvedSourceUntilQuickRendererIsReady();
+    void preservesPendingSourceWhenQuickPlayerIsReattached();
     void cancelSuppressesLateSource();
     void releasesSessionWithQuickPlayer();
     void mapsControllerErrorsWithoutRawDiagnostics();
@@ -132,9 +133,12 @@ void RoomSessionTest::mapsQuickPlayerFailureToPlaybackError()
 
     QVERIFY(source.has_value());
     QVERIFY(session.attachPlayer(&player));
+    QVERIFY(session.resolve() > 0);
+    QCOMPARE(session.state(), RoomSession::State::Resolving);
     QVERIFY(QMetaObject::invokeMethod(&session, "onControllerSourceReady", Qt::DirectConnection,
                                       Q_ARG(MediaSource, *source)));
-    QCOMPARE(session.state(), RoomSession::State::Ready);
+    QCOMPARE(session.state(), RoomSession::State::Resolving);
+    QVERIFY(session.hasPendingSourceForTest());
     QVERIFY(QMetaObject::invokeMethod(&player, "playbackFailed", Qt::DirectConnection));
     QCOMPARE(session.playbackHealth(), RoomPlaybackHealth::Error);
     QCOMPARE(session.state(), RoomSession::State::Error);
@@ -143,19 +147,17 @@ void RoomSessionTest::mapsQuickPlayerFailureToPlaybackError()
     client.shutdown();
 }
 
-void RoomSessionTest::acceptsSourceAndReportsReady()
+void RoomSessionTest::acceptsSourceAndKeepsItPendingWithoutRenderContext()
 {
     StreamgetProcessClient client(fakeServicePath());
     RoomSession session(&client, QStringLiteral("63136"), StreamQuality::Auto);
-    QSignalSpy ready(&session, &RoomSession::sourceReady);
     MpvQuickItem player;
     QVERIFY(session.attachPlayer(&player));
 
     QVERIFY(session.resolve() > 0);
-    QTRY_VERIFY_WITH_TIMEOUT(ready.count() == 1, 3000);
-    QCOMPARE(session.state(), RoomSession::State::Ready);
-    QVERIFY(player.playbackState() == MpvQuickItem::PlaybackState::Loading
-            || player.playbackState() == MpvQuickItem::PlaybackState::Error);
+    QTRY_VERIFY_WITH_TIMEOUT(session.hasPendingSourceForTest(), 3000);
+    QCOMPARE(session.state(), RoomSession::State::Resolving);
+    QCOMPARE(player.playbackState(), MpvQuickItem::PlaybackState::Idle);
     client.shutdown();
 }
 
@@ -170,12 +172,28 @@ void RoomSessionTest::defersResolvedSourceUntilQuickPlayerIsAttached()
 
     MpvQuickItem player;
     QVERIFY(session.attachPlayer(&player));
-    QTRY_COMPARE_WITH_TIMEOUT(session.state(), RoomSession::State::Ready, 3000);
-    QVERIFY(!session.hasPendingSourceForTest());
+    QCOMPARE(session.state(), RoomSession::State::Resolving);
+    QVERIFY(session.hasPendingSourceForTest());
     client.shutdown();
 }
 
-void RoomSessionTest::replaysActiveSourceWhenQuickPlayerIsReattached()
+void RoomSessionTest::defersResolvedSourceUntilQuickRendererIsReady()
+{
+    StreamgetProcessClient client(fakeServicePath());
+    RoomSession session(&client, QStringLiteral("63136"), StreamQuality::Auto);
+
+    QVERIFY(session.resolve() > 0);
+    QTRY_VERIFY_WITH_TIMEOUT(session.hasPendingSourceForTest(), 3000);
+
+    MpvQuickItem player;
+
+    QVERIFY(session.attachPlayer(&player));
+    QVERIFY(session.hasPendingSourceForTest());
+    QCOMPARE(session.state(), RoomSession::State::Resolving);
+    client.shutdown();
+}
+
+void RoomSessionTest::preservesPendingSourceWhenQuickPlayerIsReattached()
 {
     StreamgetProcessClient client(fakeServicePath());
     RoomSession session(&client, QStringLiteral("63136"), StreamQuality::Auto);
@@ -187,14 +205,14 @@ void RoomSessionTest::replaysActiveSourceWhenQuickPlayerIsReattached()
     QVERIFY(session.attachPlayer(&firstPlayer));
     QVERIFY(QMetaObject::invokeMethod(&session, "onControllerSourceReady", Qt::DirectConnection,
                                       Q_ARG(MediaSource, *source)));
-    QCOMPARE(session.state(), RoomSession::State::Ready);
+    QCOMPARE(session.state(), RoomSession::State::Idle);
+    QVERIFY(session.hasPendingSourceForTest());
 
     session.detachPlayer(&firstPlayer);
     QVERIFY(session.attachPlayer(&replacementPlayer));
-    QTRY_VERIFY_WITH_TIMEOUT(replacementPlayer.playbackState() == MpvQuickItem::PlaybackState::Loading
-                                 || replacementPlayer.playbackState()
-                                        == MpvQuickItem::PlaybackState::Error,
-                             1000);
+    QCOMPARE(session.state(), RoomSession::State::Idle);
+    QVERIFY(session.hasPendingSourceForTest());
+    QCOMPARE(replacementPlayer.playbackState(), MpvQuickItem::PlaybackState::Idle);
     client.shutdown();
 }
 

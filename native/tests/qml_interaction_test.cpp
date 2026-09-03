@@ -14,30 +14,6 @@
 
 namespace {
 
-class FakeGroupController final : public QObject {
-    Q_OBJECT
-
-public:
-    Q_INVOKABLE void setActiveGroup(const QString &groupId) { activatedGroups.push_back(groupId); }
-    Q_INVOKABLE QString removeRoomFromGroup(const QString &groupId, const QString &roomId)
-    {
-        removedMembers.push_back(groupId + QStringLiteral(":") + roomId);
-        return {};
-    }
-    Q_INVOKABLE QString moveRoomInGroup(const QString &groupId,
-                                        const QString &roomId,
-                                        int delta)
-    {
-        movedMembers.push_back(groupId + QStringLiteral(":") + roomId + QStringLiteral(":")
-                             + QString::number(delta));
-        return {};
-    }
-
-    QStringList activatedGroups;
-    QStringList removedMembers;
-    QStringList movedMembers;
-};
-
 class FakeSearchController final : public QObject {
     Q_OBJECT
     Q_PROPERTY(QVariantList searchResults READ searchResults CONSTANT)
@@ -165,6 +141,26 @@ public:
     QStringList detachedRooms;
 };
 
+class FakePresetController final : public QObject {
+    Q_OBJECT
+
+public:
+    Q_INVOKABLE QString saveWorkspacePreset(const QString &) { return {}; }
+    Q_INVOKABLE QString applyWorkspacePreset(const QString &presetId)
+    {
+        appliedPresetId = presetId;
+        return {};
+    }
+    Q_INVOKABLE QString deleteWorkspacePreset(const QString &presetId)
+    {
+        deletedPresetId = presetId;
+        return {};
+    }
+
+    QString appliedPresetId;
+    QString deletedPresetId;
+};
+
 void registerQmlTypes()
 {
     static const int registered = qmlRegisterType<MpvQuickItem>("DouyuNative", 1, 0, "MpvQuickItem");
@@ -251,8 +247,7 @@ private slots:
     void closesToastFromQml();
     void autoDismissesToastBySeverity();
     void usesFramelessWindowWithTitleBarInteractions();
-    void rendersAndActivatesGroupTabs();
-    void exposesGroupMemberManagementControls();
+    void doesNotExposeGroupManagementControls();
     void rendersAndAddsSearchCandidate();
     void exposesOnlyAutomaticAndPrimaryLayoutOptions();
     void laysOutFiveAutomaticRoomsInThreeAndTwoRows();
@@ -262,13 +257,16 @@ private slots:
     void groupsSoundControlsAndExposesFullscreen();
     void positionsSoundPopoverLikeDanmakuPanel();
     void truncatesLongRoomTitleBeforeActions();
+    void keepsSidebarMetadataClearOfActionsForLongTitles();
     void exposesRoomVolumeAndRefreshControls();
     void defersRoomRemovalUntilAfterQmlHandlerReturns();
     void rebindsPlayerWhenRoomIdentityChanges();
     void rendersFallbackMetadataAndUnknownStatus();
     void exposesRoomOrderingControls();
     void disablesOrderingAtListBoundaries();
-    void exposesRoomDragAndDropSurface();
+    void doesNotExposeRoomDragAndDropSurface();
+    void deletesWorkspacePresetFromPanel();
+    void defersWorkspacePresetApplyUntilPopupHandlerReturns();
     void refreshesRoomSidebarAfterPresetLikeModelUpdate();
 };
 
@@ -515,7 +513,7 @@ void QmlInteractionTest::usesFramelessWindowWithTitleBarInteractions()
     QVERIFY(window->findChild<QObject *>(QStringLiteral("titleBarDragArea")) != nullptr);
 }
 
-void QmlInteractionTest::rendersAndActivatesGroupTabs()
+void QmlInteractionTest::doesNotExposeGroupManagementControls()
 {
     registerQmlTypes();
     WorkspaceModel workspace(nullptr);
@@ -524,70 +522,19 @@ void QmlInteractionTest::rendersAndActivatesGroupTabs()
          {QStringLiteral("group-b"), QStringLiteral("关注"), {QStringLiteral("63137")} }},
         {},
         QStringLiteral("group-a"));
-    FakeGroupController controller;
     QQmlApplicationEngine engine;
     QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qml/components/RoomSidebar.qml")));
     QVERIFY2(component.isReady(), qPrintable(component.errorString()));
     std::unique_ptr<QObject> sidebar(component.createWithInitialProperties({
-        {QStringLiteral("controller"), QVariant::fromValue(static_cast<QObject *>(&controller))},
         {QStringLiteral("workspaceModel"),
          QVariant::fromValue(static_cast<QObject *>(&workspace))},
         {QStringLiteral("roomModel"), QVariantList{}},
     }));
     QVERIFY2(sidebar != nullptr, qPrintable(component.errorString()));
 
-    QObject *tabs = sidebar->findChild<QObject *>(QStringLiteral("groupTabs"));
-    QVERIFY(tabs != nullptr);
-    QObject *repeater = sidebar->findChild<QObject *>(QStringLiteral("groupTabRepeater"));
-    QVERIFY(repeater != nullptr);
-    QCOMPARE(repeater->property("count").toInt(), 2);
-    QQuickItem *firstGroupTabItem = nullptr;
-    QVERIFY(QMetaObject::invokeMethod(repeater,
-                                      "itemAt",
-                                      Q_RETURN_ARG(QQuickItem *, firstGroupTabItem),
-                                      Q_ARG(int, 0)));
-    QObject *firstGroupTab = firstGroupTabItem;
-    QVERIFY(firstGroupTab != nullptr);
-    QVERIFY(QMetaObject::invokeMethod(firstGroupTab, "clicked"));
-    QCOMPARE(controller.activatedGroups, QStringList({QStringLiteral("group-a")}));
-}
-
-void QmlInteractionTest::exposesGroupMemberManagementControls()
-{
-    registerQmlTypes();
-    WorkspaceModel workspace(nullptr);
-    workspace.setWorkspaceData(
-        {{QStringLiteral("group-a"), QStringLiteral("赛事"),
-          {QStringLiteral("63136"), QStringLiteral("63137")} }},
-        {},
-        {});
-    FakeGroupController controller;
-    QQmlApplicationEngine engine;
-    QQmlComponent component(&engine,
-                            QUrl(QStringLiteral("qrc:/qml/dialogs/GroupManagerDialog.qml")));
-    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
-    std::unique_ptr<QObject> dialog(component.createWithInitialProperties({
-        {QStringLiteral("controller"), QVariant::fromValue(static_cast<QObject *>(&controller))},
-        {QStringLiteral("workspaceModel"),
-         QVariant::fromValue(static_cast<QObject *>(&workspace))},
-        {QStringLiteral("selectedGroupId"), QStringLiteral("group-a")},
-    }));
-    QVERIFY2(dialog != nullptr, qPrintable(component.errorString()));
-
-    QObject *memberList = dialog->findChild<QObject *>(QStringLiteral("groupMemberList"));
-    QVERIFY(memberList != nullptr);
-    QCOMPARE(memberList->property("count").toInt(), 2);
-    QQuickItem *firstMemberRowItem = nullptr;
-    QVERIFY(QMetaObject::invokeMethod(memberList,
-                                      "itemAt",
-                                      Q_RETURN_ARG(QQuickItem *, firstMemberRowItem),
-                                      Q_ARG(double, 1.0),
-                                      Q_ARG(double, 1.0)));
-    QObject *firstMemberRow = firstMemberRowItem;
-    QVERIFY(firstMemberRow != nullptr);
-    QVERIFY(firstMemberRow->findChild<QObject *>(QStringLiteral("removeGroupMemberButton")) != nullptr);
-    QVERIFY(firstMemberRow->findChild<QObject *>(QStringLiteral("moveGroupMemberUpButton")) != nullptr);
-    QVERIFY(firstMemberRow->findChild<QObject *>(QStringLiteral("moveGroupMemberDownButton")) != nullptr);
+    QVERIFY(sidebar->findChild<QObject *>(QStringLiteral("groupTabs")) == nullptr);
+    QVERIFY(sidebar->findChild<QObject *>(QStringLiteral("groupOverflowButton")) == nullptr);
+    QVERIFY(sidebar->findChild<QObject *>(QStringLiteral("groupManagementButton")) == nullptr);
 }
 
 void QmlInteractionTest::rendersAndAddsSearchCandidate()
@@ -847,6 +794,57 @@ void QmlInteractionTest::truncatesLongRoomTitleBeforeActions()
     QVERIFY(title->property("width").toDouble() < tile->property("width").toDouble());
 }
 
+void QmlInteractionTest::keepsSidebarMetadataClearOfActionsForLongTitles()
+{
+    registerQmlTypes();
+    WorkspaceModel workspace(nullptr);
+    RoomListModel roomModel;
+    RoomSnapshot snapshot;
+    snapshot.roomId = QStringLiteral("63136");
+    snapshot.metadata.roomId = snapshot.roomId;
+    snapshot.metadata.anchorName = QStringLiteral("主播");
+    snapshot.metadata.title = QString(180, QLatin1Char('长'));
+    snapshot.liveStatus = RoomLiveStatus::Online;
+    roomModel.applySnapshots({snapshot});
+
+    FakeRoomController controller;
+    QQmlApplicationEngine engine;
+    QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qml/components/RoomSidebar.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    QQuickWindow hostWindow;
+    hostWindow.resize(QSize(360, 640));
+    hostWindow.show();
+    std::unique_ptr<QObject> sidebar(component.createWithInitialProperties({
+        {QStringLiteral("parent"), QVariant::fromValue(hostWindow.contentItem())},
+        {QStringLiteral("width"), 360},
+        {QStringLiteral("height"), 640},
+        {QStringLiteral("controller"), QVariant::fromValue(static_cast<QObject *>(&controller))},
+        {QStringLiteral("workspaceModel"), QVariant::fromValue(static_cast<QObject *>(&workspace))},
+        {QStringLiteral("roomModel"), QVariant::fromValue(static_cast<QObject *>(&roomModel))},
+    }));
+    QVERIFY2(sidebar != nullptr, qPrintable(component.errorString()));
+
+    QObject *list = sidebar->findChild<QObject *>(QStringLiteral("roomList"));
+    QVERIFY(list != nullptr);
+    QTRY_COMPARE(list->property("count").toInt(), 1);
+    QQuickItem *row = nullptr;
+    QVERIFY(QMetaObject::invokeMethod(list, "itemAtIndex",
+                                      Q_RETURN_ARG(QQuickItem *, row), Q_ARG(int, 0)));
+    QVERIFY(row != nullptr);
+
+    QQuickItem *title = nullptr;
+    for (QObject *candidate : row->findChildren<QObject *>()) {
+        if (candidate->property("text").toString() == snapshot.metadata.title) {
+            title = qobject_cast<QQuickItem *>(candidate);
+            break;
+        }
+    }
+    QVERIFY(title != nullptr);
+    auto *actionBar = qobject_cast<QQuickItem *>(row->findChild<QObject *>(QStringLiteral("moveRoomUpButton"))->parent());
+    QVERIFY(actionBar != nullptr);
+    QVERIFY(title->mapToItem(row, QPointF(title->width(), 0)).x() <= actionBar->x());
+}
+
 void QmlInteractionTest::exposesRoomVolumeAndRefreshControls()
 {
     registerQmlTypes();
@@ -1062,7 +1060,7 @@ void QmlInteractionTest::disablesOrderingAtListBoundaries()
     QVERIFY(!lastDown->property("enabled").toBool());
 }
 
-void QmlInteractionTest::exposesRoomDragAndDropSurface()
+void QmlInteractionTest::doesNotExposeRoomDragAndDropSurface()
 {
     registerQmlTypes();
     WorkspaceModel workspace(nullptr);
@@ -1096,8 +1094,83 @@ void QmlInteractionTest::exposesRoomDragAndDropSurface()
     QVERIFY(QMetaObject::invokeMethod(list, "itemAtIndex",
                                       Q_RETURN_ARG(QQuickItem *, row), Q_ARG(int, 0)));
     QVERIFY(row != nullptr);
-    QVERIFY(row->findChild<QObject *>(QStringLiteral("roomDragHandle")) != nullptr);
-    QVERIFY(row->findChild<QObject *>(QStringLiteral("roomDropArea")) != nullptr);
+    QVERIFY(row->findChild<QObject *>(QStringLiteral("roomDragHandle")) == nullptr);
+    QVERIFY(row->findChild<QObject *>(QStringLiteral("roomDropArea")) == nullptr);
+}
+
+void QmlInteractionTest::deletesWorkspacePresetFromPanel()
+{
+    registerQmlTypes();
+    WorkspaceModel workspace(nullptr);
+    NativeWorkspacePreset preset;
+    preset.id = QStringLiteral("preset-1");
+    preset.name = QStringLiteral("默认布局");
+    workspace.setWorkspaceData({}, {preset}, {});
+    FakePresetController controller;
+    QQmlApplicationEngine engine;
+    QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qml/panels/WorkspacePresetsPanel.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    QQuickWindow hostWindow;
+    hostWindow.resize(QSize(480, 480));
+    hostWindow.show();
+    std::unique_ptr<QObject> panel(component.createWithInitialProperties({
+        {QStringLiteral("parent"), QVariant::fromValue(hostWindow.contentItem())},
+        {QStringLiteral("controller"), QVariant::fromValue(static_cast<QObject *>(&controller))},
+        {QStringLiteral("workspaceModel"), QVariant::fromValue(static_cast<QObject *>(&workspace))},
+    }));
+    QVERIFY2(panel != nullptr, qPrintable(component.errorString()));
+    QVERIFY(QMetaObject::invokeMethod(panel.get(), "open"));
+    QTRY_VERIFY(panel->property("visible").toBool());
+    QObject *presetList = panel->findChild<QObject *>(QStringLiteral("workspacePresetList"));
+    QVERIFY(presetList != nullptr);
+    QTRY_COMPARE(presetList->property("count").toInt(), 1);
+    QQuickItem *presetRow = nullptr;
+    QVERIFY(QMetaObject::invokeMethod(presetList,
+                                      "itemAtIndex",
+                                      Q_RETURN_ARG(QQuickItem *, presetRow),
+                                      Q_ARG(int, 0)));
+    QVERIFY(presetRow != nullptr);
+    QObject *deleteButton = presetRow->findChild<QObject *>(QStringLiteral("deleteWorkspacePresetButton"));
+    QVERIFY(deleteButton != nullptr);
+    QVERIFY(QMetaObject::invokeMethod(deleteButton, "clicked"));
+    QCOMPARE(controller.deletedPresetId, QStringLiteral("preset-1"));
+}
+
+void QmlInteractionTest::defersWorkspacePresetApplyUntilPopupHandlerReturns()
+{
+    registerQmlTypes();
+    WorkspaceModel workspace(nullptr);
+    NativeWorkspacePreset preset;
+    preset.id = QStringLiteral("preset-1");
+    preset.name = QStringLiteral("默认布局");
+    workspace.setWorkspaceData({}, {preset}, {});
+    FakePresetController controller;
+    QQmlApplicationEngine engine;
+    QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qml/panels/WorkspacePresetsPanel.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    QQuickWindow hostWindow;
+    hostWindow.resize(QSize(480, 480));
+    hostWindow.show();
+    std::unique_ptr<QObject> panel(component.createWithInitialProperties({
+        {QStringLiteral("parent"), QVariant::fromValue(hostWindow.contentItem())},
+        {QStringLiteral("controller"), QVariant::fromValue(static_cast<QObject *>(&controller))},
+        {QStringLiteral("workspaceModel"), QVariant::fromValue(static_cast<QObject *>(&workspace))},
+    }));
+    QVERIFY2(panel != nullptr, qPrintable(component.errorString()));
+    QVERIFY(QMetaObject::invokeMethod(panel.get(), "open"));
+    QTRY_VERIFY(panel->property("visible").toBool());
+    QObject *presetList = panel->findChild<QObject *>(QStringLiteral("workspacePresetList"));
+    QVERIFY(presetList != nullptr);
+    QTRY_COMPARE(presetList->property("count").toInt(), 1);
+    QQuickItem *presetRow = nullptr;
+    QVERIFY(QMetaObject::invokeMethod(presetList, "itemAtIndex",
+                                      Q_RETURN_ARG(QQuickItem *, presetRow), Q_ARG(int, 0)));
+    QVERIFY(presetRow != nullptr);
+    QObject *applyButton = presetRow->findChild<QObject *>(QStringLiteral("applyWorkspacePresetButton"));
+    QVERIFY(applyButton != nullptr);
+    QVERIFY(QMetaObject::invokeMethod(applyButton, "clicked"));
+    QCOMPARE(controller.appliedPresetId, QString());
+    QTRY_COMPARE(controller.appliedPresetId, QStringLiteral("preset-1"));
 }
 
 

@@ -58,6 +58,7 @@ public:
 #endif
 
 signals:
+    void renderContextReady();
     void playbackFailed();
 
 protected:
@@ -71,6 +72,7 @@ private:
     static void onMpvWakeup(void *ctx);
     static void onMpvUpdate(void *ctx);
     void requestFrame();
+    void notifyRenderContextReady();
     void pollMpvEvents();
     void handleMpvEvent(const mpv_event *event);
     quint64 beginLoadRequest();

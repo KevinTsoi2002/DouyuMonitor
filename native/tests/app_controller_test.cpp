@@ -102,6 +102,7 @@ private slots:
     void ordersFavoritesByManualOrderAndMovesThem();
     void appliesWorkspacePresetToAllRoomsRepeatedly();
     void restoresPresetRoomsMissingFromLibrary();
+    void deletesWorkspacePresetAndPersistsRemoval();
     void defersRequestedRoomRemovalUntilEventLoop();
 };
 
@@ -375,6 +376,29 @@ void AppControllerTest::restoresPresetRoomsMissingFromLibrary()
     QCOMPARE(controller.workspace()->primaryRoomId(), QStringLiteral("63137"));
     QCOMPARE(controller.rooms()->data(controller.rooms()->index(0, 0), RoomListModel::RoomIdRole).toString(),
              QStringLiteral("63137"));
+}
+
+void AppControllerTest::deletesWorkspacePresetAndPersistsRemoval()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString settingsPath = directory.filePath(QStringLiteral("workspace.ini"));
+    FakeNotificationSink sink;
+
+    {
+        QSettings settings(settingsPath, QSettings::IniFormat);
+        AppController controller(fakeServicePath(), &settings, &sink);
+        QCOMPARE(controller.addRoom(QStringLiteral("63136")), QString());
+        const QString presetId = controller.saveWorkspacePreset(QStringLiteral("可删除"));
+        QVERIFY(!presetId.isEmpty());
+        QCOMPARE(controller.deleteWorkspacePreset(presetId), QString());
+        QVERIFY(controller.workspace()->presets().isEmpty());
+        QCOMPARE(controller.deleteWorkspacePreset(presetId), QStringLiteral("未找到该房间"));
+    }
+
+    QSettings restoredSettings(settingsPath, QSettings::IniFormat);
+    AppController restored(fakeServicePath(), &restoredSettings, &sink);
+    QVERIFY(restored.workspace()->presets().isEmpty());
 }
 
 void AppControllerTest::persistsNotificationPreferenceAndUpdatesMonitoringState()

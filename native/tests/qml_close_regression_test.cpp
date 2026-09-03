@@ -84,6 +84,7 @@ class QmlCloseRegressionTest final : public QObject {
 private slots:
     void closesNineAttachedPlayersWithoutLingeringCallbacks();
     void removesAttachedPlayersWhileWindowRemainsOpen();
+    void appliesPresetAndRefreshesAllRoomDelegates();
 };
 
 void QmlCloseRegressionTest::closesNineAttachedPlayersWithoutLingeringCallbacks()
@@ -161,6 +162,50 @@ void QmlCloseRegressionTest::removesAttachedPlayersWhileWindowRemainsOpen()
     QTRY_COMPARE_WITH_TIMEOUT(controller.rooms()->rowCount(), 0, 5000);
     QTRY_COMPARE_WITH_TIMEOUT(controller.attachedPlayerCountForTest(), 0, 5000);
     QVERIFY(window->isVisible());
+
+    window->close();
+    engine.reset();
+    QTest::qWait(250);
+    QVERIFY(!controller.serviceProcessRunningForTest());
+}
+
+void QmlCloseRegressionTest::appliesPresetAndRefreshesAllRoomDelegates()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSettings settings(directory.filePath(QStringLiteral("workspace.ini")), QSettings::IniFormat);
+    settings.setValue(
+        QStringLiteral("DouyuMonitor/nativeWorkspaceV1"),
+        QByteArray(R"JSON({"version":3,"library":[{"roomId":"63136","metadata":{"roomId":"63136","anchorName":"主播 1"},"requestedQuality":"auto","favorite":false,"lastOpenedAtMs":0,"volume":100,"danmakuEnabled":true}],"groups":[],"activeRoomIds":["63136"],"activeGroupId":"","primaryRoomId":"63136","audioRoomId":"","presets":[{"id":"p1","name":"五路","layoutId":"auto","activeGroupId":"","primaryRoomId":"63136","audioRoomId":"","roomIds":["63136","63137","63138","63139","63140"],"sidebarVisible":true,"primaryRoomRatio":0.6,"audioMode":"single","globalMuted":false,"danmaku":{"globalEnabled":false}}]})JSON"));
+    AppController controller(fakeServicePath(), &settings);
+    QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
+    auto engine = std::make_unique<QQmlApplicationEngine>();
+
+    registerQmlTypes();
+    engine->setInitialProperties({
+        {QStringLiteral("appController"), QVariant::fromValue(static_cast<QObject *>(&controller))},
+    });
+    engine->load(QUrl(QStringLiteral("qrc:/qml/Main.qml")));
+    QVERIFY(!engine->rootObjects().isEmpty());
+    auto *window = qobject_cast<QQuickWindow *>(engine->rootObjects().constFirst());
+    QVERIFY(window != nullptr);
+    window->resize(QSize(1280, 720));
+    window->show();
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+
+    QTRY_COMPARE_WITH_TIMEOUT(controller.rooms()->rowCount(), 1, 5000);
+    QObject *grid = window->findChild<QObject *>(QStringLiteral("workspaceGrid"));
+    QObject *sidebar = window->findChild<QObject *>(QStringLiteral("roomSidebar"));
+    QVERIFY(grid != nullptr);
+    QVERIFY(sidebar != nullptr);
+    QTRY_COMPARE_WITH_TIMEOUT(grid->property("roomCount").toInt(), 1, 5000);
+
+    QCOMPARE(controller.applyWorkspacePreset(QStringLiteral("p1")), QString());
+    QTRY_COMPARE_WITH_TIMEOUT(controller.rooms()->rowCount(), 5, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(grid->property("roomCount").toInt(), 5, 5000);
+    QObject *roomList = sidebar->findChild<QObject *>(QStringLiteral("roomList"));
+    QVERIFY(roomList != nullptr);
+    QTRY_COMPARE_WITH_TIMEOUT(roomList->property("count").toInt(), 5, 5000);
 
     window->close();
     engine.reset();

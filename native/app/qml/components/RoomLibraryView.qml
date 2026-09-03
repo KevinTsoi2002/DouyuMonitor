@@ -8,8 +8,6 @@ Item {
     property var libraryRooms: []
     property bool favoritesOnly: false
     property var visibleRooms: []
-    property string draggedRoomId: ""
-    property int dropInsertionIndex: -1
     property color accentColor: "#ff7a18"
     property color surfaceColor: "#1f242c"
     property color borderColor: "#343b45"
@@ -28,12 +26,6 @@ Item {
             if (!root.favoritesOnly || source[index].favorite) result.push(source[index])
         }
         root.visibleRooms = result
-    }
-
-    function resetDrag(row) {
-        if (row) { row.x = 0; row.y = 0 }
-        root.draggedRoomId = ""
-        root.dropInsertionIndex = -1
     }
 
     onLibraryRoomsChanged: rebuildVisibleRooms()
@@ -59,29 +51,6 @@ Item {
             readonly property var entry: modelData
             width: historyList.width - historyList.leftMargin - historyList.rightMargin
             height: 60
-            Drag.active: root.favoritesOnly && libraryDragHandle.drag.active
-            Drag.source: roomRow
-            Drag.hotSpot.x: width / 2
-            Drag.hotSpot.y: height / 2
-
-            Item {
-                id: libraryDragProxy
-                objectName: "libraryDragProxy"
-                width: roomRow.width
-                height: roomRow.height
-                visible: false
-            }
-
-            Rectangle {
-                objectName: "libraryDropInsertionIndicator"
-                x: 0
-                y: -2
-                width: parent.width
-                height: 2
-                color: root.accentColor
-                visible: root.favoritesOnly && root.draggedRoomId.length > 0
-                         && root.dropInsertionIndex === index
-            }
 
             Rectangle {
                 anchors.fill: parent
@@ -165,40 +134,6 @@ Item {
                 background: Rectangle {
                     radius: 3
                     color: parent.hovered && parent.enabled ? "#2a211c" : "transparent"
-                }
-            }
-
-            MouseArea {
-                id: libraryDragHandle
-                objectName: "libraryDragHandle"
-                anchors.left: parent.left
-                anchors.top: parent.top
-                anchors.bottom: parent.bottom
-                width: 22
-                enabled: root.favoritesOnly
-                cursorShape: Qt.OpenHandCursor
-                drag.target: libraryDragProxy
-                drag.axis: Drag.YAxis
-                onPressed: {
-                    root.draggedRoomId = entry.roomId
-                }
-                onReleased: {
-                    root.resetDrag(libraryDragProxy)
-                }
-            }
-
-            DropArea {
-                id: libraryDropArea
-                objectName: "libraryDropArea"
-                anchors.fill: parent
-                enabled: root.favoritesOnly
-                onEntered: if (drag.source && drag.source !== roomRow) root.dropInsertionIndex = index
-                onExited: if (root.dropInsertionIndex === index) root.dropInsertionIndex = -1
-                onDropped: function(drop) {
-                    const source = drop.source
-                    if (!source || source === roomRow || !root.controller) { root.resetDrag(roomRow); return }
-                    root.controller.moveFavoriteRoom(source.entry.roomId, index)
-                    root.resetDrag(source)
                 }
             }
 

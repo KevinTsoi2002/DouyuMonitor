@@ -222,7 +222,6 @@ ApplicationWindow {
         textColor: root.textColor
         mutedTextColor: root.mutedTextColor
         onAddRoomRequested: root.openAddRoom()
-        onGroupManagementRequested: groupManagerDialog.open()
     }
 
     WorkspaceGrid {
@@ -274,20 +273,11 @@ ApplicationWindow {
         id: workspacePresetsPanel
         controller: root.appController
         workspaceModel: root.workspaceModel
-        onGroupManagementRequested: groupManagerDialog.open()
     }
 
     AddRoomDialog {
         id: addRoomDialog
         controller: root.appController
-    }
-
-    GroupManagerDialog {
-        id: groupManagerDialog
-        controller: root.appController
-        workspaceModel: root.workspaceModel
-        roomModel: root.roomModel
-        libraryRooms: root.libraryRooms
     }
 
     NotificationSettingsDialog {

@@ -87,6 +87,7 @@ public:
     Q_INVOKABLE bool setSidebarVisible(bool visible);
     Q_INVOKABLE QString saveWorkspacePreset(const QString &name);
     Q_INVOKABLE QString applyWorkspacePreset(const QString &presetId);
+    Q_INVOKABLE QString deleteWorkspacePreset(const QString &presetId);
     Q_INVOKABLE QString setNotificationsEnabled(bool enabled);
     Q_INVOKABLE QString setNotificationPreferences(bool enabled,
                                                    bool roomOnline,

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(DouyuMonitorNative VERSION 0.2.1 LANGUAGES CXX)
+project(DouyuMonitorNative VERSION 0.2.2 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -82,7 +82,6 @@ qt_add_qml_module(douyu_qml
         app/qml/panels/MonitoringStatusPanel.qml
         app/qml/panels/WorkspacePresetsPanel.qml
         app/qml/dialogs/AddRoomDialog.qml
-        app/qml/dialogs/GroupManagerDialog.qml
         app/qml/dialogs/NotificationSettingsDialog.qml
     RESOURCES
         ${DOUYU_QML_ICON_ASSETS}
@@ -128,7 +127,6 @@ qt_add_resources(qml_engine_smoke_test qml_engine_test_resources
         app/qml/panels/MonitoringStatusPanel.qml
         app/qml/panels/WorkspacePresetsPanel.qml
         app/qml/dialogs/AddRoomDialog.qml
-        app/qml/dialogs/GroupManagerDialog.qml
         app/qml/dialogs/NotificationSettingsDialog.qml
         ${DOUYU_QML_ICON_ASSETS}
 )
@@ -184,7 +182,6 @@ qt_add_resources(qml_visual_smoke_test qml_visual_smoke_test_resources
         app/qml/panels/MonitoringStatusPanel.qml
         app/qml/panels/WorkspacePresetsPanel.qml
         app/qml/dialogs/AddRoomDialog.qml
-        app/qml/dialogs/GroupManagerDialog.qml
         app/qml/dialogs/NotificationSettingsDialog.qml
         ${DOUYU_QML_ICON_ASSETS}
 )
@@ -238,7 +235,6 @@ qt_add_resources(qml_interaction_test qml_interaction_test_resources
         app/qml/panels/MonitoringStatusPanel.qml
         app/qml/panels/WorkspacePresetsPanel.qml
         app/qml/dialogs/AddRoomDialog.qml
-        app/qml/dialogs/GroupManagerDialog.qml
         app/qml/dialogs/NotificationSettingsDialog.qml
         ${DOUYU_QML_ICON_ASSETS}
 )
@@ -310,7 +306,6 @@ qt_add_resources(qml_close_regression_test qml_close_regression_test_resources
         app/qml/panels/MonitoringStatusPanel.qml
         app/qml/panels/WorkspacePresetsPanel.qml
         app/qml/dialogs/AddRoomDialog.qml
-        app/qml/dialogs/GroupManagerDialog.qml
         app/qml/dialogs/NotificationSettingsDialog.qml
         ${DOUYU_QML_ICON_ASSETS}
 )

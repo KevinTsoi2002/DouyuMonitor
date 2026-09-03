@@ -92,6 +92,14 @@ struct MpvQuickItem::MpvRenderState : std::enable_shared_from_this<MpvRenderStat
         QMetaObject::invokeMethod(item_, &MpvQuickItem::pollMpvEvents, Qt::QueuedConnection);
     }
 
+    void notifyRenderContextReady()
+    {
+        QMutexLocker locker(&itemMutex_);
+        if (!acceptUpdates.load() || item_ == nullptr) return;
+        QMetaObject::invokeMethod(item_, &MpvQuickItem::notifyRenderContextReady,
+                                  Qt::QueuedConnection);
+    }
+
     void releaseRenderContextOnRenderThread()
     {
         mpv_render_context *context = renderContext.exchange(nullptr);
@@ -242,6 +250,7 @@ private:
         mpv_render_context_set_update_callback(context, &MpvQuickItem::onMpvUpdate,
                                                state_.get());
         state_->renderContextReady.store(true);
+        state_->notifyRenderContextReady();
     }
 
     std::shared_ptr<MpvRenderState> state_;
@@ -572,6 +581,11 @@ void MpvQuickItem::requestFrame()
     if (renderState_ == nullptr) return;
     renderState_->frameUpdateQueued.store(false);
     if (renderState_->acceptUpdates.load()) update();
+}
+
+void MpvQuickItem::notifyRenderContextReady()
+{
+    if (isRenderContextReady()) emit renderContextReady();
 }
 
 void MpvQuickItem::pollMpvEvents()

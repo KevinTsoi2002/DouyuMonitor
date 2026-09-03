@@ -700,6 +700,20 @@ QString AppController::applyWorkspacePreset(const QString &presetId)
     return {};
 }
 
+QString AppController::deleteWorkspacePreset(const QString &presetId)
+{
+    const auto it = std::find_if(snapshot_.presets.begin(), snapshot_.presets.end(),
+                                 [&presetId](const NativeWorkspacePreset &preset) {
+                                     return preset.id == presetId;
+                                 });
+    if (it == snapshot_.presets.end()) return commandMessage(RoomCommandResult::RoomNotFound);
+
+    snapshot_.presets.erase(it);
+    refreshPresentation();
+    persistWorkspace();
+    return {};
+}
+
 QString AppController::setNotificationsEnabled(bool enabled)
 {
     NotificationPreferences preferences = notificationService_->preferences();

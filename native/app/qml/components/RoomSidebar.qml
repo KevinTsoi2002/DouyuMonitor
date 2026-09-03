@@ -14,10 +14,7 @@ Rectangle {
     property color textColor: "#f4f6f8"
     property color mutedTextColor: "#9ba5b1"
     property string viewMode: "current"
-    property string draggedRoomId: ""
-    property int dropInsertionIndex: -1
     signal addRoomRequested()
-    signal groupManagementRequested()
 
     color: surfaceColor
     border.color: borderColor
@@ -37,24 +34,6 @@ Rectangle {
         const requestedRoomId = String(roomId || "")
         if (!controller || requestedRoomId.length === 0) return
         controller.requestRemoveRoom(requestedRoomId)
-    }
-
-    function resetRoomDrag(row) {
-        if (row) {
-            row.x = 0
-            row.y = 0
-        }
-        draggedRoomId = ""
-        dropInsertionIndex = -1
-    }
-
-    function groupSubset(start, limit) {
-        const groups = root.workspaceModel ? root.workspaceModel.groups : []
-        const result = []
-        for (let index = start; index < groups.length && result.length < limit; ++index) {
-            result.push(groups[index])
-        }
-        return result
     }
 
     Column {
@@ -119,89 +98,6 @@ Rectangle {
                 onClicked: root.submitRoom()
                 contentItem: Image { anchors.centerIn: parent; width: 16; height: 16; source: Qt.resolvedUrl("../assets/icons/plus.svg"); opacity: parent.enabled ? 1 : 0.35 }
                 background: Rectangle { radius: 4; color: parent.hovered && parent.enabled ? "#2a211c" : "#171d25"; border.color: root.borderColor }
-            }
-        }
-
-        Row {
-            x: 10
-            width: parent.width - 20
-            height: 30
-            spacing: 4
-
-            Row {
-                id: groupTabs
-                objectName: "groupTabs"
-                width: parent.width
-                height: 30
-                spacing: 4
-
-                Repeater {
-                    id: groupTabRepeater
-                    objectName: "groupTabRepeater"
-                    model: root.groupSubset(0, 3)
-
-                    delegate: ToolButton {
-                        objectName: "groupTab"
-                        width: Math.max(52, Math.min(88, implicitWidth + 18))
-                        height: 27
-                        checkable: true
-                        checked: root.viewMode === "current" && modelData.active
-                        Accessible.name: modelData.name
-                        ToolTip.visible: hovered
-                        ToolTip.text: modelData.name
-                        onClicked: {
-                            root.viewMode = "current"
-                            if (root.controller) root.controller.setActiveGroup(modelData.id)
-                        }
-                        contentItem: Text {
-                            text: modelData.name
-                            color: parent.checked ? "#ff9b5a" : root.mutedTextColor
-                            elide: Text.ElideRight
-                            horizontalAlignment: Text.AlignHCenter
-                            verticalAlignment: Text.AlignVCenter
-                            font.pixelSize: 10
-                        }
-                        background: Rectangle {
-                            radius: 4
-                            color: parent.checked ? "#241b17" : "transparent"
-                            border.color: parent.checked ? "#6e432d" : "transparent"
-                        }
-                    }
-                }
-
-                ToolButton {
-                    id: groupOverflowButton
-                    objectName: "groupOverflowButton"
-                    visible: root.workspaceModel && root.workspaceModel.groups.length > 3
-                    width: 30
-                    height: 27
-                    Accessible.name: "更多分组"
-                    ToolTip.visible: hovered
-                    ToolTip.text: Accessible.name
-                    onClicked: groupOverflowMenu.open()
-                    contentItem: Text {
-                        text: "..."
-                        color: root.mutedTextColor
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                        font.pixelSize: 14
-                    }
-                    background: Rectangle { radius: 4; color: parent.hovered ? "#252c34" : "transparent" }
-                }
-
-                Menu {
-                    id: groupOverflowMenu
-                    Repeater {
-                        model: root.groupSubset(3, 99)
-                        delegate: MenuItem {
-                            text: modelData.name
-                            onTriggered: {
-                                root.viewMode = "current"
-                                if (root.controller) root.controller.setActiveGroup(modelData.id)
-                            }
-                        }
-                    }
-                }
             }
         }
 
@@ -284,30 +180,6 @@ Rectangle {
                     required property bool audioFocused
                     width: roomList.width - roomList.leftMargin - roomList.rightMargin
                     height: 60
-                    Drag.active: roomDragHandle.drag.active
-                    Drag.source: roomRow
-                    Drag.hotSpot.x: width / 2
-                    Drag.hotSpot.y: height / 2
-                    property bool dragTargetIsDelegate: roomDragHandle.drag.target === roomRow
-
-                    Item {
-                        id: roomDragProxy
-                        objectName: "roomDragProxy"
-                        width: roomRow.width
-                        height: roomRow.height
-                        visible: false
-                    }
-
-                    Rectangle {
-                        objectName: "roomDropInsertionIndicator"
-                        x: 0
-                        y: -2
-                        width: parent.width
-                        height: 2
-                        color: root.accentColor
-                        visible: root.draggedRoomId.length > 0
-                                 && root.dropInsertionIndex === roomRow.index
-                    }
 
                     Rectangle {
                         anchors.fill: parent
@@ -347,9 +219,11 @@ Rectangle {
                 }
 
                     Column {
-                    x: avatar.x + avatar.width + 7
+                    anchors.left: avatar.right
+                    anchors.leftMargin: 7
+                    anchors.right: roomActionBar.left
+                    anchors.rightMargin: 6
                     y: 9
-                    width: parent.width - x - 82
                     spacing: 3
                     Text { width: parent.width; color: root.textColor; text: roomRow.anchorName.trim().length > 0 ? roomRow.anchorName : roomRow.roomId; elide: Text.ElideRight; font.bold: true; font.pixelSize: 11 }
                     Text { width: parent.width; color: root.mutedTextColor; text: roomRow.title.trim().length > 0 ? roomRow.title : "斗鱼直播间"; elide: Text.ElideRight; font.pixelSize: 9 }
@@ -357,6 +231,7 @@ Rectangle {
                 }
 
                     Row {
+                    id: roomActionBar
                     anchors.right: parent.right
                     anchors.rightMargin: 4
                     anchors.verticalCenter: parent.verticalCenter
@@ -416,41 +291,6 @@ Rectangle {
 
                     MouseArea { id: roomMouse; anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.NoButton }
 
-                    DropArea {
-                        id: roomDropArea
-                        objectName: "roomDropArea"
-                        anchors.fill: parent
-                        onDropped: function(drop) {
-                            const source = drop.source
-                            if (!source || source === roomRow || !root.controller) {
-                                root.resetRoomDrag(roomRow)
-                                return
-                            }
-                            const delta = roomRow.index - source.index
-                            if (delta !== 0) root.controller.moveRoom(source.roomId, delta)
-                            root.resetRoomDrag(source)
-                        }
-                        onEntered: if (drag.source && drag.source !== roomRow) root.dropInsertionIndex = roomRow.index
-                        onExited: if (root.dropInsertionIndex === roomRow.index) root.dropInsertionIndex = -1
-                    }
-
-                    MouseArea {
-                        id: roomDragHandle
-                        objectName: "roomDragHandle"
-                        anchors.left: parent.left
-                        anchors.top: parent.top
-                        anchors.bottom: parent.bottom
-                        width: 22
-                        cursorShape: Qt.OpenHandCursor
-                        drag.target: roomDragProxy
-                        drag.axis: Drag.YAxis
-                        onPressed: {
-                            root.draggedRoomId = roomRow.roomId
-                        }
-                        onReleased: {
-                            root.resetRoomDrag(roomDragProxy)
-                        }
-                    }
                 }
             }
 
@@ -468,17 +308,6 @@ Rectangle {
                 textColor: root.textColor
                 mutedTextColor: root.mutedTextColor
             }
-        }
-
-        ToolButton {
-            width: parent.width
-            height: 42
-            Accessible.name: "管理分组"
-            ToolTip.visible: hovered
-            ToolTip.text: Accessible.name
-            onClicked: root.groupManagementRequested()
-            contentItem: Text { text: "管理分组"; color: parent.hovered ? root.textColor : root.mutedTextColor; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.pixelSize: 10 }
-            background: Rectangle { color: root.surfaceColor; border.color: root.borderColor; border.width: 1 }
         }
     }
 }
