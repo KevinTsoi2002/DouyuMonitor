@@ -93,7 +93,7 @@ native/out/build/windows-x64-release/douyu_monitor_native.exe
 native/out/installer/DouyuMonitor-Setup.exe
 ```
 
-安装器使用 Windows 自带 IExpress。安装时可选择目标目录；完成后显示实际安装路径并启动程序，同时创建开始菜单和桌面快捷方式。`Uninstall DouyuMonitor.exe` 位于安装目录，开始菜单提供“卸载 DouyuMonitor”，并登记到 Windows 设置的“已安装的应用”。主程序、卸载程序、快捷方式和通知托盘使用统一的橙色直播监看图标。自动化验证可设置 `DOUYU_INSTALL_ROOT`，并用 `DOUYU_SKIP_SHORTCUTS=1`、`DOUYU_SKIP_LAUNCH=1` 禁用交互副作用。运行时载荷校验会拒绝测试程序、构建残留以及 Electron、Chromium、Node、Qt WebEngine 文件。
+安装器使用 Inno Setup 6。安装时可选择目标目录；选择 `D:\` 等磁盘根目录时会自动归一化到 `D:\DouyuMonitor`。安装完成后创建开始菜单和可选的桌面快捷方式，并登记到 Windows 设置的“已安装的应用”。安装目录中的 `unins000.exe` 是标准卸载入口。运行时载荷校验会拒绝测试程序、构建残留以及 Electron、Chromium、Node、Qt WebEngine 文件。
 
 安装器脚本回归检查：
 

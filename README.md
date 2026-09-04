@@ -29,7 +29,7 @@ DouyuMonitor 是基于 Qt Quick/QML、C++ 和 libmpv 的 Windows x64 斗鱼多�
 - 播放：libmpv + OpenGL
 - 斗鱼解析：独立 `streamget_service.exe` 子进程
 - 弹幕：Qt WebSockets 原生客户端
-- 安装器：Windows 自带 IExpress 自解压安装器
+- 安装器：Inno Setup 6 Windows 安装器
 - 不使用 Electron、Chromium、Node.js、Qt WebEngine 或网页播放器
 
 ## 快速开始
@@ -74,7 +74,7 @@ ctest --preset windows-x64-release
 .\scripts\build-windows-installer.ps1
 ```
 
-安装包输出到 `native/out/installer/DouyuMonitor-Setup.exe`。运行安装包时可选择安装目录；安装完成后会显示实际路径并启动程序，同时创建开始菜单和桌面快捷方式。安装目录中提供 `Uninstall DouyuMonitor.exe`，开始菜单也提供“卸载 DouyuMonitor”；Windows 设置的“已安装的应用”可通过当前用户卸载登记找到它。静默/自动化验证可使用 `DOUYU_INSTALL_ROOT`、`DOUYU_SKIP_SHORTCUTS` 和 `DOUYU_SKIP_LAUNCH` 环境变量覆盖行为。
+安装包输出到 `native/out/installer/DouyuMonitor-Setup.exe`。运行安装包时可选择安装目录；如果选择 `D:\` 这样的磁盘根目录，安装器会自动使用 `D:\DouyuMonitor`，不会把程序文件直接写入根目录。安装完成后会创建开始菜单和可选的桌面快捷方式，并可直接启动程序。卸载入口由 Inno Setup 生成的 `unins000.exe` 提供，同时登记到 Windows 设置的“已安装的应用”。
 
 ## StreamGet 服务
 
