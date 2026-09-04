@@ -6,7 +6,6 @@ $installerRoot = Join-Path $nativeRoot 'out\installer'
 $stageRoot = Join-Path $installerRoot 'stage'
 $stageDir = Join-Path $stageRoot 'DouyuMonitor'
 $installerScript = Join-Path $nativeRoot 'installer\DouyuMonitor.iss'
-$installerExe = Join-Path $installerRoot 'DouyuMonitor-Setup.exe'
 $appIconPath = Join-Path $nativeRoot 'app\assets\douyu_monitor.ico'
 $cmakeListPath = Join-Path $nativeRoot 'CMakeLists.txt'
 
@@ -66,6 +65,7 @@ cmake -DRUNTIME_DIR="$stageDir" -DRUNTIME_EXE="$stageDir\douyu_monitor_native.ex
 
 & $innoCompiler "/DSourceDir=$stageDir" "/DOutputDir=$installerRoot" "/DAppVersion=$projectVersion" $installerScript
 if ($LASTEXITCODE -ne 0) { throw "Inno Setup compilation failed with exit code $LASTEXITCODE." }
+$installerExe = Join-Path $installerRoot "DouyuMonitor-Setup-V$projectVersion.exe"
 if (-not (Test-Path $installerExe)) { throw "Inno Setup did not create $installerExe." }
 
 Write-Output $installerExe
