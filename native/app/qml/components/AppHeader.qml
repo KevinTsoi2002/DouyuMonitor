@@ -165,7 +165,7 @@ Rectangle {
         }
         ToolButton {
             objectName: "fullscreenButton"
-            property string accessibilityLabel: "fullscreen-playback"
+            property string accessibilityLabel: "全屏播放"
             Accessible.name: "全屏播放"
             ToolTip.visible: hovered
             ToolTip.text: Accessible.name

@@ -23,7 +23,7 @@ Row {
         objectName: "maximizeButton"
         width: 36
         height: 44
-        property string accessibilityLabel: "maximize-or-restore"
+        property string accessibilityLabel: "最大化或还原"
         Accessible.name: accessibilityLabel
         ToolTip.visible: hovered
         ToolTip.text: Accessible.name

@@ -748,8 +748,8 @@ void QmlInteractionTest::groupsSoundControlsAndExposesFullscreen()
     QVERIFY(maximize != nullptr);
     QVERIFY(maximizeIcon != nullptr);
     QVERIFY(fullscreenIcon != nullptr);
-    QCOMPARE(maximize->property("accessibilityLabel").toString(), QStringLiteral("maximize-or-restore"));
-    QCOMPARE(fullscreen->property("accessibilityLabel").toString(), QStringLiteral("fullscreen-playback"));
+    QCOMPARE(maximize->property("accessibilityLabel").toString(), QStringLiteral("最大化或还原"));
+    QCOMPARE(fullscreen->property("accessibilityLabel").toString(), QStringLiteral("全屏播放"));
     QVERIFY(maximizeIcon->property("source").toUrl() != fullscreenIcon->property("source").toUrl());
     QVERIFY(maximizeIcon->property("source").toUrl().toString().contains(QStringLiteral("window-maximize.svg")));
     QVERIFY(fullscreenIcon->property("source").toUrl().toString().contains(QStringLiteral("window-fullscreen.svg")));
