@@ -66,6 +66,7 @@ set(DOUYU_QML_ICON_ASSETS
 )
 
 qt_add_library(douyu_qml STATIC)
+set_source_files_properties(app/qml/Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 qt_add_qml_module(douyu_qml
     URI DouyuMonitor
     VERSION 1.0
@@ -109,9 +110,12 @@ target_link_libraries(qml_engine_smoke_test PRIVATE
     Qt6::Quick
     Qt6::OpenGL
     Qt6::Test
+    douyu_qml
+    douyu_qmlplugin
     remote_playback
     mpv::mpv
 )
+qt_import_qml_plugins(qml_engine_smoke_test)
 target_include_directories(qml_engine_smoke_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 qt_add_resources(qml_engine_smoke_test qml_engine_test_resources
     PREFIX "/qml"
@@ -163,9 +167,12 @@ target_link_libraries(qml_visual_smoke_test PRIVATE
     Qt6::Quick
     Qt6::OpenGL
     Qt6::Test
+    douyu_qml
+    douyu_qmlplugin
     remote_playback
     mpv::mpv
 )
+qt_import_qml_plugins(qml_visual_smoke_test)
 target_include_directories(qml_visual_smoke_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_compile_definitions(qml_visual_smoke_test PRIVATE
     QML_VERIFICATION_DIR="${CMAKE_CURRENT_SOURCE_DIR}/out/verification/qml"

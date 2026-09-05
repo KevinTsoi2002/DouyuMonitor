@@ -176,6 +176,7 @@ class QmlVisualSmokeTest final : public QObject {
     Q_OBJECT
 
 private slots:
+    void loadsReleasedModuleWithVisualAnchors();
     void hasReferenceGeometryAt1280x720();
     void clampsNarrowWindowToSafeMinimum();
     void hasNoTextOverlapAt1600x900();
@@ -184,6 +185,20 @@ private slots:
     void rendersDanmakuFixtureInsideRoomTile();
     void showsDanmakuSettingsPanelInsideViewport();
 };
+
+void QmlVisualSmokeTest::loadsReleasedModuleWithVisualAnchors()
+{
+    registerQmlTypes();
+    QQmlApplicationEngine engine;
+    engine.loadFromModule(QStringLiteral("DouyuMonitor"), QStringLiteral("Main"));
+
+    QVERIFY2(!engine.rootObjects().isEmpty(), "Released QML module did not create Main");
+    auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().constFirst());
+    QVERIFY(window != nullptr);
+    QVERIFY(window->findChild<QObject *>(QStringLiteral("appHeader")) != nullptr);
+    QVERIFY(window->findChild<QObject *>(QStringLiteral("roomSidebar")) != nullptr);
+    QVERIFY(window->findChild<QObject *>(QStringLiteral("workspaceGrid")) != nullptr);
+}
 
 void QmlVisualSmokeTest::hasReferenceGeometryAt1280x720()
 {
