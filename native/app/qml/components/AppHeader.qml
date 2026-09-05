@@ -31,8 +31,8 @@ Rectangle {
 
         ToolButton {
             objectName: "sidebarToggleButton"
-            width: 28
-            height: 28
+            width: Theme.controlHeight
+            height: Theme.controlHeight
             Accessible.name: root.sidebarVisible ? "收起房间列表" : "展开房间列表"
             ToolTip.visible: hovered
             ToolTip.text: Accessible.name
@@ -45,7 +45,10 @@ Rectangle {
                 source: Qt.resolvedUrl("../assets/icons/menu.svg")
                 opacity: parent.hovered ? 1 : 0.82
             }
-            background: Rectangle { radius: Theme.radiusSmall; color: parent.hovered ? Theme.controlSurface : "transparent" }
+            background: Rectangle {
+                radius: Theme.radiusSmall
+                color: parent.down ? Theme.well : (parent.hovered ? Theme.controlSurface : "transparent")
+            }
         }
 
         Rectangle {
@@ -104,47 +107,69 @@ Rectangle {
         anchors.right: windowControls.left
         anchors.rightMargin: 8
         anchors.verticalCenter: parent.verticalCenter
-        spacing: 3
+        spacing: 4
 
         ToolButton {
             objectName: "danmakuButton"
+            width: Theme.controlHeight
+            height: Theme.controlHeight
             Accessible.name: "弹幕设置"
             ToolTip.visible: hovered
             ToolTip.text: Accessible.name
             onClicked: root.openDanmaku()
             contentItem: Image { anchors.centerIn: parent; width: 16; height: 16; source: Qt.resolvedUrl("../assets/icons/message-circle.svg"); opacity: parent.hovered ? 1 : 0.82 }
-            background: Rectangle { radius: Theme.radiusSmall; color: parent.hovered ? Theme.controlSurface : "transparent" }
+            background: Rectangle {
+                radius: Theme.radiusSmall
+                color: parent.down ? Theme.well : (parent.hovered ? Theme.controlSurface : "transparent")
+            }
         }
         ToolButton {
             objectName: "monitoringButton"
+            width: Theme.controlHeight
+            height: Theme.controlHeight
             Accessible.name: "监控状态"
             ToolTip.visible: hovered
             ToolTip.text: Accessible.name
             onClicked: root.openMonitoring()
             contentItem: Image { anchors.centerIn: parent; width: 16; height: 16; source: Qt.resolvedUrl("../assets/icons/activity.svg"); opacity: parent.hovered ? 1 : 0.82 }
-            background: Rectangle { radius: Theme.radiusSmall; color: parent.hovered ? Theme.controlSurface : "transparent" }
+            background: Rectangle {
+                radius: Theme.radiusSmall
+                color: parent.down ? Theme.well : (parent.hovered ? Theme.controlSurface : "transparent")
+            }
         }
         ToolButton {
             objectName: "workspaceButton"
+            width: Theme.controlHeight
+            height: Theme.controlHeight
             Accessible.name: "工作区预设"
             ToolTip.visible: hovered
             ToolTip.text: Accessible.name
             onClicked: root.openWorkspace()
             contentItem: Image { objectName: "workspacePresetIcon"; anchors.centerIn: parent; width: 16; height: 16; source: Qt.resolvedUrl("../assets/icons/star.svg"); opacity: parent.hovered ? 1 : 0.82 }
-            background: Rectangle { radius: Theme.radiusSmall; color: parent.hovered ? Theme.controlSurface : "transparent" }
+            background: Rectangle {
+                radius: Theme.radiusSmall
+                color: parent.down ? Theme.well : (parent.hovered ? Theme.controlSurface : "transparent")
+            }
         }
         ToolButton {
             objectName: "layoutMenuButton"
+            width: Theme.controlHeight
+            height: Theme.controlHeight
             Accessible.name: "选择布局"
             ToolTip.visible: hovered
             ToolTip.text: "选择布局"
             onClicked: layoutMenu.open()
             contentItem: Image { objectName: "layoutMenuIcon"; anchors.centerIn: parent; width: 16; height: 16; source: Qt.resolvedUrl("../assets/icons/layout-grid.svg"); opacity: parent.hovered ? 1 : 0.82 }
-            background: Rectangle { radius: 4; color: parent.hovered ? "#252c34" : "transparent" }
+            background: Rectangle {
+                radius: Theme.radiusSmall
+                color: parent.down ? Theme.well : (parent.hovered ? Theme.controlSurface : "transparent")
+            }
         }
         ToolButton {
             id: soundMasterButton
             objectName: "soundMasterButton"
+            width: Theme.controlHeight
+            height: Theme.controlHeight
             Accessible.name: "声音总控"
             ToolTip.visible: hovered
             ToolTip.text: Accessible.name
@@ -160,11 +185,13 @@ Rectangle {
             }
             background: Rectangle {
                 radius: Theme.radiusSmall
-                color: parent.hovered ? Theme.controlSurface : "transparent"
+                color: parent.down ? Theme.well : (parent.hovered ? Theme.controlSurface : "transparent")
             }
         }
         ToolButton {
             objectName: "fullscreenButton"
+            width: Theme.controlHeight
+            height: Theme.controlHeight
             property string accessibilityLabel: "全屏播放"
             Accessible.name: "全屏播放"
             ToolTip.visible: hovered
@@ -183,7 +210,7 @@ Rectangle {
             }
             background: Rectangle {
                 radius: Theme.radiusSmall
-                color: parent.hovered ? Theme.controlSurface : "transparent"
+                color: parent.down ? Theme.well : (parent.hovered ? Theme.controlSurface : "transparent")
             }
         }
     }
@@ -191,9 +218,8 @@ Rectangle {
     WindowControls {
         id: windowControls
         objectName: "windowControls"
-        anchors.top: parent.top
         anchors.right: parent.right
-        anchors.bottom: parent.bottom
+        anchors.verticalCenter: parent.verticalCenter
         controller: root.controller
     }
 
@@ -203,14 +229,14 @@ Rectangle {
         width: 176
         height: audioModeControl.implicitHeight + 16
         visible: false
-        z: 100
+        z: 200
         color: Theme.controlSurface
         border.color: Theme.border
-        radius: 6
+        radius: Theme.radiusMedium
         property point soundAnchor: Qt.point(actionButtons.x + soundMasterButton.x,
                                              root.height + 4)
         x: Math.max(12, root.width - width - 72)
-        y: root.height + 8
+        y: root.height + Theme.gap
 
         function open() { visible = true }
         function close() { visible = false }
@@ -220,7 +246,44 @@ Rectangle {
             objectName: "audioModeControl"
             anchors.fill: parent
             anchors.margins: 8
-            spacing: 3
+            spacing: 6
+
+            Item {
+                width: parent.width
+                height: 20
+
+                Text {
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    color: Theme.text
+                    font.bold: true
+                    font.pixelSize: 11
+                    text: "声音总控"
+                }
+
+                ToolButton {
+                    objectName: "closeSoundMasterButton"
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 20
+                    height: 20
+                    Accessible.name: "关闭声音总控"
+                    ToolTip.visible: hovered
+                    ToolTip.text: Accessible.name
+                    onClicked: soundMasterPopover.close()
+                    contentItem: Image {
+                        anchors.centerIn: parent
+                        width: 12
+                        height: 12
+                        source: Qt.resolvedUrl("../assets/icons/x.svg")
+                        opacity: parent.hovered ? 1 : 0.78
+                    }
+                    background: Rectangle {
+                        radius: Theme.radiusSmall
+                        color: parent.down ? Theme.well : (parent.hovered ? Theme.well : "transparent")
+                    }
+                }
+            }
 
             ToolButton {
                 objectName: "globalMuteButton"
@@ -240,7 +303,7 @@ Rectangle {
                     verticalAlignment: Text.AlignVCenter
                     font.pixelSize: 10
                 }
-                background: Rectangle { radius: 4; color: parent.hovered ? "#241b17" : "transparent" }
+                background: Rectangle { radius: Theme.radiusSmall; color: parent.hovered ? "#241b17" : "transparent" }
             }
             Row {
                 width: parent.width

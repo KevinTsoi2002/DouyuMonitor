@@ -254,6 +254,7 @@ private slots:
     void laysOutPrimaryRoomsAcrossFullHeight();
     void exposesGlobalAudioControls();
     void distinguishesWorkspaceAndLayoutActions();
+    void usesGroupedHeaderControls();
     void groupsSoundControlsAndExposesFullscreen();
     void positionsSoundPopoverLikeDanmakuPanel();
     void truncatesLongRoomTitleBeforeActions();
@@ -691,6 +692,71 @@ void QmlInteractionTest::distinguishesWorkspaceAndLayoutActions()
     QVERIFY(!window->findChild<QObject *>(QStringLiteral("nativeQtWorkspaceSubtitle")));
 }
 
+void QmlInteractionTest::usesGroupedHeaderControls()
+{
+    registerQmlTypes();
+    QQmlApplicationEngine engine;
+    QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qml/components/AppHeader.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+
+    FakeHeaderController controller;
+    QQuickWindow hostWindow;
+    hostWindow.resize(QSize(800, 320));
+    hostWindow.show();
+    std::unique_ptr<QObject> header(component.createWithInitialProperties({
+        {QStringLiteral("parent"), QVariant::fromValue(hostWindow.contentItem())},
+        {QStringLiteral("width"), 800},
+        {QStringLiteral("controller"), QVariant::fromValue(static_cast<QObject *>(&controller))},
+    }));
+    QVERIFY2(header != nullptr, qPrintable(component.errorString()));
+
+    for (const QString &objectName : {QStringLiteral("sidebarToggleButton"),
+                                      QStringLiteral("danmakuButton"),
+                                      QStringLiteral("monitoringButton"),
+                                      QStringLiteral("workspaceButton"),
+                                      QStringLiteral("layoutMenuButton"),
+                                      QStringLiteral("soundMasterButton"),
+                                      QStringLiteral("fullscreenButton")}) {
+        QObject *control = header->findChild<QObject *>(objectName);
+        QVERIFY(control != nullptr);
+        QCOMPARE(control->property("width").toInt(), 32);
+        QCOMPARE(control->property("height").toInt(), 32);
+    }
+
+    QObject *sound = header->findChild<QObject *>(QStringLiteral("soundMasterButton"));
+    QObject *popover = header->findChild<QObject *>(QStringLiteral("soundMasterPopover"));
+    QObject *close = header->findChild<QObject *>(QStringLiteral("closeSoundMasterButton"));
+    QVERIFY(sound != nullptr);
+    QVERIFY(popover != nullptr);
+    QVERIFY(close != nullptr);
+    click(sound);
+    QTRY_VERIFY(popover->property("visible").toBool());
+    QVERIFY(popover->property("y").toDouble()
+            >= sound->property("y").toDouble() + sound->property("height").toDouble());
+    click(close);
+    QTRY_VERIFY(!popover->property("visible").toBool());
+
+    QObject *windowControls = header->findChild<QObject *>(QStringLiteral("windowControls"));
+    QVERIFY(windowControls != nullptr);
+    for (const QString &objectName : {QStringLiteral("minimizeButton"),
+                                      QStringLiteral("maximizeButton"),
+                                      QStringLiteral("closeButton")}) {
+        QObject *control = windowControls->findChild<QObject *>(objectName);
+        QVERIFY(control != nullptr);
+        QCOMPARE(control->property("width").toInt(), 32);
+        QCOMPARE(control->property("height").toInt(), 32);
+    }
+    QCOMPARE(windowControls->findChild<QObject *>(QStringLiteral("minimizeButton"))
+                 ->property("accessibilityLabel").toString(),
+             QStringLiteral("最小化窗口"));
+    QCOMPARE(windowControls->findChild<QObject *>(QStringLiteral("maximizeButton"))
+                 ->property("accessibilityLabel").toString(),
+             QStringLiteral("最大化窗口"));
+    QCOMPARE(windowControls->findChild<QObject *>(QStringLiteral("closeButton"))
+                 ->property("accessibilityLabel").toString(),
+             QStringLiteral("关闭窗口"));
+}
+
 void QmlInteractionTest::groupsSoundControlsAndExposesFullscreen()
 {
     registerQmlTypes();
@@ -748,7 +814,7 @@ void QmlInteractionTest::groupsSoundControlsAndExposesFullscreen()
     QVERIFY(maximize != nullptr);
     QVERIFY(maximizeIcon != nullptr);
     QVERIFY(fullscreenIcon != nullptr);
-    QCOMPARE(maximize->property("accessibilityLabel").toString(), QStringLiteral("最大化或还原"));
+    QCOMPARE(maximize->property("accessibilityLabel").toString(), QStringLiteral("最大化窗口"));
     QCOMPARE(fullscreen->property("accessibilityLabel").toString(), QStringLiteral("全屏播放"));
     QVERIFY(maximizeIcon->property("source").toUrl() != fullscreenIcon->property("source").toUrl());
     QVERIFY(maximizeIcon->property("source").toUrl().toString().contains(QStringLiteral("window-maximize.svg")));

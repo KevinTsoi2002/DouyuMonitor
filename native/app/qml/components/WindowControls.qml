@@ -6,36 +6,43 @@ Row {
     id: root
 
     property var controller: null
+    height: Theme.controlHeight
 
     ToolButton {
         objectName: "minimizeButton"
-        width: 36
-        height: 44
-        property string accessibilityLabel: "minimize"
+        width: Theme.controlHeight
+        height: Theme.controlHeight
+        property string accessibilityLabel: "最小化窗口"
         Accessible.name: accessibilityLabel
         ToolTip.visible: hovered
         ToolTip.text: Accessible.name
         onClicked: if (root.controller) root.controller.minimizeWindow()
         contentItem: Image { objectName: "minimizeIcon"; anchors.centerIn: parent; width: 16; height: 16; source: Qt.resolvedUrl("../assets/icons/window-minimize.svg"); opacity: parent.hovered ? 1 : 0.82 }
-        background: Rectangle { color: parent.hovered ? Theme.controlSurface : "transparent" }
+        background: Rectangle {
+            radius: Theme.radiusSmall
+            color: parent.down ? Theme.well : (parent.hovered ? Theme.controlSurface : "transparent")
+        }
     }
     ToolButton {
         objectName: "maximizeButton"
-        width: 36
-        height: 44
-        property string accessibilityLabel: "最大化或还原"
+        width: Theme.controlHeight
+        height: Theme.controlHeight
+        property string accessibilityLabel: "最大化窗口"
         Accessible.name: accessibilityLabel
         ToolTip.visible: hovered
         ToolTip.text: Accessible.name
         onClicked: if (root.controller) root.controller.toggleMaximizedWindow()
         contentItem: Image { objectName: "maximizeIcon"; anchors.centerIn: parent; width: 15; height: 15; source: Qt.resolvedUrl("../assets/icons/window-maximize.svg"); opacity: parent.hovered ? 1 : 0.82 }
-        background: Rectangle { color: parent.hovered ? Theme.controlSurface : "transparent" }
+        background: Rectangle {
+            radius: Theme.radiusSmall
+            color: parent.down ? Theme.well : (parent.hovered ? Theme.controlSurface : "transparent")
+        }
     }
     ToolButton {
         objectName: "closeButton"
-        width: 36
-        height: 44
-        property string accessibilityLabel: "close"
+        width: Theme.controlHeight
+        height: Theme.controlHeight
+        property string accessibilityLabel: "关闭窗口"
         Accessible.name: accessibilityLabel
         ToolTip.visible: hovered
         ToolTip.text: Accessible.name
@@ -48,6 +55,13 @@ Row {
             source: Qt.resolvedUrl("../assets/icons/window-close.svg")
             opacity: parent.hovered ? 1 : 0.82
         }
-        background: Rectangle { color: parent.hovered ? Theme.danger : "transparent" }
+        background: Rectangle {
+            radius: Theme.radiusSmall
+            color: parent.down
+                   ? Qt.rgba(Theme.danger.r, Theme.danger.g, Theme.danger.b, 0.42)
+                   : (parent.hovered
+                      ? Qt.rgba(Theme.danger.r, Theme.danger.g, Theme.danger.b, 0.28)
+                      : "transparent")
+        }
     }
 }
