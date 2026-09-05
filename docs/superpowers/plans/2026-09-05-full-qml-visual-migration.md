@@ -344,7 +344,7 @@ git commit -m "feat: rebuild room library visual hierarchy"
 - Modify: `native/tests/qml_interaction_test.cpp:1247-1325`
 - Modify: `native/tests/qml_visual_smoke_test.cpp`
 
-- [ ] **Step 1: Add failing card-layer tests**
+- [x] **Step 1: Add failing card-layer tests**
 
 Add a visual test that finds `roomTopMetadata`, `roomActionBar`, `roomAnchorName`, and `roomTitleText`, then asserts that the title rectangle ends before the action bar and that primary cards have an accent border:
 
@@ -360,11 +360,11 @@ QCOMPARE(tile->property("primary").toBool(), true);
 
 Run `ctest --preset windows-x64-release -R '^qml_visual_smoke_test$' --output-on-failure`. Expected: the new geometry assertion fails before the bottom information band is rebuilt.
 
-- [ ] **Step 2: Preserve the geometry algorithm exactly**
+- [x] **Step 2: Preserve the geometry algorithm exactly**
 
 Do not edit `autoRowCounts`, `primarySecondaryRowCounts`, `primaryZoneWidths`, `primarySideCounts`, or `geometryFor`. Restrict changes in `WorkspaceGrid.qml` to `Theme.canvas`, card gaps, the canvas border, and status-bar spacing.
 
-- [ ] **Step 3: Rebuild `RoomTile.qml` as three stable zones**
+- [x] **Step 3: Rebuild `RoomTile.qml` as three stable zones**
 
 Use a top metadata row for status and route number, a center playback region, and a bottom information band. Anchor the text column to the action bar rather than giving it the full card width:
 
@@ -383,11 +383,11 @@ Column {
 
 Retain the existing player attachment, volume, quality, refresh, danmaku, primary-room, and remove handlers.
 
-- [ ] **Step 4: Style primary and secondary cards**
+- [x] **Step 4: Style primary and secondary cards**
 
 Use `Theme.borderStrong` for ordinary cards, `Theme.accent` for the primary card border, and an explicit `主画面` label. Keep the primary divider as a low-opacity accent line without altering drag behavior or room assignment.
 
-- [ ] **Step 5: Run layout and playback regressions**
+- [x] **Step 5: Run layout and playback regressions**
 
 Run:
 

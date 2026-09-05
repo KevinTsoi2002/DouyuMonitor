@@ -100,11 +100,14 @@ FocusScope {
     }
 
     Rectangle {
+        id: roomCardSurface
+        objectName: "roomCardSurface"
+        property color frameColor: root.primary ? root.accentColor : Theme.borderStrong
         anchors.fill: parent
-        radius: 7
+        radius: Theme.radiusMedium
         color: Theme.well
         border.width: root.primary ? 2 : 1
-        border.color: root.primary ? root.accentColor : root.borderColor
+        border.color: frameColor
         clip: true
 
         Loader {
@@ -147,12 +150,12 @@ FocusScope {
             anchors.top: parent.top
             anchors.left: parent.left
             anchors.right: parent.right
-            height: 38
-            color: "#8a090c10"
+            height: 36
+            color: Qt.rgba(Theme.appBar.r, Theme.appBar.g, Theme.appBar.b, 0.88)
             opacity: root.controlsVisible ? 1 : 0
             Behavior on opacity { NumberAnimation { duration: 150 } }
 
-            Row {
+            Item {
                 id: roomTopMetadata
                 objectName: "roomTopMetadata"
                 anchors.left: parent.left
@@ -160,17 +163,83 @@ FocusScope {
                 anchors.right: roomTopActions.left
                 anchors.rightMargin: 4
                 anchors.verticalCenter: parent.verticalCenter
-                spacing: 7
+
                 Rectangle {
+                    id: liveStatusBadge
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
                     height: 19
                     width: statusLabel.width + 12
-                    radius: 4
-                    color: root.liveState === "online" ? "#17271f" : root.liveState === "offline" ? "#31201f" : "#252c34"
-                    border.color: root.liveState === "online" ? "#3f7b58" : root.liveState === "offline" ? "#6f493f" : "#4a515a"
-                Text { id: statusLabel; objectName: "roomStatusLabel"; anchors.centerIn: parent; color: root.liveState === "online" ? "#c6f1d4" : root.liveState === "offline" ? "#ffb1a7" : "#c1cad4"; font.bold: true; font.pixelSize: 9; text: root.liveState === "online" ? "直播中" : root.liveState === "offline" ? "未开播" : "检查中" }
+                    radius: Theme.radiusSmall
+                    color: root.liveState === "online"
+                           ? Qt.rgba(Theme.online.r, Theme.online.g, Theme.online.b, 0.14)
+                           : (root.liveState === "offline"
+                              ? Qt.rgba(Theme.danger.r, Theme.danger.g, Theme.danger.b, 0.14)
+                              : Theme.controlSurface)
+                    border.color: root.liveState === "online"
+                                  ? Qt.rgba(Theme.online.r, Theme.online.g, Theme.online.b, 0.48)
+                                  : (root.liveState === "offline"
+                                     ? Qt.rgba(Theme.danger.r, Theme.danger.g, Theme.danger.b, 0.48)
+                                     : Theme.borderStrong)
+                    Text {
+                        id: statusLabel
+                        objectName: "roomStatusLabel"
+                        anchors.centerIn: parent
+                        color: root.liveState === "online"
+                               ? Theme.online
+                               : (root.liveState === "offline" ? Theme.danger : Theme.mutedText)
+                        font.bold: true
+                        font.pixelSize: 9
+                        text: root.liveState === "online" ? "直播中" : root.liveState === "offline" ? "未开播" : "检查中"
+                    }
                 }
-                Text { width: 100; color: "#b8c0ca"; elide: Text.ElideRight; font.pixelSize: 10; text: root.displayCategory }
-                Text { width: 74; color: "#8f9aa7"; elide: Text.ElideRight; font.pixelSize: 9; text: root.displayViewerLabel + " 人观看" }
+
+                Rectangle {
+                    id: primaryRoomBadge
+                    objectName: "primaryRoomBadge"
+                    property string text: "主画面"
+                    anchors.left: liveStatusBadge.right
+                    anchors.leftMargin: visible ? 6 : 0
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: root.primary
+                    width: visible ? primaryRoomLabel.width + 12 : 0
+                    height: 19
+                    radius: Theme.radiusSmall
+                    color: Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.16)
+                    border.color: Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.52)
+                    Text {
+                        id: primaryRoomLabel
+                        anchors.centerIn: parent
+                        color: root.accentColor
+                        font.bold: true
+                        font.pixelSize: 9
+                        text: primaryRoomBadge.text
+                    }
+                }
+
+                Text {
+                    id: categoryLabel
+                    anchors.left: root.primary ? primaryRoomBadge.right : liveStatusBadge.right
+                    anchors.leftMargin: 7
+                    anchors.right: viewerLabel.left
+                    anchors.rightMargin: 7
+                    anchors.verticalCenter: parent.verticalCenter
+                    color: Theme.text
+                    elide: Text.ElideRight
+                    font.pixelSize: 10
+                    text: root.displayCategory
+                }
+                Text {
+                    id: viewerLabel
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 74
+                    color: Theme.mutedText
+                    elide: Text.ElideRight
+                    font.pixelSize: 9
+                    horizontalAlignment: Text.AlignRight
+                    text: root.displayViewerLabel + " 人观看"
+                }
             }
 
             ToolButton {
@@ -186,7 +255,7 @@ FocusScope {
                 ToolTip.text: Accessible.name
                 onClicked: { root.menuOpen = !root.menuOpen; root.revealControls() }
                 contentItem: Image { anchors.centerIn: parent; width: 16; height: 16; source: Qt.resolvedUrl("../assets/icons/ellipsis.svg") }
-                background: Rectangle { radius: 4; color: parent.hovered ? "#252c34" : "transparent" }
+                background: Rectangle { radius: Theme.radiusSmall; color: parent.hovered ? Theme.controlSurface : "transparent" }
             }
         }
 
@@ -246,16 +315,17 @@ FocusScope {
             anchors.bottom: parent.bottom
             anchors.left: parent.left
             anchors.right: parent.right
-            height: 56
-            color: "#e6090c10"
+            height: 58
+            color: Qt.rgba(Theme.appBar.r, Theme.appBar.g, Theme.appBar.b, 0.92)
             opacity: root.controlsVisible ? 1 : 0
             Behavior on opacity { NumberAnimation { duration: 150 } }
 
             Column {
                 anchors.left: parent.left
                 anchors.leftMargin: 52
+                anchors.right: tileActions.left
+                anchors.rightMargin: 10
                 anchors.verticalCenter: parent.verticalCenter
-                width: Math.max(0, parent.width - 52 - tileActions.width - 20)
                 spacing: 3
                 Text { objectName: "roomAnchorName"; width: parent.width; color: root.textColor; elide: Text.ElideRight; font.bold: true; font.pixelSize: 12; text: root.displayAnchorName }
                 Text { objectName: "roomTitleText"; width: parent.width; color: root.mutedTextColor; elide: Text.ElideRight; font.pixelSize: 9; text: root.displayTitle }

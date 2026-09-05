@@ -131,6 +131,12 @@ QRect itemRect(QObject *object)
     };
 }
 
+QRect sceneRect(QQuickItem *item)
+{
+    const QPoint topLeft = item->mapToScene(QPointF(0, 0)).toPoint();
+    return {topLeft, QSize(qRound(item->width()), qRound(item->height()))};
+}
+
 void click(QObject *object)
 {
     QVERIFY(object != nullptr);
@@ -180,6 +186,7 @@ private slots:
     void loadsReleasedModuleWithVisualAnchors();
     void showsStructuredEmptyWorkspace();
     void showsStatusBarForOccupiedWorkspace();
+    void usesStableRoomCardInformationZones();
     void hasReferenceGeometryAt1280x720();
     void clampsNarrowWindowToSafeMinimum();
     void hasNoTextOverlapAt1600x900();
@@ -245,6 +252,33 @@ void QmlVisualSmokeTest::showsStatusBarForOccupiedWorkspace()
     QVERIFY(itemRect(grid).bottom() < itemRect(status).top());
 
     saveScreenshot(window->grabWindow(), QStringLiteral("occupied-shell-1600x900.png"));
+}
+
+void QmlVisualSmokeTest::usesStableRoomCardInformationZones()
+{
+    registerQmlTypes();
+    QQmlApplicationEngine engine;
+    QQuickWindow *window = loadWindow(engine, QSize(1600, 900));
+    QVERIFY(window != nullptr);
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+
+    QQuickItem *tile = previewRoomTile(window->contentItem());
+    QVERIFY(tile != nullptr);
+    auto *topMetadata = tile->findChild<QQuickItem *>(QStringLiteral("roomTopMetadata"));
+    auto *title = tile->findChild<QQuickItem *>(QStringLiteral("roomTitleText"));
+    auto *actions = tile->findChild<QQuickItem *>(QStringLiteral("roomActionBar"));
+    QObject *surface = tile->findChild<QObject *>(QStringLiteral("roomCardSurface"));
+    QObject *primaryLabel = tile->findChild<QObject *>(QStringLiteral("primaryRoomBadge"));
+    QVERIFY(topMetadata != nullptr);
+    QVERIFY(title != nullptr);
+    QVERIFY(actions != nullptr);
+    QVERIFY(surface != nullptr);
+    QVERIFY(primaryLabel != nullptr);
+    QVERIFY(primaryLabel->property("visible").toBool());
+    QCOMPARE(primaryLabel->property("text").toString(), QStringLiteral("主画面"));
+    QCOMPARE(surface->property("frameColor").value<QColor>(),
+             tile->property("accentColor").value<QColor>());
+    QVERIFY(sceneRect(title).right() < sceneRect(actions).left());
 }
 
 void QmlVisualSmokeTest::hasReferenceGeometryAt1280x720()
@@ -403,8 +437,8 @@ void QmlVisualSmokeTest::rendersDanmakuFixtureInsideRoomTile()
 
     auto *line = itemByObjectName(tile, QStringLiteral("danmakuLine"));
     QVERIFY(line != nullptr);
-    QVERIFY(line->y() >= 38);
-    QVERIFY(line->y() + line->height() <= tile->height() - 56);
+    QVERIFY(line->y() >= 36);
+    QVERIFY(line->y() + line->height() <= tile->height() - 58);
 
     const QImage image = window->grabWindow();
     QVERIFY(!image.isNull());
