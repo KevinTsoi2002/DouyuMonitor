@@ -239,7 +239,7 @@ git commit -m "feat: add structured workspace shell and status bar"
 - Modify: `native/app/qml/components/WindowControls.qml`
 - Modify: `native/tests/qml_interaction_test.cpp:505-760`
 
-- [ ] **Step 1: Add failing semantic and geometry assertions**
+- [x] **Step 1: Add failing semantic and geometry assertions**
 
 Add `usesGroupedHeaderControls()` to assert all top-bar controls use a `32px` hit area, fullscreen and maximize icon sources differ, and the sound popover starts below its button:
 
@@ -255,19 +255,19 @@ QVERIFY(popover->property("y").toDouble() >= sound->property("y").toDouble() + s
 
 Run `ctest --preset windows-x64-release -R '^qml_interaction_test$' --output-on-failure`. Expected: failure until the fixed hit-area and visual-group properties exist.
 
-- [ ] **Step 2: Apply shared header geometry**
+- [x] **Step 2: Apply shared header geometry**
 
 Set `width: Theme.controlHeight`, `height: Theme.controlHeight`, `radius: Theme.radiusSmall`, and consistent hover/pressed colors on every top-bar `ToolButton`. Preserve the existing signals and object names: `sidebarToggleButton`, `danmakuButton`, `monitoringButton`, `workspaceButton`, `layoutMenuButton`, `soundMasterButton`, and `fullscreenButton`.
 
-- [ ] **Step 3: Keep window-control semantics distinct**
+- [x] **Step 3: Keep window-control semantics distinct**
 
 Use `window-minimize.svg`, `window-maximize.svg`, and `window-close.svg` only in `WindowControls.qml`. Keep `window-fullscreen.svg` only in the `fullscreenButton` content item. Set accessible names to `最小化窗口`, `最大化窗口` or `还原窗口`, `关闭窗口`, and `全屏播放`.
 
-- [ ] **Step 4: Make the sound popover a proper above-canvas surface**
+- [x] **Step 4: Make the sound popover a proper above-canvas surface**
 
 Keep it as an anchored QML `Popup` or a high-z `Rectangle`; set `z` above the workspace and `y: root.height + Theme.gap`. Retain the existing global mute, single-channel, and multi-channel method calls. Add an explicit close button with `objectName: "closeSoundMasterButton"` and `onClicked: soundMasterPopover.close()`.
 
-- [ ] **Step 5: Run header interactions and screenshot checks**
+- [x] **Step 5: Run header interactions and screenshot checks**
 
 Run:
 
@@ -277,7 +277,7 @@ ctest --preset windows-x64-release -R '^(qml_interaction_test|qml_visual_smoke_t
 
 Expected: header tests pass; the 1280px screenshot shows no top-bar overlap.
 
-- [ ] **Step 6: Commit header work**
+- [x] **Step 6: Commit header work**
 
 ```powershell
 git add native/app/qml/components/AppHeader.qml native/app/qml/components/WindowControls.qml native/tests/qml_interaction_test.cpp
