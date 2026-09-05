@@ -57,6 +57,10 @@ void QmlEngineSmokeTest::loadsModuleWithThemeSingletonColors()
     QObject *sidebar = window->findChild<QObject *>(QStringLiteral("roomSidebar"));
     QVERIFY(sidebar != nullptr);
     QCOMPARE(sidebar->property("color").value<QColor>(), QColor(QStringLiteral("#202731")));
+
+    QObject *statusBar = window->findChild<QObject *>(QStringLiteral("workspaceStatusBar"));
+    QVERIFY(statusBar != nullptr);
+    QCOMPARE(statusBar->property("color").value<QColor>(), QColor(QStringLiteral("#202731")));
 }
 
 QTEST_MAIN(QmlEngineSmokeTest)

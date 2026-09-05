@@ -85,6 +85,7 @@ qt_add_qml_module(douyu_qml
         app/qml/components/DanmakuLine.qml
         app/qml/components/DanmakuLaneScheduler.js
         app/qml/components/ToastViewport.qml
+        app/qml/components/WorkspaceStatusBar.qml
         app/qml/panels/DanmakuSettingsPanel.qml
         app/qml/panels/MonitoringStatusPanel.qml
         app/qml/panels/WorkspacePresetsPanel.qml
@@ -135,6 +136,7 @@ qt_add_resources(qml_engine_smoke_test qml_engine_test_resources
         app/qml/components/DanmakuLine.qml
         app/qml/components/DanmakuLaneScheduler.js
         app/qml/components/ToastViewport.qml
+        app/qml/components/WorkspaceStatusBar.qml
         app/qml/panels/DanmakuSettingsPanel.qml
         app/qml/panels/MonitoringStatusPanel.qml
         app/qml/panels/WorkspacePresetsPanel.qml
@@ -195,6 +197,7 @@ qt_add_resources(qml_visual_smoke_test qml_visual_smoke_test_resources
         app/qml/components/DanmakuLine.qml
         app/qml/components/DanmakuLaneScheduler.js
         app/qml/components/ToastViewport.qml
+        app/qml/components/WorkspaceStatusBar.qml
         app/qml/panels/DanmakuSettingsPanel.qml
         app/qml/panels/MonitoringStatusPanel.qml
         app/qml/panels/WorkspacePresetsPanel.qml
@@ -250,6 +253,7 @@ qt_add_resources(qml_interaction_test qml_interaction_test_resources
         app/qml/components/DanmakuLine.qml
         app/qml/components/DanmakuLaneScheduler.js
         app/qml/components/ToastViewport.qml
+        app/qml/components/WorkspaceStatusBar.qml
         app/qml/panels/DanmakuSettingsPanel.qml
         app/qml/panels/MonitoringStatusPanel.qml
         app/qml/panels/WorkspacePresetsPanel.qml
@@ -323,6 +327,7 @@ qt_add_resources(qml_close_regression_test qml_close_regression_test_resources
         app/qml/components/DanmakuLine.qml
         app/qml/components/DanmakuLaneScheduler.js
         app/qml/components/ToastViewport.qml
+        app/qml/components/WorkspaceStatusBar.qml
         app/qml/panels/DanmakuSettingsPanel.qml
         app/qml/panels/MonitoringStatusPanel.qml
         app/qml/panels/WorkspacePresetsPanel.qml

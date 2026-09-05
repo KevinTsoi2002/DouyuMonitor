@@ -179,6 +179,8 @@ Item {
     }
 
     Column {
+        id: emptyWorkspaceState
+        objectName: "emptyWorkspaceState"
         anchors.centerIn: parent
         width: Math.min(340, parent.width - 36)
         visible: roomRepeater.count === 0

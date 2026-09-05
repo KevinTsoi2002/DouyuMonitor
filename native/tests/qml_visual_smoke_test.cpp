@@ -91,13 +91,14 @@ private:
 
 namespace {
 
-QQuickWindow *loadWindow(QQmlApplicationEngine &engine, const QSize &size)
+QQuickWindow *loadWindow(QQmlApplicationEngine &engine, const QSize &size, bool showPreviewRooms = true)
 {
     engine.load(QUrl(QStringLiteral("qrc:/qml/Main.qml")));
     if (engine.rootObjects().isEmpty()) return nullptr;
 
     auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().constFirst());
     if (window == nullptr) return nullptr;
+    window->setProperty("showPreviewRooms", showPreviewRooms);
 
     // The offscreen platform does not enforce Window minimum dimensions during resize.
     const QSize boundedSize(qMax(size.width(), window->minimumWidth()),
@@ -177,6 +178,8 @@ class QmlVisualSmokeTest final : public QObject {
 
 private slots:
     void loadsReleasedModuleWithVisualAnchors();
+    void showsStructuredEmptyWorkspace();
+    void showsStatusBarForOccupiedWorkspace();
     void hasReferenceGeometryAt1280x720();
     void clampsNarrowWindowToSafeMinimum();
     void hasNoTextOverlapAt1600x900();
@@ -198,6 +201,50 @@ void QmlVisualSmokeTest::loadsReleasedModuleWithVisualAnchors()
     QVERIFY(window->findChild<QObject *>(QStringLiteral("appHeader")) != nullptr);
     QVERIFY(window->findChild<QObject *>(QStringLiteral("roomSidebar")) != nullptr);
     QVERIFY(window->findChild<QObject *>(QStringLiteral("workspaceGrid")) != nullptr);
+}
+
+void QmlVisualSmokeTest::showsStructuredEmptyWorkspace()
+{
+    registerQmlTypes();
+    QQmlApplicationEngine engine;
+    QQuickWindow *window = loadWindow(engine, QSize(1280, 720), false);
+    QVERIFY(window != nullptr);
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+
+    QObject *empty = window->findChild<QObject *>(QStringLiteral("emptyWorkspaceState"));
+    QObject *status = window->findChild<QObject *>(QStringLiteral("workspaceStatusBar"));
+    QVERIFY(empty != nullptr);
+    QVERIFY(status != nullptr);
+    QVERIFY(empty->property("visible").toBool());
+    QCOMPARE(status->property("onlineCount").toInt(), 0);
+    QCOMPARE(status->property("color").value<QColor>(), QColor(QStringLiteral("#202731")));
+    QObject *grid = window->findChild<QObject *>(QStringLiteral("workspaceGrid"));
+    QVERIFY(grid != nullptr);
+    QVERIFY(QRect(QPoint(0, 0), window->size()).contains(itemRect(status)));
+    QVERIFY(itemRect(grid).bottom() < itemRect(status).top());
+
+    saveScreenshot(window->grabWindow(), QStringLiteral("empty-shell-1280x720.png"));
+}
+
+void QmlVisualSmokeTest::showsStatusBarForOccupiedWorkspace()
+{
+    registerQmlTypes();
+    QQmlApplicationEngine engine;
+    QQuickWindow *window = loadWindow(engine, QSize(1600, 900));
+    QVERIFY(window != nullptr);
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+
+    QObject *empty = window->findChild<QObject *>(QStringLiteral("emptyWorkspaceState"));
+    QObject *status = window->findChild<QObject *>(QStringLiteral("workspaceStatusBar"));
+    QVERIFY(empty != nullptr);
+    QVERIFY(status != nullptr);
+    QVERIFY(!empty->property("visible").toBool());
+    QObject *grid = window->findChild<QObject *>(QStringLiteral("workspaceGrid"));
+    QVERIFY(grid != nullptr);
+    QVERIFY(QRect(QPoint(0, 0), window->size()).contains(itemRect(status)));
+    QVERIFY(itemRect(grid).bottom() < itemRect(status).top());
+
+    saveScreenshot(window->grabWindow(), QStringLiteral("occupied-shell-1600x900.png"));
 }
 
 void QmlVisualSmokeTest::hasReferenceGeometryAt1280x720()
@@ -281,7 +328,7 @@ void QmlVisualSmokeTest::hasNoTextOverlapAt1920x1080()
 
     const QImage image = window->grabWindow();
     QVERIFY(!image.isNull());
-    saveScreenshot(image, QStringLiteral("shell-1920x1080.png"));
+    saveScreenshot(image, QStringLiteral("occupied-shell-1920x1080.png"));
 }
 
 void QmlVisualSmokeTest::hasNoTextOverlapAt1600x900()

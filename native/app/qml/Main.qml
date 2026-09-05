@@ -21,6 +21,7 @@ ApplicationWindow {
     property var appController: null
     property bool refreshRequested: false
     property bool editableFocus: false
+    property bool showPreviewRooms: false
     readonly property color canvasColor: Theme.canvas
     readonly property color surfaceColor: Theme.controlSurface
     readonly property color borderColor: Theme.border
@@ -32,9 +33,12 @@ ApplicationWindow {
                                   ? appController.workspace.sidebarVisible
                                   : true
     readonly property int sidebarWidth: sidebarVisible ? 268 : 0
-    readonly property var roomModel: appController ? appController.rooms : previewRooms
+    readonly property var roomModel: appController
+                                    ? appController.rooms
+                                    : (showPreviewRooms ? previewRooms : emptyPreviewRooms)
     readonly property var libraryRooms: appController ? appController.libraryRooms : []
     readonly property var workspaceModel: appController ? appController.workspace : null
+    readonly property var monitoringModel: appController ? appController.monitoring : null
 
     function toggleSidebarVisibility() {
         if (appController) {
@@ -188,6 +192,10 @@ ApplicationWindow {
         }
     }
 
+    ListModel {
+        id: emptyPreviewRooms
+    }
+
     AppHeader {
         id: header
         objectName: "appHeader"
@@ -231,7 +239,8 @@ ApplicationWindow {
         anchors.top: header.bottom
         anchors.left: sidebar.right
         anchors.right: parent.right
-        anchors.bottom: parent.bottom
+        anchors.bottom: workspaceStatusBar.top
+        anchors.bottomMargin: Theme.gap
         controller: root.appController
         roomModel: root.roomModel
         layoutMode: root.workspaceModel ? root.workspaceModel.layoutMode : "auto"
@@ -242,6 +251,26 @@ ApplicationWindow {
         accentColor: root.accentColor
         textColor: root.textColor
         mutedTextColor: root.mutedTextColor
+    }
+
+    WorkspaceStatusBar {
+        id: workspaceStatusBar
+        anchors.left: sidebar.right
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.leftMargin: Theme.gap
+        anchors.rightMargin: Theme.gap
+        anchors.bottomMargin: Theme.gap
+        onlineCount: root.monitoringModel ? root.monitoringModel.onlineCount : 0
+        offlineCount: root.monitoringModel ? root.monitoringModel.offlineCount : 0
+        danmakuCount: 0
+        audioLabel: root.workspaceModel
+                    ? (root.workspaceModel.globalMuted
+                       ? "全局静音"
+                       : (root.workspaceModel.audioRoomId.length > 0
+                          ? root.workspaceModel.audioRoomId
+                          : "无"))
+                    : "无"
     }
 
     ToastViewport {
@@ -266,7 +295,7 @@ ApplicationWindow {
     MonitoringStatusPanel {
         id: monitoringDrawer
         controller: root.appController
-        monitoringModel: root.appController ? root.appController.monitoring : null
+        monitoringModel: root.monitoringModel
         onNotificationSettingsRequested: notificationSettingsDialog.open()
     }
 
@@ -284,7 +313,7 @@ ApplicationWindow {
     NotificationSettingsDialog {
         id: notificationSettingsDialog
         controller: root.appController
-        monitoringModel: root.appController ? root.appController.monitoring : null
+        monitoringModel: root.monitoringModel
     }
 
     Shortcut {
