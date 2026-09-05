@@ -87,7 +87,7 @@ engine.loadFromModule(QStringLiteral("DouyuMonitor"), QStringLiteral("Main"));
 
 Keep the existing `qrc:/qml` resources only for isolated component fixtures that cannot load through the module.
 
-- [ ] **Step 4: Add a module-color assertion to the existing engine smoke test**
+- [x] **Step 4: Add a module-color assertion to the existing engine smoke test**
 
 Extend `loadsModuleWithThemeSingletonColors()` so it also verifies the generated module contains the `workspaceStatusBar` object after Task 2:
 
@@ -124,7 +124,7 @@ git commit -m "test: render visual checks from released QML module"
 - Modify: `native/CMakeLists.txt:66-101,174-201,232-256`
 - Modify: `native/tests/qml_visual_smoke_test.cpp`
 
-- [ ] **Step 1: Add failing empty and occupied status-bar checks**
+- [x] **Step 1: Add failing empty and occupied status-bar checks**
 
 Add two visual test slots. The empty-state test must locate `emptyWorkspaceState` and `workspaceStatusBar`; the occupied-state test must load the preview-room fixture and assert the empty state is hidden.
 
@@ -148,7 +148,7 @@ void QmlVisualSmokeTest::showsStructuredEmptyWorkspace()
 
 Run `ctest --preset windows-x64-release -R '^qml_visual_smoke_test$' --output-on-failure`. Expected: failure because neither object exists.
 
-- [ ] **Step 2: Create the reusable status-bar component**
+- [x] **Step 2: Create the reusable status-bar component**
 
 Create `WorkspaceStatusBar.qml` with only display properties. It must not own playback or status state:
 
@@ -183,7 +183,7 @@ Rectangle {
 }
 ```
 
-- [ ] **Step 3: Compose the shell in `Main.qml`**
+- [x] **Step 3: Compose the shell in `Main.qml`**
 
 Add `WorkspaceStatusBar` below `WorkspaceGrid`, reduce the grid bottom anchor to the status-bar top, and add an explicit empty state inside the canvas region. Bind existing C++ properties without changing their interfaces:
 
@@ -207,15 +207,15 @@ WorkspaceStatusBar {
 
 The empty state must have `objectName: "emptyWorkspaceState"`, use the approved copy, and set `visible: roomModel && roomModel.count === 0`.
 
-- [ ] **Step 4: Register the component in every QML resource path**
+- [x] **Step 4: Register the component in every QML resource path**
 
 Add `app/qml/components/WorkspaceStatusBar.qml` to `douyu_qml` QML files and to each QML test resource list that loads `Main.qml` from resources.
 
-- [ ] **Step 5: Save and inspect three shell screenshots**
+- [x] **Step 5: Save and inspect three shell screenshots**
 
 Extend the visual test to save `empty-shell-1280x720.png`, `occupied-shell-1600x900.png`, and `occupied-shell-1920x1080.png` with `saveScreenshot(window->grabWindow(), name)`. Verify the status bar is inside the viewport and does not overlap the canvas rectangle.
 
-- [ ] **Step 6: Run shell regressions**
+- [x] **Step 6: Run shell regressions**
 
 Run:
 
@@ -225,7 +225,7 @@ ctest --preset windows-x64-release -R '^(qml_engine_smoke_test|qml_visual_smoke_
 
 Expected: all selected tests pass; the new screenshots contain the correct dark surfaces instead of a black fallback.
 
-- [ ] **Step 7: Commit the shell**
+- [x] **Step 7: Commit the shell**
 
 ```powershell
 git add native/CMakeLists.txt native/app/qml/Main.qml native/app/qml/components/WorkspaceStatusBar.qml native/tests/qml_engine_smoke_test.cpp native/tests/qml_visual_smoke_test.cpp
