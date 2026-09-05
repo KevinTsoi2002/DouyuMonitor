@@ -292,7 +292,7 @@ git commit -m "feat: unify header controls and sound panel"
 - Modify: `native/tests/qml_interaction_test.cpp:470-1190`
 - Modify: `native/tests/qml_visual_smoke_test.cpp`
 
-- [ ] **Step 1: Add a failing long-metadata bounds regression**
+- [x] **Step 1: Add a failing long-metadata bounds regression**
 
 Extend the existing long-title interaction fixture with a long `anchorName` and `title`. Assert that the title text right edge is before the fixed action bar left edge:
 
@@ -306,19 +306,19 @@ QVERIFY(title->property("x").toDouble() + title->property("width").toDouble()
 
 Run `ctest --preset windows-x64-release -R '^qml_interaction_test$' --output-on-failure`. Expected: failure until the new object names and fixed action geometry exist.
 
-- [ ] **Step 2: Give current-room rows fixed structure**
+- [x] **Step 2: Give current-room rows fixed structure**
 
 In `RoomSidebar.qml`, use `Theme.managementSurface` for the shell, a 60px row height, a fixed avatar column, a text column anchored between avatar and actions, and a fixed `roomActionBar` width. Add `objectName: "sidebarRoomTitle"` to the visible title text and `objectName: "sidebarRoomActionBar"` to the action container. Use `Text.ElideRight` for both metadata lines.
 
-- [ ] **Step 3: Add state and selection hierarchy**
+- [x] **Step 3: Add state and selection hierarchy**
 
 Render a compact status dot plus `直播中`, `未开播`, or `检查中`. Use `Theme.online`, `Theme.mutedText`, and `Theme.warning`; selected rows use a restrained accent border and control-surface background. Do not change favorite, ordering, remove, history, or search signal handlers.
 
-- [ ] **Step 4: Apply the same geometry to favorites and history**
+- [x] **Step 4: Apply the same geometry to favorites and history**
 
 In `RoomLibraryView.qml`, give favorite and history rows the same avatar/text/action layout. Preserve `openHistoryRoomButton`, `removeHistoryButton`, and all existing library actions.
 
-- [ ] **Step 5: Run room-library regressions**
+- [x] **Step 5: Run room-library regressions**
 
 Run:
 
@@ -328,7 +328,7 @@ ctest --preset windows-x64-release -R '^(qml_interaction_test|room_list_model_te
 
 Expected: current, favorite, and history lists remain functional; long metadata does not overlap controls at 1600x900 or 1920x1080.
 
-- [ ] **Step 6: Commit room-library work**
+- [x] **Step 6: Commit room-library work**
 
 ```powershell
 git add native/app/qml/components/RoomSidebar.qml native/app/qml/components/RoomLibraryView.qml native/tests/qml_interaction_test.cpp native/tests/qml_visual_smoke_test.cpp
