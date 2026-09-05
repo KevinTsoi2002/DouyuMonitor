@@ -178,6 +178,7 @@ class QmlVisualSmokeTest final : public QObject {
 private slots:
     void hasReferenceGeometryAt1280x720();
     void clampsNarrowWindowToSafeMinimum();
+    void hasNoTextOverlapAt1600x900();
     void hasNoTextOverlapAt1920x1080();
     void usesAssetBackedIcons();
     void rendersDanmakuFixtureInsideRoomTile();
@@ -266,6 +267,38 @@ void QmlVisualSmokeTest::hasNoTextOverlapAt1920x1080()
     const QImage image = window->grabWindow();
     QVERIFY(!image.isNull());
     saveScreenshot(image, QStringLiteral("shell-1920x1080.png"));
+}
+
+void QmlVisualSmokeTest::hasNoTextOverlapAt1600x900()
+{
+    registerQmlTypes();
+    QQmlApplicationEngine engine;
+    QQuickWindow *window = loadWindow(engine, QSize(1600, 900));
+    QVERIFY(window != nullptr);
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+
+    QObject *header = window->findChild<QObject *>(QStringLiteral("appHeader"));
+    QObject *sidebar = window->findChild<QObject *>(QStringLiteral("roomSidebar"));
+    QObject *grid = window->findChild<QObject *>(QStringLiteral("workspaceGrid"));
+    QObject *toast = window->findChild<QObject *>(QStringLiteral("toastViewport"));
+    QVERIFY(header != nullptr);
+    QVERIFY(sidebar != nullptr);
+    QVERIFY(grid != nullptr);
+    QVERIFY(toast != nullptr);
+
+    const QRect headerRect = itemRect(header);
+    const QRect sidebarRect = itemRect(sidebar);
+    const QRect gridRect = itemRect(grid);
+    const QRect toastRect = itemRect(toast);
+    QVERIFY(!headerRect.intersects(sidebarRect));
+    QVERIFY(!headerRect.intersects(gridRect));
+    QVERIFY(!headerRect.intersects(toastRect));
+    QVERIFY(!sidebarRect.intersects(gridRect));
+    QVERIFY(!sidebarRect.intersects(toastRect));
+
+    const QImage image = window->grabWindow();
+    QVERIFY(!image.isNull());
+    saveScreenshot(image, QStringLiteral("shell-1600x900.png"));
 }
 
 void QmlVisualSmokeTest::usesAssetBackedIcons()
