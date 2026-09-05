@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import ".."
 
 Item {
     id: root
@@ -8,11 +9,11 @@ Item {
     property var libraryRooms: []
     property bool favoritesOnly: false
     property var visibleRooms: []
-    property color accentColor: "#ff7a18"
-    property color surfaceColor: "#1f242c"
-    property color borderColor: "#343b45"
-    property color textColor: "#f4f6f8"
-    property color mutedTextColor: "#9ba5b1"
+    property color accentColor: Theme.accent
+    property color surfaceColor: Theme.managementSurface
+    property color borderColor: Theme.border
+    property color textColor: Theme.text
+    property color mutedTextColor: Theme.mutedText
 
     function openedLabel(timestamp) {
         if (!timestamp || timestamp <= 0) return "未打开"
@@ -23,7 +24,8 @@ Item {
         const source = root.libraryRooms || []
         const result = []
         for (let index = 0; index < source.length; ++index) {
-            if (!root.favoritesOnly || source[index].favorite) result.push(source[index])
+            const entry = source[index]
+            if (root.favoritesOnly ? entry.favorite : entry.lastOpenedAtMs > 0) result.push(entry)
         }
         root.visibleRooms = result
     }
@@ -50,13 +52,13 @@ Item {
 
             readonly property var entry: modelData
             width: historyList.width - historyList.leftMargin - historyList.rightMargin
-            height: 60
+            height: Theme.roomRowHeight
 
             Rectangle {
                 anchors.fill: parent
                 radius: 5
-                color: historyMouse.containsMouse ? "#252c34" : "transparent"
-                border.color: entry.active ? "#75462f" : "transparent"
+                color: historyMouse.containsMouse ? Theme.controlSurface : "transparent"
+                border.color: entry.active ? Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.5) : "transparent"
             }
 
             Rectangle {
@@ -66,7 +68,7 @@ Item {
                 width: 32
                 height: 32
                 radius: 16
-                color: entry.active ? "#3a2820" : "#28313a"
+                color: entry.active ? Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.18) : Theme.well
 
                 Image {
                     id: roomAvatarImage
@@ -94,7 +96,7 @@ Item {
             Column {
                 x: avatar.x + avatar.width + 7
                 y: 9
-                width: parent.width - x - 52
+                width: parent.width - x - (root.favoritesOnly ? 52 : 82)
                 spacing: 3
 
                 Text {
@@ -120,6 +122,7 @@ Item {
             }
 
             ToolButton {
+                objectName: "openHistoryRoomButton"
                 anchors.right: parent.right
                 anchors.rightMargin: 5
                 anchors.verticalCenter: parent.verticalCenter
@@ -134,6 +137,26 @@ Item {
                 background: Rectangle {
                     radius: 3
                     color: parent.hovered && parent.enabled ? "#2a211c" : "transparent"
+                }
+            }
+
+            ToolButton {
+                objectName: "removeHistoryButton"
+                anchors.right: parent.right
+                anchors.rightMargin: 34
+                anchors.verticalCenter: parent.verticalCenter
+                width: 27
+                height: 27
+                visible: !root.favoritesOnly
+                enabled: !entry.active && entry.lastOpenedAtMs > 0 && root.controller !== null
+                Accessible.name: "删除历史记录"
+                ToolTip.visible: hovered
+                ToolTip.text: Accessible.name
+                onClicked: root.controller.removeHistoryRoom(entry.roomId)
+                contentItem: Image { anchors.centerIn: parent; width: 16; height: 16; source: Qt.resolvedUrl("../assets/icons/x.svg"); opacity: parent.enabled ? 1 : 0.62 }
+                background: Rectangle {
+                    radius: 3
+                    color: parent.hovered && parent.enabled ? "#4b1c1c" : "transparent"
                 }
             }
 

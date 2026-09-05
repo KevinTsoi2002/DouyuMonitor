@@ -44,6 +44,7 @@ qt_policy(SET QTP0001 NEW)
 qt_policy(SET QTP0004 NEW)
 
 set(DOUYU_QML_ICON_ASSETS
+    app/qml/assets/douyu_monitor.svg
     app/qml/assets/icons/activity.svg
     app/qml/assets/icons/chevron-down.svg
     app/qml/assets/icons/chevron-up.svg

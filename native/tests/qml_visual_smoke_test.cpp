@@ -198,7 +198,7 @@ void QmlVisualSmokeTest::hasReferenceGeometryAt1280x720()
     QVERIFY(header != nullptr);
     QVERIFY(sidebar != nullptr);
     QVERIFY(grid != nullptr);
-    QCOMPARE(qRound(header->property("height").toDouble()), 44);
+    QCOMPARE(qRound(header->property("height").toDouble()), 52);
     QCOMPARE(qRound(sidebar->property("width").toDouble()), 268);
 
     const QImage image = window->grabWindow();

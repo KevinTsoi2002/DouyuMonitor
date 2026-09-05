@@ -61,7 +61,7 @@ Rectangle {
                 anchors.centerIn: parent
                 width: 18
                 height: 18
-                source: Qt.resolvedUrl("../assets/douyu_monitor.svg")
+                source: "qrc:/qml/assets/douyu_monitor.svg"
                 fillMode: Image.PreserveAspectFit
             }
         }
@@ -165,6 +165,7 @@ Rectangle {
         }
         ToolButton {
             objectName: "fullscreenButton"
+            property string accessibilityLabel: "fullscreen-playback"
             Accessible.name: "全屏播放"
             ToolTip.visible: hovered
             ToolTip.text: Accessible.name

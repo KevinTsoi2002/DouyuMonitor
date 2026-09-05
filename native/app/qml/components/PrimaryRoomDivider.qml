@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import ".."
 
 FocusScope {
     id: root
@@ -36,7 +37,7 @@ FocusScope {
         width: root.orientation === "vertical" ? 4 : parent.width
         height: root.orientation === "vertical" ? parent.height : 4
         radius: 2
-        color: root.dragging ? "#ff9a42" : "#7d5336"
+        color: root.dragging ? Theme.accent : Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.52)
         opacity: 0.9
     }
 

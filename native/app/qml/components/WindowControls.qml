@@ -11,7 +11,8 @@ Row {
         objectName: "minimizeButton"
         width: 36
         height: 44
-        Accessible.name: "最小化"
+        property string accessibilityLabel: "minimize"
+        Accessible.name: accessibilityLabel
         ToolTip.visible: hovered
         ToolTip.text: Accessible.name
         onClicked: if (root.controller) root.controller.minimizeWindow()
@@ -22,7 +23,8 @@ Row {
         objectName: "maximizeButton"
         width: 36
         height: 44
-        Accessible.name: "最大化或还原"
+        property string accessibilityLabel: "maximize-or-restore"
+        Accessible.name: accessibilityLabel
         ToolTip.visible: hovered
         ToolTip.text: Accessible.name
         onClicked: if (root.controller) root.controller.toggleMaximizedWindow()
@@ -33,7 +35,8 @@ Row {
         objectName: "closeButton"
         width: 36
         height: 44
-        Accessible.name: "关闭"
+        property string accessibilityLabel: "close"
+        Accessible.name: accessibilityLabel
         ToolTip.visible: hovered
         ToolTip.text: Accessible.name
         onClicked: if (root.controller) root.controller.closeWindow()

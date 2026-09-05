@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import ".."
 
 Item {
     id: root
@@ -8,12 +9,12 @@ Item {
     property var roomModel: null
     property string layoutMode: "auto"
     property string primaryRoomId: ""
-    property color canvasColor: "#16191f"
-    property color surfaceColor: "#1f242c"
-    property color borderColor: "#343b45"
-    property color accentColor: "#ff7a18"
-    property color textColor: "#f4f6f8"
-    property color mutedTextColor: "#9ba5b1"
+    property color canvasColor: Theme.canvas
+    property color surfaceColor: Theme.controlSurface
+    property color borderColor: Theme.border
+    property color accentColor: Theme.accent
+    property color textColor: Theme.text
+    property color mutedTextColor: Theme.mutedText
     readonly property int roomCount: roomRepeater.count
     function autoRowCounts(count) {
         const rows = [[], [1], [2], [3], [2, 2], [3, 2], [3, 3], [4, 3], [4, 4], [3, 3, 3]]
@@ -188,8 +189,8 @@ Item {
             width: 52
             height: 52
             radius: 7
-            color: "#2a2418"
-            border.color: "#71512e"
+            color: Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.16)
+            border.color: Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.46)
             Image { anchors.centerIn: parent; width: 26; height: 26; source: Qt.resolvedUrl("../assets/icons/plus.svg") }
         }
         Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; color: root.textColor; text: "把直播间放进同一张画布"; font.bold: true; font.pixelSize: 16 }

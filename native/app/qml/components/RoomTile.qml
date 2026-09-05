@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import DouyuNative
+import ".."
 
 FocusScope {
     id: root
@@ -29,10 +30,10 @@ FocusScope {
     required property int index
     property var availableQualities: []
     property var controller: null
-    property color borderColor: "#343b45"
-    property color accentColor: "#ff7a18"
-    property color textColor: "#f4f6f8"
-    property color mutedTextColor: "#9ba5b1"
+    property color borderColor: Theme.border
+    property color accentColor: Theme.accent
+    property color textColor: Theme.text
+    property color mutedTextColor: Theme.mutedText
     property bool menuOpen: false
     property bool controlsVisible: true
     property string attachedPlayerRoomId: ""
@@ -101,9 +102,9 @@ FocusScope {
     Rectangle {
         anchors.fill: parent
         radius: 7
-        color: "#10151b"
+        color: Theme.well
         border.width: root.primary ? 2 : 1
-        border.color: root.primary ? "#9b572f" : root.borderColor
+        border.color: root.primary ? root.accentColor : root.borderColor
         clip: true
 
         Loader {
@@ -132,7 +133,7 @@ FocusScope {
         Rectangle {
             anchors.fill: parent
             visible: root.controller === null
-            color: root.index % 3 === 0 ? "#242b34" : root.index % 3 === 1 ? "#25211e" : "#1e2a29"
+            color: root.index % 3 === 0 ? Theme.controlSurface : root.index % 3 === 1 ? "#29241f" : "#202b2a"
             Text {
                 anchors.centerIn: parent
                 color: "#657181"

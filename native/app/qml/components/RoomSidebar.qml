@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import ".."
 
 Rectangle {
     id: root
@@ -8,11 +9,11 @@ Rectangle {
     property var roomModel: null
     property var libraryRooms: []
     property var workspaceModel: null
-    property color accentColor: "#ff7a18"
-    property color surfaceColor: "#1f242c"
-    property color borderColor: "#343b45"
-    property color textColor: "#f4f6f8"
-    property color mutedTextColor: "#9ba5b1"
+    property color accentColor: Theme.accent
+    property color surfaceColor: Theme.managementSurface
+    property color borderColor: Theme.border
+    property color textColor: Theme.text
+    property color mutedTextColor: Theme.mutedText
     property string viewMode: "current"
     signal addRoomRequested()
 
@@ -179,13 +180,13 @@ Rectangle {
                     required property bool favorite
                     required property bool audioFocused
                     width: roomList.width - roomList.leftMargin - roomList.rightMargin
-                    height: 60
+                    height: Theme.roomRowHeight
 
                     Rectangle {
                         anchors.fill: parent
                         radius: 5
-                        color: roomMouse.containsMouse ? "#252c34" : "transparent"
-                        border.color: primary ? "#75462f" : "transparent"
+                        color: roomMouse.containsMouse ? Theme.controlSurface : "transparent"
+                        border.color: primary ? Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.5) : "transparent"
                     }
 
                     Rectangle {
@@ -195,7 +196,7 @@ Rectangle {
                     width: 32
                     height: 32
                     radius: 16
-                    color: primary ? "#3a2820" : "#28313a"
+                    color: primary ? Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.18) : Theme.well
                     Image {
                         id: roomAvatarImage
                         objectName: "roomSidebarAvatarImage"
