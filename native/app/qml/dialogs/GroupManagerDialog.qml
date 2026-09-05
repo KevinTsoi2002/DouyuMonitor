@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import ".."
 
 Dialog {
     id: root
@@ -19,6 +20,12 @@ Dialog {
     width: 440
     height: 500
     anchors.centerIn: parent
+
+    background: Rectangle {
+        color: Theme.controlSurface
+        border.color: Theme.border
+        radius: Theme.radiusLarge
+    }
 
     function selectedGroup() {
         const groups = workspaceModel ? workspaceModel.groups : []

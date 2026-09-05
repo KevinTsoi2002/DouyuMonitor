@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import ".."
 
 Dialog {
     id: root
@@ -12,6 +13,12 @@ Dialog {
     title: "Windows 通知"
     width: 360
     anchors.centerIn: parent
+
+    background: Rectangle {
+        color: Theme.controlSurface
+        border.color: Theme.border
+        radius: Theme.radiusLarge
+    }
 
     function savePreferences() {
         if (!controller) return

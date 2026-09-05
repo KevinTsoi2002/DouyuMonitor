@@ -6,6 +6,7 @@
 #include <QSGRendererInterface>
 #include <QQuickWindow>
 #include <QVariant>
+#include <QAbstractItemModel>
 #include <QtTest/QtTest>
 
 #include <memory>
@@ -176,7 +177,7 @@ void QmlCloseRegressionTest::appliesPresetAndRefreshesAllRoomDelegates()
     QSettings settings(directory.filePath(QStringLiteral("workspace.ini")), QSettings::IniFormat);
     settings.setValue(
         QStringLiteral("DouyuMonitor/nativeWorkspaceV1"),
-        QByteArray(R"JSON({"version":3,"library":[{"roomId":"63136","metadata":{"roomId":"63136","anchorName":"主播 1"},"requestedQuality":"auto","favorite":false,"lastOpenedAtMs":0,"volume":100,"danmakuEnabled":true}],"groups":[],"activeRoomIds":["63136"],"activeGroupId":"","primaryRoomId":"63136","audioRoomId":"","presets":[{"id":"p1","name":"五路","layoutId":"auto","activeGroupId":"","primaryRoomId":"63136","audioRoomId":"","roomIds":["63136","63137","63138","63139","63140"],"sidebarVisible":true,"primaryRoomRatio":0.6,"audioMode":"single","globalMuted":false,"danmaku":{"globalEnabled":false}}]})JSON"));
+        QByteArray(R"JSON({"version":3,"library":[{"roomId":"63136","metadata":{"roomId":"63136","anchorName":"主播 1"},"requestedQuality":"auto","favorite":false,"lastOpenedAtMs":0,"volume":100,"danmakuEnabled":true}],"groups":[],"activeRoomIds":["63136"],"activeGroupId":"","primaryRoomId":"63136","audioRoomId":"","presets":[{"id":"p1","name":"五路","layoutId":"auto","activeGroupId":"","primaryRoomId":"63136","audioRoomId":"","roomIds":["63136","63137","63138","63139","63140"],"sidebarVisible":true,"primaryRoomRatio":0.6,"audioMode":"single","globalMuted":false,"danmaku":{"globalEnabled":false,"display":{"durationSeconds":8,"fontSize":24,"opacity":0.85,"region":"top","density":"normal","fontFamily":"simhei","rendering":"native"},"governance":{"enabled":true,"keywordBlacklist":[],"duplicateWindowSeconds":3,"peakProtectionEnabled":true},"roomOverrides":{}}}],"danmaku":{"globalEnabled":false,"display":{"durationSeconds":8,"fontSize":24,"opacity":0.85,"region":"top","density":"normal","fontFamily":"simhei","rendering":"native"},"governance":{"enabled":true,"keywordBlacklist":[],"duplicateWindowSeconds":3,"peakProtectionEnabled":true},"roomOverrides":{}}})JSON"));
     AppController controller(fakeServicePath(), &settings);
     QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
     auto engine = std::make_unique<QQmlApplicationEngine>();
@@ -205,6 +206,11 @@ void QmlCloseRegressionTest::appliesPresetAndRefreshesAllRoomDelegates()
     QTRY_COMPARE_WITH_TIMEOUT(grid->property("roomCount").toInt(), 5, 5000);
     QObject *roomList = sidebar->findChild<QObject *>(QStringLiteral("roomList"));
     QVERIFY(roomList != nullptr);
+    QObject *roomModel = roomList->property("model").value<QObject *>();
+    QVERIFY(roomModel != nullptr);
+    auto *roomItemModel = qobject_cast<QAbstractItemModel *>(roomModel);
+    QVERIFY(roomItemModel != nullptr);
+    QTRY_COMPARE_WITH_TIMEOUT(roomItemModel->rowCount(), 5, 5000);
     QTRY_COMPARE_WITH_TIMEOUT(roomList->property("count").toInt(), 5, 5000);
 
     window->close();

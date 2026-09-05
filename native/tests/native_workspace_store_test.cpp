@@ -69,6 +69,7 @@ private slots:
     void roundTripsAudioModeAndGlobalMute();
     void roundTripsFavoriteAddedTimeAndManualOrder();
     void migratesVersionThreeFavoritesWithoutLosingMembership();
+    void normalizesPresetRoomIdsWithoutDuplicatingEntries();
 };
 
 void NativeWorkspaceStoreTest::roundTripsSafeWorkspaceState()
@@ -117,6 +118,25 @@ void NativeWorkspaceStoreTest::normalizesDuplicateAndInvalidReferences()
              QStringList({QStringLiteral("63136"), QStringLiteral("63137")}));
     QVERIFY(loaded.primaryRoomId.isEmpty());
     QVERIFY(loaded.audioRoomId.isEmpty());
+}
+
+void NativeWorkspaceStoreTest::normalizesPresetRoomIdsWithoutDuplicatingEntries()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSettings settings(directory.filePath(QStringLiteral("workspace.ini")), QSettings::IniFormat);
+    NativeWorkspaceStore store(&settings);
+    NativeWorkspaceSnapshot snapshot = fixtureWorkspace();
+    NativeWorkspacePreset preset;
+    preset.id = QStringLiteral("preset-rooms");
+    preset.name = QStringLiteral("五路");
+    preset.roomIds = {QStringLiteral("63136"), QStringLiteral("63137"),
+                      QStringLiteral("63138"), QStringLiteral("63139"),
+                      QStringLiteral("63140")};
+    snapshot.presets = {preset};
+
+    QVERIFY(store.save(snapshot));
+    QCOMPARE(store.load().presets.front().roomIds, preset.roomIds);
 }
 
 void NativeWorkspaceStoreTest::roundTripsPresentationSettingsAndPresets()

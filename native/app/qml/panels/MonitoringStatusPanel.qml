@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import ".."
 
 Drawer {
     id: root
@@ -15,8 +16,8 @@ Drawer {
     interactive: true
 
     background: Rectangle {
-        color: "#1f242c"
-        border.color: "#343b45"
+        color: Theme.controlSurface
+        border.color: Theme.border
         border.width: 1
     }
 

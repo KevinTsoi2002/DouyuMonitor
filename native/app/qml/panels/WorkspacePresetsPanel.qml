@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import ".."
 
 Popup {
     id: root
@@ -23,10 +24,10 @@ Popup {
     }
 
     background: Rectangle {
-        color: "#1f242c"
-        border.color: "#343b45"
+        color: Theme.controlSurface
+        border.color: Theme.border
         border.width: 1
-        radius: 6
+        radius: Theme.radiusLarge
     }
 
     contentItem: Column {

@@ -160,6 +160,28 @@ void RoomListModel::applySnapshots(const RoomSnapshots &snapshots)
         return;
     }
 
+    // Batch append notifications so QML views cannot miss intermediate rows when
+    // a workspace preset expands the active room list by several entries.
+    if (snapshots.size() > entries_.size()) {
+        bool existingPrefix = true;
+        for (int row = 0; row < entries_.size(); ++row) {
+            if (entries_.at(row).snapshot.roomId != snapshots.at(row).roomId) {
+                existingPrefix = false;
+                break;
+            }
+        }
+        if (existingPrefix) {
+            const int firstNewRow = entries_.size();
+            beginInsertRows({}, firstNewRow, snapshots.size() - 1);
+            entries_.reserve(snapshots.size());
+            for (int row = firstNewRow; row < snapshots.size(); ++row) {
+                entries_.append({snapshots.at(row), {}});
+            }
+            endInsertRows();
+            return;
+        }
+    }
+
     for (int row = entries_.size() - 1; row >= 0; --row) {
         if (incomingIds.contains(entries_.at(row).snapshot.roomId)) continue;
         beginRemoveRows({}, row, row);

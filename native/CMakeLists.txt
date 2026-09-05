@@ -302,6 +302,8 @@ qt_add_resources(qml_close_regression_test qml_close_regression_test_resources
     PREFIX "/qml"
     BASE "${CMAKE_CURRENT_SOURCE_DIR}/app/qml"
     FILES
+        app/qml/qmldir
+        app/qml/Theme.qml
         app/qml/Main.qml
         app/qml/components/AppHeader.qml
         app/qml/components/WindowControls.qml
@@ -331,6 +333,7 @@ set_property(TEST qml_close_regression_test PROPERTY ENVIRONMENT_MODIFICATION
     "PATH=path_list_prepend:${QT_ROOT}/bin"
     "QT_PLUGIN_PATH=set:${QT_ROOT}/plugins"
     "QML2_IMPORT_PATH=set:${QT_ROOT}/qml"
+    "QT_QPA_PLATFORM=set:offscreen"
     "QT_QUICK_CONTROLS_STYLE=set:Basic"
 )
 

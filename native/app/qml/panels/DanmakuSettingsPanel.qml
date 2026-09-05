@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import ".."
 
 Popup {
     id: root
@@ -116,10 +117,10 @@ Popup {
     }
 
     background: Rectangle {
-        color: "#1f242c"
-        border.color: "#343b45"
+        color: Theme.controlSurface
+        border.color: Theme.border
         border.width: 1
-        radius: 6
+        radius: Theme.radiusLarge
     }
 
     contentItem: Column {
@@ -367,7 +368,7 @@ Popup {
                         objectName: "clearDanmakuRoomGovernanceOverride"
                         width: parent.width; height: 30
                         visible: root.governanceScope === "room"
-                        enabled: root.danmakuController !== null && governanceRoomPicker.currentValue
+                         enabled: root.danmakuController !== null && Boolean(governanceRoomPicker.currentValue)
                         text: "清除当前房间覆盖"
                         onClicked: root.danmakuController.clearRoomGovernanceOverride(governanceRoomPicker.currentValue)
                         contentItem: Text { text: parent.text; color: parent.enabled ? "#d6dde5" : "#657181"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.pixelSize: 10 }
@@ -429,7 +430,7 @@ Popup {
                     ToolButton {
                         objectName: "clearDanmakuStats"
                         width: parent.width; height: 30
-                        enabled: root.danmakuController !== null && statsRoomPicker.currentValue
+                         enabled: root.danmakuController !== null && Boolean(statsRoomPicker.currentValue)
                         text: "清除当前房间统计"
                         onClicked: root.danmakuController.clearStats(statsRoomPicker.currentValue)
                         contentItem: Text { text: parent.text; color: parent.enabled ? "#d6dde5" : "#657181"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.pixelSize: 10 }

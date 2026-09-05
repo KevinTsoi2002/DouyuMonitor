@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import ".."
 
 Dialog {
     id: root
@@ -17,6 +18,12 @@ Dialog {
     width: 500
     height: 560
     anchors.centerIn: parent
+
+    background: Rectangle {
+        color: Theme.controlSurface
+        border.color: Theme.border
+        radius: Theme.radiusLarge
+    }
 
     function submit() {
         if (!canSearch) return

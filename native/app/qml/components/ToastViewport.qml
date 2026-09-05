@@ -1,14 +1,15 @@
 import QtQuick
 import QtQuick.Controls
+import ".."
 
 Item {
     id: root
 
     property var workspaceModel: null
-    property color borderColor: "#343b45"
-    property color accentColor: "#ff7a18"
-    property color textColor: "#f4f6f8"
-    property color mutedTextColor: "#9ba5b1"
+    property color borderColor: Theme.border
+    property color accentColor: Theme.accent
+    property color textColor: Theme.text
+    property color mutedTextColor: Theme.mutedText
     readonly property string message: workspaceModel ? workspaceModel.lastMessage : ""
     readonly property string level: workspaceModel ? workspaceModel.lastMessageLevel : "info"
     readonly property int autoDismissMs: workspaceModel ? workspaceModel.lastMessageTimeoutMs : 0
@@ -34,9 +35,9 @@ Item {
         id: toast
         anchors.fill: parent
         visible: root.message.length > 0
-        radius: 6
-        color: root.level === "error" ? "#2a1719" : root.level === "success" ? "#17271f" : "#171d25"
-        border.color: root.level === "error" ? "#7e403d" : root.level === "success" ? "#3f7b58" : root.borderColor
+        radius: Theme.radiusMedium
+        color: root.level === "error" ? Qt.rgba(Theme.danger.r, Theme.danger.g, Theme.danger.b, 0.16) : root.level === "success" ? Qt.rgba(Theme.online.r, Theme.online.g, Theme.online.b, 0.14) : Theme.controlSurface
+        border.color: root.level === "error" ? Theme.danger : root.level === "success" ? Theme.online : root.borderColor
 
         Text {
             anchors.left: parent.left
