@@ -679,6 +679,7 @@ target_link_libraries(multi_room_coordinator_test
 target_include_directories(multi_room_coordinator_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 add_dependencies(multi_room_coordinator_test fake_streamget_service)
 target_compile_definitions(multi_room_coordinator_test PRIVATE
+    DOUYU_TESTING
     FAKE_STREAMGET_SERVICE_PATH="$<TARGET_FILE:fake_streamget_service>"
 )
 add_custom_command(TARGET multi_room_coordinator_test POST_BUILD

@@ -46,7 +46,7 @@ private slots:
     void appliesAudioModesAndGlobalMute();
     void defaultsSingleAudioFocusToFirstRoom();
     void releasesSessionsWithoutDanglingSnapshotAccess();
-    void replaysWhenMetadataChangesOfflineToOnline();
+    void queuesReplayWhenMetadataChangesOfflineToOnline();
     void stopsWhenMetadataChangesOnlineToOffline();
     void publishesSnapshotWhenResolveMarksRoomOnline();
     void refreshesRoomMetadataImmediatelyAfterAdd();
@@ -369,7 +369,7 @@ void MultiRoomCoordinatorTest::releasesSessionsWithoutDanglingSnapshotAccess()
     delete coordinator;
 }
 
-void MultiRoomCoordinatorTest::replaysWhenMetadataChangesOfflineToOnline()
+void MultiRoomCoordinatorTest::queuesReplayWhenMetadataChangesOfflineToOnline()
 {
     StreamgetProcessClient client(fakeServicePath(),
                                   {QStringLiteral("--search-script"),
@@ -395,17 +395,18 @@ void MultiRoomCoordinatorTest::replaysWhenMetadataChangesOfflineToOnline()
     coordinator.refreshRoomStatusNow(QStringLiteral("63136"));
     QTRY_COMPARE_WITH_TIMEOUT(coordinator.roomSnapshots().at(0).liveStatus,
                               RoomLiveStatus::Online, 3000);
-    QTRY_VERIFY_WITH_TIMEOUT(sourceReady.count() == 1, 3000);
-    bool sawReady = false;
+    QTRY_VERIFY_WITH_TIMEOUT(session->hasPendingSourceForTest(), 3000);
+    QCOMPARE(sourceReady.count(), 0);
+    QCOMPARE(session->playbackHealth(), RoomPlaybackHealth::Pending);
+    bool sawResolving = false;
     for (const QList<QVariant> &arguments : stateChanges) {
         if (arguments.isEmpty()) continue;
-        if (qvariant_cast<RoomSession::State>(arguments.at(0)) == RoomSession::State::Ready) {
-            sawReady = true;
+        if (qvariant_cast<RoomSession::State>(arguments.at(0)) == RoomSession::State::Resolving) {
+            sawResolving = true;
             break;
         }
     }
-    QVERIFY(sawReady);
-    QVERIFY(stateChanges.count() >= 2);
+    QVERIFY(sawResolving);
     client.shutdown();
 }
 
