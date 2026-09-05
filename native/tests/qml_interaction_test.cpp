@@ -740,6 +740,19 @@ void QmlInteractionTest::groupsSoundControlsAndExposesFullscreen()
 
     QObject *fullscreen = header->findChild<QObject *>(QStringLiteral("fullscreenButton"));
     QVERIFY(fullscreen != nullptr);
+    QObject *windowControls = header->findChild<QObject *>(QStringLiteral("windowControls"));
+    QVERIFY(windowControls != nullptr);
+    QObject *maximize = windowControls->findChild<QObject *>(QStringLiteral("maximizeButton"));
+    QObject *maximizeIcon = windowControls->findChild<QObject *>(QStringLiteral("maximizeIcon"));
+    QObject *fullscreenIcon = header->findChild<QObject *>(QStringLiteral("fullscreenIcon"));
+    QVERIFY(maximize != nullptr);
+    QVERIFY(maximizeIcon != nullptr);
+    QVERIFY(fullscreenIcon != nullptr);
+    QVERIFY(maximize->property("Accessible.name").toString().contains(QStringLiteral("最大化")));
+    QCOMPARE(fullscreen->property("Accessible.name").toString(), QStringLiteral("全屏播放"));
+    QVERIFY(maximizeIcon->property("source").toUrl() != fullscreenIcon->property("source").toUrl());
+    QVERIFY(maximizeIcon->property("source").toUrl().toString().contains(QStringLiteral("window-maximize.svg")));
+    QVERIFY(fullscreenIcon->property("source").toUrl().toString().contains(QStringLiteral("window-fullscreen.svg")));
     QVERIFY(QMetaObject::invokeMethod(fullscreen, "clicked"));
     QVERIFY(controller.fullScreenToggled);
 }

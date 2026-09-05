@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import ".."
 
 Rectangle {
     id: root
@@ -15,10 +16,10 @@ Rectangle {
     signal toggleFullScreenRequested()
     readonly property var workspaceModel: root.controller ? root.controller.workspace : null
 
-    height: 44
+    height: Theme.topBarHeight
     z: 100
-    color: "#0f141a"
-    border.color: "#343b45"
+    color: Theme.appBar
+    border.color: Theme.border
     border.width: 1
 
     Row {
@@ -44,7 +45,7 @@ Rectangle {
                 source: Qt.resolvedUrl("../assets/icons/menu.svg")
                 opacity: parent.hovered ? 1 : 0.82
             }
-            background: Rectangle { radius: 4; color: parent.hovered ? "#252c34" : "transparent" }
+            background: Rectangle { radius: Theme.radiusSmall; color: parent.hovered ? Theme.controlSurface : "transparent" }
         }
 
         Rectangle {
@@ -52,15 +53,16 @@ Rectangle {
             width: 28
             height: 28
             radius: 6
-            color: "#2b1b18"
-            border.color: "#79462f"
+            color: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.14)
+            border.color: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.45)
 
-            Text {
+            Image {
+                objectName: "brandIcon"
                 anchors.centerIn: parent
-                color: "#ff7a18"
-                font.bold: true
-                font.pixelSize: 14
-                text: "D"
+                width: 18
+                height: 18
+                source: Qt.resolvedUrl("../assets/douyu_monitor.svg")
+                fillMode: Image.PreserveAspectFit
             }
         }
 
@@ -69,7 +71,7 @@ Rectangle {
             spacing: 1
 
             Text {
-                color: "#f4f6f8"
+                color: Theme.text
                 font.bold: true
                 font.pixelSize: 14
                 text: "斗鱼多房间监控"
@@ -111,7 +113,7 @@ Rectangle {
             ToolTip.text: Accessible.name
             onClicked: root.openDanmaku()
             contentItem: Image { anchors.centerIn: parent; width: 16; height: 16; source: Qt.resolvedUrl("../assets/icons/message-circle.svg"); opacity: parent.hovered ? 1 : 0.82 }
-            background: Rectangle { radius: 4; color: parent.hovered ? "#252c34" : "transparent" }
+            background: Rectangle { radius: Theme.radiusSmall; color: parent.hovered ? Theme.controlSurface : "transparent" }
         }
         ToolButton {
             objectName: "monitoringButton"
@@ -120,7 +122,7 @@ Rectangle {
             ToolTip.text: Accessible.name
             onClicked: root.openMonitoring()
             contentItem: Image { anchors.centerIn: parent; width: 16; height: 16; source: Qt.resolvedUrl("../assets/icons/activity.svg"); opacity: parent.hovered ? 1 : 0.82 }
-            background: Rectangle { radius: 4; color: parent.hovered ? "#252c34" : "transparent" }
+            background: Rectangle { radius: Theme.radiusSmall; color: parent.hovered ? Theme.controlSurface : "transparent" }
         }
         ToolButton {
             objectName: "workspaceButton"
@@ -129,7 +131,7 @@ Rectangle {
             ToolTip.text: Accessible.name
             onClicked: root.openWorkspace()
             contentItem: Image { objectName: "workspacePresetIcon"; anchors.centerIn: parent; width: 16; height: 16; source: Qt.resolvedUrl("../assets/icons/star.svg"); opacity: parent.hovered ? 1 : 0.82 }
-            background: Rectangle { radius: 4; color: parent.hovered ? "#252c34" : "transparent" }
+            background: Rectangle { radius: Theme.radiusSmall; color: parent.hovered ? Theme.controlSurface : "transparent" }
         }
         ToolButton {
             objectName: "layoutMenuButton"
@@ -157,8 +159,8 @@ Rectangle {
                 opacity: parent.hovered ? 1 : 0.82
             }
             background: Rectangle {
-                radius: 4
-                color: parent.hovered ? "#252c34" : "transparent"
+                radius: Theme.radiusSmall
+                color: parent.hovered ? Theme.controlSurface : "transparent"
             }
         }
         ToolButton {
@@ -170,13 +172,24 @@ Rectangle {
                 if (root.controller && root.controller.toggleFullScreen) root.controller.toggleFullScreen()
                 else root.toggleFullScreenRequested()
             }
-            contentItem: Image { anchors.centerIn: parent; width: 16; height: 16; source: Qt.resolvedUrl("../assets/icons/square.svg"); opacity: parent.hovered ? 1 : 0.82 }
-            background: Rectangle { radius: 4; color: parent.hovered ? "#252c34" : "transparent" }
+            contentItem: Image {
+                objectName: "fullscreenIcon"
+                anchors.centerIn: parent
+                width: 16
+                height: 16
+                source: Qt.resolvedUrl("../assets/icons/window-fullscreen.svg")
+                opacity: parent.hovered ? 1 : 0.82
+            }
+            background: Rectangle {
+                radius: Theme.radiusSmall
+                color: parent.hovered ? Theme.controlSurface : "transparent"
+            }
         }
     }
 
     WindowControls {
         id: windowControls
+        objectName: "windowControls"
         anchors.top: parent.top
         anchors.right: parent.right
         anchors.bottom: parent.bottom
@@ -190,8 +203,8 @@ Rectangle {
         height: audioModeControl.implicitHeight + 16
         visible: false
         z: 100
-        color: "#141a21"
-        border.color: "#343b45"
+        color: Theme.controlSurface
+        border.color: Theme.border
         radius: 6
         property point soundAnchor: Qt.point(actionButtons.x + soundMasterButton.x,
                                              root.height + 4)

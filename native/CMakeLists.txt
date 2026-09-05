@@ -58,6 +58,10 @@ set(DOUYU_QML_ICON_ASSETS
     app/qml/assets/icons/star.svg
     app/qml/assets/icons/volume-2.svg
     app/qml/assets/icons/x.svg
+    app/qml/assets/icons/window-maximize.svg
+    app/qml/assets/icons/window-fullscreen.svg
+    app/qml/assets/icons/window-minimize.svg
+    app/qml/assets/icons/window-close.svg
 )
 
 qt_add_library(douyu_qml STATIC)
@@ -66,6 +70,7 @@ qt_add_qml_module(douyu_qml
     VERSION 1.0
     OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/DouyuMonitor"
     QML_FILES
+        app/qml/Theme.qml
         app/qml/Main.qml
         app/qml/components/AppHeader.qml
         app/qml/components/WindowControls.qml
@@ -111,6 +116,8 @@ qt_add_resources(qml_engine_smoke_test qml_engine_test_resources
     PREFIX "/qml"
     BASE "${CMAKE_CURRENT_SOURCE_DIR}/app/qml"
     FILES
+        app/qml/qmldir
+        app/qml/Theme.qml
         app/qml/Main.qml
         app/qml/components/AppHeader.qml
         app/qml/components/WindowControls.qml
@@ -166,6 +173,8 @@ qt_add_resources(qml_visual_smoke_test qml_visual_smoke_test_resources
     PREFIX "/qml"
     BASE "${CMAKE_CURRENT_SOURCE_DIR}/app/qml"
     FILES
+        app/qml/qmldir
+        app/qml/Theme.qml
         app/qml/Main.qml
         app/qml/components/AppHeader.qml
         app/qml/components/WindowControls.qml
@@ -219,6 +228,8 @@ qt_add_resources(qml_interaction_test qml_interaction_test_resources
     PREFIX "/qml"
     BASE "${CMAKE_CURRENT_SOURCE_DIR}/app/qml"
     FILES
+        app/qml/qmldir
+        app/qml/Theme.qml
         app/qml/Main.qml
         app/qml/components/AppHeader.qml
         app/qml/components/WindowControls.qml

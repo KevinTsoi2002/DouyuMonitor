@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import "."
 import "components"
 import "dialogs"
 import "panels"
@@ -13,20 +14,20 @@ ApplicationWindow {
     minimumWidth: 960
     minimumHeight: 600
     visible: true
-    color: canvasColor
+    color: Theme.canvas
     title: "斗鱼多房间监控"
     flags: Qt.Window | Qt.FramelessWindowHint
 
     property var appController: null
     property bool refreshRequested: false
     property bool editableFocus: false
-    readonly property color canvasColor: "#16191f"
-    readonly property color surfaceColor: "#1f242c"
-    readonly property color borderColor: "#343b45"
-    readonly property color accentColor: "#ff7a18"
-    readonly property color textColor: "#f4f6f8"
-    readonly property color mutedTextColor: "#9ba5b1"
-    readonly property int headerHeight: 44
+    readonly property color canvasColor: Theme.canvas
+    readonly property color surfaceColor: Theme.controlSurface
+    readonly property color borderColor: Theme.border
+    readonly property color accentColor: Theme.accent
+    readonly property color textColor: Theme.text
+    readonly property color mutedTextColor: Theme.mutedText
+    readonly property int headerHeight: Theme.topBarHeight
     property bool sidebarVisible: appController
                                   ? appController.workspace.sidebarVisible
                                   : true
