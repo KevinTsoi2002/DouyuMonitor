@@ -911,15 +911,11 @@ void QmlInteractionTest::keepsSidebarMetadataClearOfActionsForLongTitles()
                                       Q_RETURN_ARG(QQuickItem *, row), Q_ARG(int, 0)));
     QVERIFY(row != nullptr);
 
-    QQuickItem *title = nullptr;
-    for (QObject *candidate : row->findChildren<QObject *>()) {
-        if (candidate->property("text").toString() == snapshot.metadata.title) {
-            title = qobject_cast<QQuickItem *>(candidate);
-            break;
-        }
-    }
+    auto *title = qobject_cast<QQuickItem *>(
+        row->findChild<QObject *>(QStringLiteral("sidebarRoomTitle")));
+    auto *actionBar = qobject_cast<QQuickItem *>(
+        row->findChild<QObject *>(QStringLiteral("sidebarRoomActionBar")));
     QVERIFY(title != nullptr);
-    auto *actionBar = qobject_cast<QQuickItem *>(row->findChild<QObject *>(QStringLiteral("moveRoomUpButton"))->parent());
     QVERIFY(actionBar != nullptr);
     QVERIFY(title->mapToItem(row, QPointF(title->width(), 0)).x() <= actionBar->x());
 }

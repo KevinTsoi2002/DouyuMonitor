@@ -56,9 +56,14 @@ Item {
 
             Rectangle {
                 anchors.fill: parent
-                radius: 5
-                color: historyMouse.containsMouse ? Theme.controlSurface : "transparent"
-                border.color: entry.active ? Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.5) : "transparent"
+                radius: Theme.radiusSmall
+                color: entry.active
+                       ? Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.08)
+                       : (historyMouse.containsMouse ? Theme.controlSurface : "transparent")
+                border.color: entry.active
+                              ? Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.6)
+                              : "transparent"
+                border.width: entry.active ? 1 : 0
             }
 
             Rectangle {
@@ -94,12 +99,15 @@ Item {
             }
 
             Column {
-                x: avatar.x + avatar.width + 7
-                y: 9
-                width: parent.width - x - (root.favoritesOnly ? 52 : 82)
-                spacing: 3
+                anchors.left: avatar.right
+                anchors.leftMargin: 7
+                anchors.right: roomActionBar.left
+                anchors.rightMargin: 6
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: 2
 
                 Text {
+                    objectName: "libraryRoomTitle"
                     width: parent.width
                     color: root.textColor
                     elide: Text.ElideRight
@@ -114,49 +122,69 @@ Item {
                     font.pixelSize: 9
                     text: entry.title.length > 0 ? entry.title : entry.roomId
                 }
-                Text {
-                    color: entry.active ? "#65d391" : root.mutedTextColor
-                    font.pixelSize: 9
-                    text: entry.active ? "当前播放" : root.openedLabel(entry.lastOpenedAtMs)
+                Row {
+                    spacing: 4
+
+                    Rectangle {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 5
+                        height: 5
+                        radius: 3
+                        color: entry.active ? Theme.online : Theme.mutedText
+                    }
+                    Text {
+                        color: entry.active ? Theme.online : root.mutedTextColor
+                        font.pixelSize: 9
+                        text: entry.active ? "当前播放" : root.openedLabel(entry.lastOpenedAtMs)
+                    }
                 }
             }
 
-            ToolButton {
-                objectName: "openHistoryRoomButton"
+            Item {
+                id: roomActionBar
+                objectName: "libraryRoomActionBar"
                 anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
                 anchors.rightMargin: 5
-                anchors.verticalCenter: parent.verticalCenter
-                width: 27
+                width: root.favoritesOnly ? 27 : 58
                 height: 27
-                enabled: !entry.active && root.controller !== null
-                Accessible.name: "打开房间"
-                ToolTip.visible: hovered
-                ToolTip.text: Accessible.name
-                onClicked: root.controller.addRoom(entry.roomId)
-                contentItem: Image { anchors.centerIn: parent; width: 16; height: 16; source: Qt.resolvedUrl("../assets/icons/plus.svg"); opacity: parent.enabled ? 1 : 0.35 }
-                background: Rectangle {
-                    radius: 3
-                    color: parent.hovered && parent.enabled ? "#2a211c" : "transparent"
-                }
-            }
 
-            ToolButton {
-                objectName: "removeHistoryButton"
-                anchors.right: parent.right
-                anchors.rightMargin: 34
-                anchors.verticalCenter: parent.verticalCenter
-                width: 27
-                height: 27
-                visible: !root.favoritesOnly
-                enabled: !entry.active && entry.lastOpenedAtMs > 0 && root.controller !== null
-                Accessible.name: "删除历史记录"
-                ToolTip.visible: hovered
-                ToolTip.text: Accessible.name
-                onClicked: root.controller.removeHistoryRoom(entry.roomId)
-                contentItem: Image { anchors.centerIn: parent; width: 16; height: 16; source: Qt.resolvedUrl("../assets/icons/x.svg"); opacity: parent.enabled ? 1 : 0.62 }
-                background: Rectangle {
-                    radius: 3
-                    color: parent.hovered && parent.enabled ? "#4b1c1c" : "transparent"
+                ToolButton {
+                    objectName: "openHistoryRoomButton"
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 27
+                    height: 27
+                    enabled: !entry.active && root.controller !== null
+                    Accessible.name: "打开房间"
+                    ToolTip.visible: hovered
+                    ToolTip.text: Accessible.name
+                    onClicked: root.controller.addRoom(entry.roomId)
+                    contentItem: Image { anchors.centerIn: parent; width: 16; height: 16; source: Qt.resolvedUrl("../assets/icons/plus.svg"); opacity: parent.enabled ? 1 : 0.35 }
+                    background: Rectangle {
+                        radius: Theme.radiusSmall
+                        color: parent.hovered && parent.enabled ? "#2a211c" : "transparent"
+                    }
+                }
+
+                ToolButton {
+                    objectName: "removeHistoryButton"
+                    anchors.right: parent.right
+                    anchors.rightMargin: 31
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 27
+                    height: 27
+                    visible: !root.favoritesOnly
+                    enabled: !entry.active && entry.lastOpenedAtMs > 0 && root.controller !== null
+                    Accessible.name: "删除历史记录"
+                    ToolTip.visible: hovered
+                    ToolTip.text: Accessible.name
+                    onClicked: root.controller.removeHistoryRoom(entry.roomId)
+                    contentItem: Image { anchors.centerIn: parent; width: 16; height: 16; source: Qt.resolvedUrl("../assets/icons/x.svg"); opacity: parent.enabled ? 1 : 0.62 }
+                    background: Rectangle {
+                        radius: Theme.radiusSmall
+                        color: parent.hovered && parent.enabled ? "#4b1c1c" : "transparent"
+                    }
                 }
             }
 

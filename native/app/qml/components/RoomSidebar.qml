@@ -184,60 +184,105 @@ Rectangle {
 
                     Rectangle {
                         anchors.fill: parent
-                        radius: 5
-                        color: roomMouse.containsMouse ? Theme.controlSurface : "transparent"
-                        border.color: primary ? Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.5) : "transparent"
+                        radius: Theme.radiusSmall
+                        color: primary
+                               ? Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.08)
+                               : (roomMouse.containsMouse ? Theme.controlSurface : "transparent")
+                        border.color: primary
+                                      ? Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.6)
+                                      : "transparent"
+                        border.width: primary ? 1 : 0
                     }
 
                     Rectangle {
-                    id: avatar
-                    x: 6
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: 32
-                    height: 32
-                    radius: 16
-                    color: primary ? Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.18) : Theme.well
-                    Image {
-                        id: roomAvatarImage
-                        objectName: "roomSidebarAvatarImage"
-                        anchors.fill: parent
-                        anchors.margins: 1
-                        source: roomRow.avatarUrl
-                        visible: roomRow.avatarUrl.toString().length > 0 && status !== Image.Error
-                        fillMode: Image.PreserveAspectCrop
-                        asynchronous: true
-                        smooth: true
-                        clip: true
+                        id: avatar
+                        x: 6
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 32
+                        height: 32
+                        radius: 16
+                        color: primary ? Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.18) : Theme.well
+                        Image {
+                            id: roomAvatarImage
+                            objectName: "roomSidebarAvatarImage"
+                            anchors.fill: parent
+                            anchors.margins: 1
+                            source: roomRow.avatarUrl
+                            visible: roomRow.avatarUrl.toString().length > 0 && status !== Image.Error
+                            fillMode: Image.PreserveAspectCrop
+                            asynchronous: true
+                            smooth: true
+                            clip: true
+                        }
+                        Text {
+                            anchors.centerIn: parent
+                            visible: !roomAvatarImage.visible
+                            text: roomRow.anchorName.length > 0 ? roomRow.anchorName.slice(0, 1) : roomRow.roomId.slice(0, 1)
+                            color: root.textColor
+                            font.bold: true
+                            font.pixelSize: 12
+                        }
                     }
-                    Text {
-                        anchors.centerIn: parent
-                        visible: !roomAvatarImage.visible
-                        text: roomRow.anchorName.length > 0 ? roomRow.anchorName.slice(0, 1) : roomRow.roomId.slice(0, 1)
-                        color: root.textColor
-                        font.bold: true
-                        font.pixelSize: 12
-                    }
-                }
 
                     Column {
-                    anchors.left: avatar.right
-                    anchors.leftMargin: 7
-                    anchors.right: roomActionBar.left
-                    anchors.rightMargin: 6
-                    y: 9
-                    spacing: 3
-                    Text { width: parent.width; color: root.textColor; text: roomRow.anchorName.trim().length > 0 ? roomRow.anchorName : roomRow.roomId; elide: Text.ElideRight; font.bold: true; font.pixelSize: 11 }
-                    Text { width: parent.width; color: root.mutedTextColor; text: roomRow.title.trim().length > 0 ? roomRow.title : "斗鱼直播间"; elide: Text.ElideRight; font.pixelSize: 9 }
-                    Text { width: parent.width; color: roomRow.liveState === "online" ? "#65d391" : roomRow.liveState === "unknown" ? "#c1cad4" : root.mutedTextColor; text: roomRow.liveState === "online" ? "直播中" : roomRow.liveState === "unknown" ? "检查中" : "未开播"; font.pixelSize: 9 }
-                }
+                        anchors.left: avatar.right
+                        anchors.leftMargin: 7
+                        anchors.right: roomActionBar.left
+                        anchors.rightMargin: 6
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 2
+
+                        Text {
+                            objectName: "sidebarRoomAnchorName"
+                            width: parent.width
+                            color: root.textColor
+                            text: roomRow.anchorName.trim().length > 0 ? roomRow.anchorName : roomRow.roomId
+                            elide: Text.ElideRight
+                            font.bold: true
+                            font.pixelSize: 11
+                        }
+                        Text {
+                            objectName: "sidebarRoomTitle"
+                            width: parent.width
+                            color: root.mutedTextColor
+                            text: roomRow.title.trim().length > 0 ? roomRow.title : "斗鱼直播间"
+                            elide: Text.ElideRight
+                            font.pixelSize: 9
+                        }
+                        Row {
+                            spacing: 4
+
+                            Rectangle {
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 5
+                                height: 5
+                                radius: 3
+                                color: roomRow.liveState === "online"
+                                       ? Theme.online
+                                       : (roomRow.liveState === "unknown" ? Theme.warning : Theme.mutedText)
+                            }
+                            Text {
+                                color: roomRow.liveState === "online"
+                                       ? Theme.online
+                                       : (roomRow.liveState === "unknown" ? Theme.warning : root.mutedTextColor)
+                                text: roomRow.liveState === "online"
+                                      ? "直播中"
+                                      : (roomRow.liveState === "unknown" ? "检查中" : "未开播")
+                                font.pixelSize: 9
+                            }
+                        }
+                    }
 
                     Row {
-                    id: roomActionBar
-                    anchors.right: parent.right
-                    anchors.rightMargin: 4
-                    anchors.verticalCenter: parent.verticalCenter
-                    spacing: 1
-                    ToolButton {
+                        id: roomActionBar
+                        objectName: "sidebarRoomActionBar"
+                        anchors.right: parent.right
+                        anchors.rightMargin: 4
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 119
+                        height: 23
+                        spacing: 1
+                        ToolButton {
                         width: 23; height: 23
                         Accessible.name: favorite ? "取消收藏" : "收藏"
                         ToolTip.visible: hovered; ToolTip.text: Accessible.name
@@ -287,8 +332,8 @@ Rectangle {
                         onClicked: root.requestRoomRemoval(roomRow.roomId)
                         contentItem: Image { anchors.centerIn: parent; width: 15; height: 15; source: Qt.resolvedUrl("../assets/icons/x.svg"); opacity: parent.hovered ? 1 : 0.62 }
                         background: Rectangle { radius: 3; color: parent.hovered ? "#4b1c1c" : "transparent" }
+                        }
                     }
-                }
 
                     MouseArea { id: roomMouse; anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.NoButton }
 
