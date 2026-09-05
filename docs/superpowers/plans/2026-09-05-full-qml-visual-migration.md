@@ -34,7 +34,7 @@
 - Modify: `native/tests/qml_visual_smoke_test.cpp:91-109,175-186`
 - Modify: `native/tests/qml_engine_smoke_test.cpp:22-64`
 
-- [ ] **Step 1: Add a failing release-module visual test**
+- [x] **Step 1: Add a failing release-module visual test**
 
 Add a new slot and assertion to `QmlVisualSmokeTest` before changing its load path:
 
@@ -56,7 +56,7 @@ void QmlVisualSmokeTest::loadsReleasedModuleWithVisualAnchors()
 }
 ```
 
-- [ ] **Step 2: Run the new test and record the expected module-link failure**
+- [x] **Step 2: Run the new test and record the expected module-link failure**
 
 Run:
 
@@ -67,7 +67,7 @@ ctest --preset windows-x64-release -R '^qml_visual_smoke_test$' --output-on-fail
 
 Expected before the CMake fixture update: `No module named "DouyuMonitor" found` or a missing-root-object assertion.
 
-- [ ] **Step 3: Link the visual test to the QML module and load it consistently**
+- [x] **Step 3: Link the visual test to the QML module and load it consistently**
 
 In the `qml_visual_smoke_test` target, add the same module dependencies used by `qml_engine_smoke_test`:
 
@@ -99,7 +99,7 @@ QCOMPARE(statusBar->property("color").value<QColor>(), QColor(QStringLiteral("#2
 
 Leave this assertion disabled until Task 2 adds the object; enable it in that task's green step.
 
-- [ ] **Step 5: Run module regressions**
+- [x] **Step 5: Run module regressions**
 
 Run:
 
@@ -109,7 +109,7 @@ ctest --preset windows-x64-release -R '^(qml_engine_smoke_test|qml_visual_smoke_
 
 Expected: both tests pass and the visual test loads `DouyuMonitor/Main` instead of relying only on the hand-written `qmldir` resource path.
 
-- [ ] **Step 6: Commit the test-path correction**
+- [x] **Step 6: Commit the test-path correction**
 
 ```powershell
 git add native/CMakeLists.txt native/tests/qml_engine_smoke_test.cpp native/tests/qml_visual_smoke_test.cpp
