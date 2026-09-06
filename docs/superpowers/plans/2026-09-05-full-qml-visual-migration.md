@@ -466,7 +466,7 @@ git commit -m "feat: unify dark panels dialogs and notifications"
 - Modify: `native/tests/qml_visual_smoke_test.cpp`
 - Create: `native/docs/visual-validation.md`
 
-- [ ] **Step 1: Extend screenshot capture coverage**
+- [x] **Step 1: Extend screenshot capture coverage**
 
 Save the following QQuickWindow images in `QML_VERIFICATION_DIR` from release-module tests:
 
@@ -482,7 +482,7 @@ sound-panel-1600x900.png
 
 Each capture must assert non-black canvas pixels, viewport containment, and no intersection between room text and action bars.
 
-- [ ] **Step 2: Build the released executable and run selected CTest suites**
+- [x] **Step 2: Build the released executable and run selected CTest suites**
 
 Run:
 
@@ -493,7 +493,7 @@ ctest --preset windows-x64-release -R '^(qml_engine_smoke_test|qml_visual_smoke_
 
 Expected: build exits with code 0. If `qml_close_regression_test` fails only under `QT_QPA_PLATFORM=offscreen` because nine OpenGL contexts cannot initialize, run the same test once with the Windows desktop backend and record that distinction in the validation document.
 
-- [ ] **Step 3: Check the packaged module metadata**
+- [x] **Step 3: Check the packaged module metadata**
 
 Run:
 
@@ -503,11 +503,11 @@ rg -n '^singleton Theme 1\.0 app/qml/Theme\.qml$' out/build/windows-x64-release/
 
 Expected: exactly one singleton registration. This confirms the released module uses the same theme contract as the tests.
 
-- [ ] **Step 4: Write visual validation evidence**
+- [x] **Step 4: Write visual validation evidence**
 
 Create `native/docs/visual-validation.md` with the exact build command, CTest result count, screenshot file names, viewport dimensions, and any environment-only limitation. Do not state that a browser mockup validates the Qt executable.
 
-- [ ] **Step 5: Commit validation artifacts**
+- [x] **Step 5: Commit validation artifacts**
 
 ```powershell
 git add native/tests/qml_visual_smoke_test.cpp native/docs/visual-validation.md

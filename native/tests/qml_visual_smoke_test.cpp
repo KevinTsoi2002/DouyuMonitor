@@ -177,6 +177,45 @@ int brightPixels(const QImage &image, const QRect &rect)
     return count;
 }
 
+QVariantList roomFixtures(int count)
+{
+    QVariantList rooms;
+    for (int index = 0; index < count; ++index) {
+        rooms.push_back(QVariantMap{
+            {QStringLiteral("roomId"), QStringLiteral("fixture-%1").arg(index + 1)},
+            {QStringLiteral("anchorName"), QStringLiteral("验收房间 %1").arg(index + 1)},
+            {QStringLiteral("title"), QStringLiteral("多路画布视觉验收直播间 %1").arg(index + 1)},
+            {QStringLiteral("category"), QStringLiteral("视觉验收")},
+            {QStringLiteral("viewerLabel"), QStringLiteral("--")},
+            {QStringLiteral("avatarUrl"), QUrl()},
+            {QStringLiteral("liveState"), index == 0 ? QStringLiteral("online") : QStringLiteral("offline")},
+            {QStringLiteral("playbackState"), QStringLiteral("idle")},
+            {QStringLiteral("primary"), index == 0},
+            {QStringLiteral("favorite"), false},
+            {QStringLiteral("audioFocused"), false},
+            {QStringLiteral("requestedQuality"), QStringLiteral("auto")},
+            {QStringLiteral("effectiveQuality"), QStringLiteral("auto")},
+            {QStringLiteral("availableQualities"), QVariantList{}},
+            {QStringLiteral("muted"), true},
+            {QStringLiteral("volume"), 100},
+            {QStringLiteral("danmakuEnabled"), false},
+            {QStringLiteral("danmakuState"), QStringLiteral("idle")},
+            {QStringLiteral("danmakuErrorCode"), QStringLiteral("NONE")},
+            {QStringLiteral("index"), index},
+        });
+    }
+    return rooms;
+}
+
+QList<QQuickItem *> roomTiles(QQuickItem *surface)
+{
+    QList<QQuickItem *> tiles;
+    for (QQuickItem *child : surface->childItems()) {
+        if (child->property("roomId").isValid()) tiles.push_back(child);
+    }
+    return tiles;
+}
+
 } // namespace
 
 class QmlVisualSmokeTest final : public QObject {
@@ -194,6 +233,8 @@ private slots:
     void usesAssetBackedIcons();
     void rendersDanmakuFixtureInsideRoomTile();
     void showsDanmakuSettingsPanelInsideViewport();
+    void capturesReferenceRoomCounts();
+    void showsSoundPanelInsideViewport();
 };
 
 void QmlVisualSmokeTest::loadsReleasedModuleWithVisualAnchors()
@@ -457,7 +498,7 @@ void QmlVisualSmokeTest::showsDanmakuSettingsPanelInsideViewport()
 {
     registerQmlTypes();
     QQmlApplicationEngine engine;
-    QQuickWindow *window = loadWindow(engine, QSize(1280, 720));
+    QQuickWindow *window = loadWindow(engine, QSize(1600, 900));
     QVERIFY(window != nullptr);
     QVERIFY(QTest::qWaitForWindowExposed(window));
 
@@ -473,7 +514,93 @@ void QmlVisualSmokeTest::showsDanmakuSettingsPanelInsideViewport()
     QVERIFY(!image.isNull());
     QVERIFY(image.rect().contains(panelRect));
     QVERIFY(image.pixelColor(panelRect.x() + 8, panelRect.y() + 8) != QColor(QStringLiteral("#000000")));
-    saveScreenshot(image, QStringLiteral("danmaku-settings-1280x720.png"));
+    saveScreenshot(image, QStringLiteral("danmaku-panel-1600x900.png"));
+}
+
+void QmlVisualSmokeTest::capturesReferenceRoomCounts()
+{
+    registerQmlTypes();
+
+    const struct Fixture {
+        int count;
+        QSize size;
+        QString name;
+    } fixtures[] = {
+        {1, QSize(1280, 720), QStringLiteral("one-room-1280x720.png")},
+        {3, QSize(1600, 900), QStringLiteral("three-rooms-1600x900.png")},
+        {5, QSize(1600, 900), QStringLiteral("five-rooms-1600x900.png")},
+        {9, QSize(1920, 1080), QStringLiteral("nine-rooms-1920x1080.png")},
+    };
+
+    for (const Fixture &fixture : fixtures) {
+        QQmlApplicationEngine engine;
+        QQmlComponent component(&engine,
+                                QUrl(QStringLiteral("qrc:/qml/components/WorkspaceGrid.qml")));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+
+        QQuickWindow hostWindow;
+        hostWindow.resize(fixture.size);
+        hostWindow.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&hostWindow));
+        const QSize contentSize(qRound(hostWindow.contentItem()->width()),
+                                qRound(hostWindow.contentItem()->height()));
+        QVERIFY(contentSize.width() > 0);
+        QVERIFY(contentSize.height() > 0);
+
+        std::unique_ptr<QObject> grid(component.createWithInitialProperties({
+            {QStringLiteral("parent"), QVariant::fromValue(hostWindow.contentItem())},
+            {QStringLiteral("width"), contentSize.width()},
+            {QStringLiteral("height"), contentSize.height()},
+            {QStringLiteral("roomModel"), roomFixtures(fixture.count)},
+            {QStringLiteral("layoutMode"), QStringLiteral("auto")},
+            {QStringLiteral("primaryRoomId"), QStringLiteral("fixture-1")},
+        }));
+        QVERIFY2(grid != nullptr, qPrintable(component.errorString()));
+
+        auto *surface = grid->findChild<QQuickItem *>(QStringLiteral("layoutSurface"));
+        QVERIFY(surface != nullptr);
+        const QList<QQuickItem *> tiles = roomTiles(surface);
+        QCOMPARE(tiles.size(), fixture.count);
+
+        const QImage image = hostWindow.grabWindow();
+        QVERIFY(!image.isNull());
+        const QRect viewport(QPoint(0, 0), hostWindow.size());
+        const QRect surfaceRect = sceneRect(surface);
+        QVERIFY(viewport.contains(surfaceRect));
+        QVERIFY(image.rect().contains(surfaceRect));
+        QVERIFY(image.pixelColor(surfaceRect.center()) != QColor(QStringLiteral("#000000")));
+        for (QQuickItem *tile : tiles) {
+            QVERIFY(viewport.contains(sceneRect(tile)));
+            auto *title = tile->findChild<QQuickItem *>(QStringLiteral("roomTitleText"));
+            auto *actions = tile->findChild<QQuickItem *>(QStringLiteral("roomActionBar"));
+            QVERIFY(title != nullptr);
+            QVERIFY(actions != nullptr);
+            QVERIFY(!sceneRect(title).intersects(sceneRect(actions)));
+        }
+        saveScreenshot(image, fixture.name);
+    }
+}
+
+void QmlVisualSmokeTest::showsSoundPanelInsideViewport()
+{
+    registerQmlTypes();
+    QQmlApplicationEngine engine;
+    QQuickWindow *window = loadWindow(engine, QSize(1600, 900));
+    QVERIFY(window != nullptr);
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+
+    click(window->findChild<QObject *>(QStringLiteral("soundMasterButton")));
+    QObject *panel = window->findChild<QObject *>(QStringLiteral("soundMasterPopover"));
+    QVERIFY(panel != nullptr);
+    QTRY_VERIFY(panel->property("visible").toBool());
+
+    const QRect panelRect = itemRect(panel);
+    QVERIFY(QRect(QPoint(0, 0), window->size()).contains(panelRect));
+    const QImage image = window->grabWindow();
+    QVERIFY(!image.isNull());
+    QVERIFY(image.rect().contains(panelRect));
+    QVERIFY(image.pixelColor(panelRect.center()) != QColor(QStringLiteral("#000000")));
+    saveScreenshot(image, QStringLiteral("sound-panel-1600x900.png"));
 }
 
 QTEST_MAIN(QmlVisualSmokeTest)
