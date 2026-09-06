@@ -14,6 +14,7 @@ enum class NotificationEventType {
     RoomOffline,
     PlaybackFailed,
     PlaybackRecovered,
+    FavoriteTitleChanged,
 };
 
 struct NotificationEvent {
@@ -21,8 +22,12 @@ struct NotificationEvent {
     QString roomId;
     QString anchorName;
     QString title;
+    QString previousTitle;
     QString body;
 };
+
+Q_DECLARE_METATYPE(NotificationEvent)
+Q_DECLARE_METATYPE(QVector<NotificationEvent>)
 
 class NotificationPolicy final {
 public:
@@ -30,6 +35,7 @@ public:
 
     QVector<NotificationEvent> update(const RoomSnapshots &snapshots);
     void resetBaseline();
+    void forgetRoom(const QString &roomId);
 
 private:
     struct State {
@@ -42,7 +48,8 @@ private:
     bool canEmit(const QString &roomId, NotificationEventType type, qint64 nowMs);
     static QString eventKey(const QString &roomId, NotificationEventType type);
     static NotificationEvent makeEvent(NotificationEventType type,
-                                       const RoomSnapshot &snapshot);
+                                       const RoomSnapshot &snapshot,
+                                       const QString &previousTitle = {});
 
     std::function<qint64()> nowMs_;
     QHash<QString, State> states_;

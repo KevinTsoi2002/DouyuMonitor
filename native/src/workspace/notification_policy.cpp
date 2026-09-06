@@ -21,6 +21,8 @@ QString typeKey(NotificationEventType type)
         return QStringLiteral("playback-failed");
     case NotificationEventType::PlaybackRecovered:
         return QStringLiteral("playback-recovered");
+    case NotificationEventType::FavoriteTitleChanged:
+        return QStringLiteral("favorite-title-changed");
     }
     return QStringLiteral("unknown");
 }
@@ -77,8 +79,18 @@ QVector<NotificationEvent> NotificationPolicy::update(const RoomSnapshots &snaps
             }
         }
 
+        if (!eventType.has_value()
+            && snapshot.favorite
+            && old.liveStatus == RoomLiveStatus::Online
+            && snapshot.liveStatus == RoomLiveStatus::Online
+            && !old.title.isEmpty()
+            && !snapshot.metadata.title.isEmpty()
+            && old.title != snapshot.metadata.title) {
+            eventType = NotificationEventType::FavoriteTitleChanged;
+        }
+
         if (eventType.has_value() && canEmit(snapshot.roomId, *eventType, now)) {
-            events.push_back(makeEvent(*eventType, snapshot));
+            events.push_back(makeEvent(*eventType, snapshot, old.title));
             emittedAtMs_.enqueue(now);
         }
 
@@ -95,6 +107,16 @@ void NotificationPolicy::resetBaseline()
     states_.clear();
     lastEmittedMs_.clear();
     emittedAtMs_.clear();
+}
+
+void NotificationPolicy::forgetRoom(const QString &roomId)
+{
+    states_.remove(roomId);
+    const QString prefix = roomId + QLatin1Char(':');
+    for (auto it = lastEmittedMs_.begin(); it != lastEmittedMs_.end();) {
+        if (it.key().startsWith(prefix)) it = lastEmittedMs_.erase(it);
+        else ++it;
+    }
 }
 
 bool NotificationPolicy::canEmit(const QString &roomId,
@@ -117,7 +139,8 @@ QString NotificationPolicy::eventKey(const QString &roomId, NotificationEventTyp
 }
 
 NotificationEvent NotificationPolicy::makeEvent(NotificationEventType type,
-                                                const RoomSnapshot &snapshot)
+                                                 const RoomSnapshot &snapshot,
+                                                 const QString &previousTitle)
 {
     const QString name = snapshot.metadata.anchorName.isEmpty()
         ? snapshot.roomId
@@ -131,6 +154,7 @@ NotificationEvent NotificationPolicy::makeEvent(NotificationEventType type,
     event.roomId = snapshot.roomId;
     event.anchorName = name;
     event.title = title;
+    event.previousTitle = previousTitle;
     switch (type) {
     case NotificationEventType::RoomOnline:
         event.body = name + QStringLiteral(" 已开播");
@@ -143,6 +167,10 @@ NotificationEvent NotificationPolicy::makeEvent(NotificationEventType type,
         break;
     case NotificationEventType::PlaybackRecovered:
         event.body = name + QStringLiteral(" 播放已恢复");
+        break;
+    case NotificationEventType::FavoriteTitleChanged:
+        event.body = name + QStringLiteral(" 的直播间标题已更新\n原标题：")
+            + previousTitle + QStringLiteral("\n新标题：") + snapshot.metadata.title;
         break;
     }
     return event;

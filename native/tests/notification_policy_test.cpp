@@ -49,6 +49,7 @@ private slots:
     void usesFirstSnapshotAsBaseline();
     void deduplicatesAndLimitsEvents();
     void doesNotTreatOfflineAsPlaybackFailure();
+    void titleChangesForFavoriteRoom();
 };
 
 void NotificationPolicyTest::usesFirstSnapshotAsBaseline()
@@ -90,6 +91,23 @@ void NotificationPolicyTest::doesNotTreatOfflineAsPlaybackFailure()
         policy.update({offlineRoom(QStringLiteral("63136"))});
     QCOMPARE(events.size(), 1);
     QCOMPARE(events.front().type, NotificationEventType::RoomOffline);
+}
+
+void NotificationPolicyTest::titleChangesForFavoriteRoom()
+{
+    auto oldRoom = onlineRoom(QStringLiteral("63136"));
+    oldRoom.favorite = true;
+    oldRoom.metadata.title = QStringLiteral("旧标题");
+    auto newRoom = oldRoom;
+    newRoom.metadata.title = QStringLiteral("新标题");
+
+    NotificationPolicy policy([] { return qint64{1'000}; });
+    QCOMPARE(policy.update({oldRoom}).size(), 0);
+    const QVector<NotificationEvent> events = policy.update({newRoom});
+    QCOMPARE(events.size(), 1);
+    QCOMPARE(events.front().type, NotificationEventType::FavoriteTitleChanged);
+    QVERIFY(events.front().body.contains(QStringLiteral("旧标题")));
+    QVERIFY(events.front().body.contains(QStringLiteral("新标题")));
 }
 
 QTEST_GUILESS_MAIN(NotificationPolicyTest)

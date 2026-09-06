@@ -614,10 +614,30 @@ target_link_libraries(notification_policy_test
 target_include_directories(notification_policy_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 add_test(NAME notification_policy_test COMMAND notification_policy_test)
 
+add_executable(favorite_monitor_test
+    tests/favorite_monitor_test.cpp
+    src/workspace/favorite_monitor.cpp
+    src/workspace/room_status_scheduler.cpp
+    src/workspace/notification_policy.cpp
+)
+target_link_libraries(favorite_monitor_test
+    PRIVATE
+        Qt6::Core
+        Qt6::Test
+)
+target_include_directories(favorite_monitor_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+add_test(NAME favorite_monitor_test COMMAND favorite_monitor_test)
+set_property(TEST favorite_monitor_test PROPERTY ENVIRONMENT_MODIFICATION
+    "PATH=path_list_prepend:${QT_ROOT}/bin"
+    "QT_PLUGIN_PATH=set:${QT_ROOT}/plugins"
+    "QML2_IMPORT_PATH=set:${QT_ROOT}/qml"
+)
+
 add_executable(windows_notification_service_test
     tests/windows_notification_service_test.cpp
     src/app/windows_notification_service.cpp
     src/workspace/notification_policy.cpp
+    src/workspace/favorite_monitor.cpp
 )
 target_link_libraries(windows_notification_service_test
     PRIVATE
