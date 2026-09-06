@@ -133,10 +133,10 @@ Popup {
             height: 32
             spacing: 8
             Column {
-                width: parent.width - globalEnabledSwitch.width - parent.spacing
+                width: parent.width - globalEnabledSwitch.width - closeDanmakuSettingsButton.width - parent.spacing * 2
                 spacing: 2
-                Text { text: "弹幕设置"; color: "#f4f6f8"; font.bold: true; font.pixelSize: 14 }
-                Text { text: "显示、治理和统计"; color: "#9ba5b1"; font.pixelSize: 11 }
+                Text { text: "弹幕设置"; color: Theme.text; font.bold: true; font.pixelSize: 14 }
+                Text { text: "显示、治理和统计"; color: Theme.mutedText; font.pixelSize: 11 }
             }
             Switch {
                 id: globalEnabledSwitch
@@ -146,14 +146,35 @@ Popup {
                 enabled: root.danmakuController !== null
                 onToggled: if (root.danmakuController) root.danmakuController.setGlobalEnabled(checked)
             }
+            ToolButton {
+                id: closeDanmakuSettingsButton
+                objectName: "closeDanmakuSettingsButton"
+                width: Theme.controlHeight
+                height: Theme.controlHeight
+                Accessible.name: "关闭弹幕设置"
+                ToolTip.visible: hovered
+                ToolTip.text: Accessible.name
+                onClicked: root.close()
+                contentItem: Image {
+                    anchors.centerIn: parent
+                    width: 14
+                    height: 14
+                    source: Qt.resolvedUrl("../assets/icons/x.svg")
+                    opacity: parent.hovered ? 1 : 0.78
+                }
+                background: Rectangle {
+                    radius: Theme.radiusSmall
+                    color: parent.down ? Theme.well : (parent.hovered ? Theme.well : "transparent")
+                }
+            }
         }
 
         Rectangle {
             width: parent.width
             height: 34
-            color: "#171d25"
-            radius: 4
-            border.color: "#343b45"
+            color: Theme.well
+            radius: Theme.radiusSmall
+            border.color: Theme.border
             Row {
                 anchors.fill: parent
                 anchors.margins: 3

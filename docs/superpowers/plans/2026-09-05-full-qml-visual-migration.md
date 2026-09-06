@@ -397,7 +397,7 @@ ctest --preset windows-x64-release -R '^(qml_visual_smoke_test|qml_interaction_t
 
 Expected: 5-route automatic layout remains three-over-two; primary layouts preserve their current 2 through 9 route placement and cards remain visible after model changes.
 
-- [ ] **Step 6: Commit canvas work**
+- [x] **Step 6: Commit canvas work**
 
 ```powershell
 git add native/app/qml/components/WorkspaceGrid.qml native/app/qml/components/RoomTile.qml native/app/qml/components/PrimaryRoomDivider.qml native/tests/qml_interaction_test.cpp native/tests/qml_visual_smoke_test.cpp
@@ -415,7 +415,7 @@ git commit -m "feat: rebuild multi-room canvas visual hierarchy"
 - Modify: `native/app/qml/dialogs/NotificationSettingsDialog.qml`
 - Modify: `native/tests/qml_interaction_test.cpp:273-623,1114-1190`
 
-- [ ] **Step 1: Add failing surface and close-action tests**
+- [x] **Step 1: Add failing surface and close-action tests**
 
 For each panel, add an object-name lookup and close assertion. The shared test pattern is:
 
@@ -431,19 +431,19 @@ QTRY_VERIFY(!panel->property("visible").toBool());
 
 Repeat for monitoring, workspace presets, sound master, add-room dialog, and notification settings with their own stable object names.
 
-- [ ] **Step 2: Apply the same container contract**
+- [x] **Step 2: Apply the same container contract**
 
 Each Popup, Drawer, and Dialog uses `Theme.controlSurface`, `Theme.border`, `Theme.radiusLarge`, an explicit title, internal `Theme.gap` padding, and a top-right close button. Inputs use `Theme.well`; primary buttons use `Theme.accent`; destructive buttons use `Theme.danger`.
 
-- [ ] **Step 3: Preserve all existing functionality**
+- [x] **Step 3: Preserve all existing functionality**
 
 Keep calls to `saveWorkspacePreset`, `applyWorkspacePreset`, `deleteWorkspacePreset`, `searchRooms`, `addRoomCandidate`, notification setting updates, danmaku setting updates, and monitoring data bindings unchanged. The task changes QML presentation and close behavior only.
 
-- [ ] **Step 4: Keep normal room-state checks silent**
+- [x] **Step 4: Keep normal room-state checks silent**
 
 In `ToastViewport.qml`, render only explicit warning, error, and user-action messages. Do not add a toast for normal refresh success or normal playback state.
 
-- [ ] **Step 5: Run panel and workflow regressions**
+- [x] **Step 5: Run panel and workflow regressions**
 
 Run:
 
@@ -453,7 +453,7 @@ ctest --preset windows-x64-release -R '^(qml_interaction_test|qml_danmaku_overla
 
 Expected: each surface opens and closes; preset deletion and deferred application remain safe; normal refresh does not create a persistent toast.
 
-- [ ] **Step 6: Commit transient-surface work**
+- [x] **Step 6: Commit transient-surface work**
 
 ```powershell
 git add native/app/qml/components/ToastViewport.qml native/app/qml/panels native/app/qml/dialogs native/tests/qml_interaction_test.cpp

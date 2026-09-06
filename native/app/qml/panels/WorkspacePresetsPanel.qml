@@ -31,8 +31,42 @@ Popup {
     }
 
     contentItem: Column {
-        spacing: 10
-        Text { text: "工作区预设"; color: "#f4f6f8"; font.bold: true; font.pixelSize: 14 }
+        spacing: Theme.gap
+        Item {
+            width: parent.width
+            height: Theme.controlHeight
+            Text {
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                text: "工作区预设"
+                color: Theme.text
+                font.bold: true
+                font.pixelSize: 14
+            }
+            ToolButton {
+                id: closeWorkspacePresetsButton
+                objectName: "closeWorkspacePresetsButton"
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                width: Theme.controlHeight
+                height: Theme.controlHeight
+                Accessible.name: "关闭工作区预设"
+                ToolTip.visible: hovered
+                ToolTip.text: Accessible.name
+                onClicked: root.close()
+                contentItem: Image {
+                    anchors.centerIn: parent
+                    width: 14
+                    height: 14
+                    source: Qt.resolvedUrl("../assets/icons/x.svg")
+                    opacity: parent.hovered ? 1 : 0.78
+                }
+                background: Rectangle {
+                    radius: Theme.radiusSmall
+                    color: parent.down ? Theme.well : (parent.hovered ? Theme.well : "transparent")
+                }
+            }
+        }
         Row {
             width: parent.width
             spacing: 6
@@ -41,6 +75,11 @@ Popup {
                 width: parent.width - savePresetButton.width - 6
                 placeholderText: "预设名称"
                 selectByMouse: true
+                background: Rectangle {
+                    radius: Theme.radiusSmall
+                    color: Theme.well
+                    border.color: Theme.border
+                }
             }
             Button {
                 id: savePresetButton
@@ -50,6 +89,18 @@ Popup {
                 onClicked: {
                     root.controller.saveWorkspacePreset(presetNameInput.text.trim())
                     presetNameInput.clear()
+                }
+                contentItem: Text {
+                    text: parent.text
+                    color: "#1a1a1a"
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    font.bold: true
+                    font.pixelSize: 12
+                }
+                background: Rectangle {
+                    radius: Theme.radiusSmall
+                    color: parent.down ? "#d76018" : (parent.hovered ? "#ff8d43" : Theme.accent)
                 }
             }
         }
@@ -65,9 +116,10 @@ Popup {
                 required property var modelData
                 width: presetList.width
                 height: 42
-                color: "#171d25"
-                radius: 4
-                Text { anchors.left: parent.left; anchors.leftMargin: 9; anchors.verticalCenter: parent.verticalCenter; width: parent.width - applyPresetButton.width - deletePresetButton.width - 28; text: modelData.name; color: "#f4f6f8"; elide: Text.ElideRight; font.pixelSize: 12 }
+                color: Theme.well
+                radius: Theme.radiusSmall
+                border.color: Theme.border
+                Text { anchors.left: parent.left; anchors.leftMargin: 9; anchors.verticalCenter: parent.verticalCenter; width: parent.width - applyPresetButton.width - deletePresetButton.width - 28; text: modelData.name; color: Theme.text; elide: Text.ElideRight; font.pixelSize: 12 }
                 Button {
                     id: applyPresetButton
                     objectName: "applyWorkspacePresetButton"

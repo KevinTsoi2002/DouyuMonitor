@@ -237,6 +237,7 @@ class QmlInteractionTest final : public QObject {
 private slots:
     void opensAddRoomDialogAndRejectsInvalidRoomId();
     void opensMonitoringDanmakuAndWorkspaceSurfaces();
+    void closesTransientSurfacesFromExplicitActions();
     void togglesSidebarAndHandlesRetainedShortcuts();
     void handlesLegacyShortcutParity();
     void rendersOnlineStatusForOnlineToken();
@@ -306,6 +307,76 @@ void QmlInteractionTest::opensMonitoringDanmakuAndWorkspaceSurfaces()
     QObject *workspace = window->findChild<QObject *>(QStringLiteral("workspacePresetsPanel"));
     QVERIFY(workspace != nullptr);
     QTRY_VERIFY(workspace->property("visible").toBool());
+}
+
+void QmlInteractionTest::closesTransientSurfacesFromExplicitActions()
+{
+    QQmlApplicationEngine engine;
+    QQuickWindow *window = loadWindow(engine);
+    QVERIFY(window != nullptr);
+    QVERIFY(window->isVisible());
+
+    click(window->findChild<QObject *>(QStringLiteral("monitoringButton")));
+    QObject *monitoring = window->findChild<QObject *>(QStringLiteral("monitoringDrawer"));
+    QVERIFY(monitoring != nullptr);
+    QTRY_VERIFY(monitoring->property("visible").toBool());
+    QObject *closeMonitoring = monitoring->findChild<QObject *>(
+        QStringLiteral("closeMonitoringStatusButton"));
+    QVERIFY(closeMonitoring != nullptr);
+    click(closeMonitoring);
+    QTRY_VERIFY(!monitoring->property("visible").toBool());
+
+    click(window->findChild<QObject *>(QStringLiteral("danmakuButton")));
+    QObject *danmaku = window->findChild<QObject *>(QStringLiteral("danmakuSettingsPanel"));
+    QVERIFY(danmaku != nullptr);
+    QTRY_VERIFY(danmaku->property("visible").toBool());
+    QObject *closeDanmaku = danmaku->findChild<QObject *>(
+        QStringLiteral("closeDanmakuSettingsButton"));
+    QVERIFY(closeDanmaku != nullptr);
+    click(closeDanmaku);
+    QTRY_VERIFY(!danmaku->property("visible").toBool());
+
+    click(window->findChild<QObject *>(QStringLiteral("workspaceButton")));
+    QObject *workspace = window->findChild<QObject *>(QStringLiteral("workspacePresetsPanel"));
+    QVERIFY(workspace != nullptr);
+    QTRY_VERIFY(workspace->property("visible").toBool());
+    QObject *closeWorkspace = workspace->findChild<QObject *>(
+        QStringLiteral("closeWorkspacePresetsButton"));
+    QVERIFY(closeWorkspace != nullptr);
+    click(closeWorkspace);
+    QTRY_VERIFY(!workspace->property("visible").toBool());
+
+    click(window->findChild<QObject *>(QStringLiteral("soundMasterButton")));
+    QObject *soundMaster = window->findChild<QObject *>(QStringLiteral("soundMasterPopover"));
+    QVERIFY(soundMaster != nullptr);
+    QTRY_VERIFY(soundMaster->property("visible").toBool());
+    QObject *closeSoundMaster = soundMaster->findChild<QObject *>(
+        QStringLiteral("closeSoundMasterButton"));
+    QVERIFY(closeSoundMaster != nullptr);
+    click(closeSoundMaster);
+    QTRY_VERIFY(!soundMaster->property("visible").toBool());
+
+    click(window->findChild<QObject *>(QStringLiteral("quickAddButton")));
+    QObject *addRoom = window->findChild<QObject *>(QStringLiteral("addRoomDialog"));
+    QVERIFY(addRoom != nullptr);
+    QTRY_VERIFY(addRoom->property("visible").toBool());
+    QObject *closeAddRoom = addRoom->findChild<QObject *>(
+        QStringLiteral("closeAddRoomDialogButton"));
+    QVERIFY(closeAddRoom != nullptr);
+    click(closeAddRoom);
+    QTRY_VERIFY(!addRoom->property("visible").toBool());
+
+    click(window->findChild<QObject *>(QStringLiteral("monitoringButton")));
+    QObject *notificationSettings = window->findChild<QObject *>(
+        QStringLiteral("notificationSettingsDialog"));
+    QVERIFY(notificationSettings != nullptr);
+    click(window->findChild<QObject *>(QStringLiteral("openNotificationSettingsButton")));
+    QTRY_VERIFY(notificationSettings->property("visible").toBool());
+    QObject *closeNotification = notificationSettings->findChild<QObject *>(
+        QStringLiteral("closeNotificationSettingsButton"));
+    QVERIFY(closeNotification != nullptr);
+    click(closeNotification);
+    QTRY_VERIFY(!notificationSettings->property("visible").toBool());
 }
 
 void QmlInteractionTest::togglesSidebarAndHandlesRetainedShortcuts()
@@ -634,6 +705,9 @@ void QmlInteractionTest::autoDismissesToastBySeverity()
     }));
     QVERIFY2(toast != nullptr, qPrintable(component.errorString()));
     QCOMPARE(toast->property("level").toString(), QStringLiteral("success"));
+    QObject *surface = toast->findChild<QObject *>(QStringLiteral("toastSurface"));
+    QVERIFY(surface != nullptr);
+    QVERIFY(!surface->property("visible").toBool());
     QTRY_COMPARE_WITH_TIMEOUT(toast->property("message").toString(), QString(), 500);
 }
 

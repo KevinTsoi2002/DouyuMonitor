@@ -13,6 +13,8 @@ Item {
     readonly property string message: workspaceModel ? workspaceModel.lastMessage : ""
     readonly property string level: workspaceModel ? workspaceModel.lastMessageLevel : "info"
     readonly property int autoDismissMs: workspaceModel ? workspaceModel.lastMessageTimeoutMs : 0
+    readonly property bool shouldDisplay: message.length > 0
+                                       && (level === "error" || level === "warning" || level === "action")
 
     width: 380
     height: toast.visible ? 48 : 0
@@ -33,11 +35,15 @@ Item {
 
     Rectangle {
         id: toast
+        objectName: "toastSurface"
         anchors.fill: parent
-        visible: root.message.length > 0
+        visible: root.shouldDisplay
         radius: Theme.radiusMedium
-        color: root.level === "error" ? Qt.rgba(Theme.danger.r, Theme.danger.g, Theme.danger.b, 0.16) : root.level === "success" ? Qt.rgba(Theme.online.r, Theme.online.g, Theme.online.b, 0.14) : Theme.controlSurface
-        border.color: root.level === "error" ? Theme.danger : root.level === "success" ? Theme.online : root.borderColor
+        color: root.level === "error" ? Qt.rgba(Theme.danger.r, Theme.danger.g, Theme.danger.b, 0.16)
+                                      : root.level === "warning" ? Qt.rgba(Theme.warning.r, Theme.warning.g, Theme.warning.b, 0.16)
+                                                                   : Theme.controlSurface
+        border.color: root.level === "error" ? Theme.danger
+                                               : root.level === "warning" ? Theme.warning : root.borderColor
 
         Text {
             anchors.left: parent.left

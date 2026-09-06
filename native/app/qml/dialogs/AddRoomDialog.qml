@@ -17,6 +17,7 @@ Dialog {
     title: "添加房间"
     width: 500
     height: 560
+    padding: 16
     anchors.centerIn: parent
 
     background: Rectangle {
@@ -44,6 +45,42 @@ Dialog {
 
     onOpened: roomInput.forceActiveFocus()
 
+    header: Item {
+        implicitHeight: 48
+        Text {
+            anchors.left: parent.left
+            anchors.leftMargin: 16
+            anchors.verticalCenter: parent.verticalCenter
+            text: root.title
+            color: Theme.text
+            font.bold: true
+            font.pixelSize: 16
+        }
+        ToolButton {
+            objectName: "closeAddRoomDialogButton"
+            anchors.right: parent.right
+            anchors.rightMargin: 10
+            anchors.verticalCenter: parent.verticalCenter
+            width: Theme.controlHeight
+            height: Theme.controlHeight
+            Accessible.name: "关闭添加房间"
+            ToolTip.visible: hovered
+            ToolTip.text: Accessible.name
+            onClicked: root.close()
+            contentItem: Image {
+                anchors.centerIn: parent
+                width: 14
+                height: 14
+                source: Qt.resolvedUrl("../assets/icons/x.svg")
+                opacity: parent.hovered ? 1 : 0.78
+            }
+            background: Rectangle {
+                radius: Theme.radiusSmall
+                color: parent.down ? Theme.well : (parent.hovered ? Theme.well : "transparent")
+            }
+        }
+    }
+
     contentItem: Column {
         spacing: 10
 
@@ -58,6 +95,11 @@ Dialog {
                 placeholderText: "输入房间号、斗鱼链接或主播名字"
                 selectByMouse: true
                 onAccepted: root.submit()
+                background: Rectangle {
+                    radius: Theme.radiusSmall
+                    color: Theme.well
+                    border.color: Theme.border
+                }
             }
 
             Button {
@@ -67,6 +109,18 @@ Dialog {
                 text: root.status === "searching" ? "搜索中" : "搜索"
                 enabled: root.canSearch && root.status !== "searching"
                 onClicked: root.submit()
+                contentItem: Text {
+                    text: parent.text
+                    color: "#1a1a1a"
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    font.bold: true
+                    font.pixelSize: 12
+                }
+                background: Rectangle {
+                    radius: Theme.radiusSmall
+                    color: parent.down ? "#d76018" : (parent.hovered ? "#ff8d43" : Theme.accent)
+                }
             }
         }
 
