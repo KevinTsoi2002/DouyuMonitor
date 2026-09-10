@@ -151,6 +151,7 @@ struct MpvQuickItem::MpvRenderState : std::enable_shared_from_this<MpvRenderStat
     std::atomic_bool eventDrainQueued = false;
     std::atomic_bool wakeupCallbackRegistered = false;
     std::atomic_bool renderContextReady = false;
+    std::atomic_bool renderingSuspended = false;
     std::atomic_bool mediaLoaded = false;
     std::atomic_bool videoConfigured = false;
     std::atomic_bool firstFrameRendered = false;
@@ -193,6 +194,10 @@ public:
     void render() override
     {
         if (state_ == nullptr || state_->teardownRequested.load()) return;
+        if (state_->renderingSuspended.load()) {
+            state_->releaseRenderContextOnRenderThread();
+            return;
+        }
         initializeRenderContext();
         mpv_render_context *context = state_->renderContext.load();
         if (context == nullptr || framebufferObject() == nullptr) return;
@@ -483,6 +488,25 @@ int MpvQuickItem::volume() const noexcept
     return volume_;
 }
 
+bool MpvQuickItem::renderingSuspended() const noexcept
+{
+    return renderState_ != nullptr && renderState_->renderingSuspended.load();
+}
+
+void MpvQuickItem::suspendRendering()
+{
+    if (renderState_ == nullptr || renderState_->renderingSuspended.exchange(true)) return;
+    renderState_->frameUpdateQueued.store(false);
+    update();
+}
+
+void MpvQuickItem::resumeRendering()
+{
+    if (renderState_ == nullptr || !renderState_->renderingSuspended.exchange(false)) return;
+    update();
+    if (isRenderContextReady()) emit renderContextReady();
+}
+
 MpvQuickItem::PlaybackState MpvQuickItem::playbackState() const noexcept
 {
     return renderState_ != nullptr ? renderState_->playbackState.load() : PlaybackState::Error;
@@ -500,7 +524,8 @@ void MpvQuickItem::scheduleCoreTeardown()
 
     state->teardownRequested.store(true);
     QQuickWindow *quickWindow = window();
-    if (quickWindow != nullptr && state->rendererAttached.load()
+    if (quickWindow != nullptr && quickWindow->isVisible()
+        && state->rendererAttached.load()
         && quickWindow->isSceneGraphInitialized()) {
         class CoreTeardownJob final : public QRunnable {
         public:
@@ -523,7 +548,6 @@ void MpvQuickItem::scheduleCoreTeardown()
         if (!state->teardownJobScheduled.exchange(true)) {
             quickWindow->scheduleRenderJob(new CoreTeardownJob(state),
                                            QQuickWindow::AfterSynchronizingStage);
-            quickWindow->releaseResources();
             quickWindow->update();
         }
         return;

@@ -20,6 +20,14 @@ Dialog {
     width: 440
     height: 500
     anchors.centerIn: parent
+    palette.window: Theme.controlSurface
+    palette.base: Theme.well
+    palette.button: Theme.controlSurface
+    palette.buttonText: Theme.text
+    palette.text: Theme.text
+    palette.windowText: Theme.text
+    palette.highlight: Theme.accent
+    palette.highlightedText: Theme.text
 
     background: Rectangle {
         color: Theme.controlSurface
@@ -58,8 +66,11 @@ Dialog {
 
             TextField {
                 id: groupNameInput
+                objectName: "groupNameInput"
                 width: parent.width - createGroupButton.width - renameGroupButton.width - 12
                 placeholderText: "分组名称"
+                color: Theme.text
+                placeholderTextColor: Theme.mutedText
                 selectByMouse: true
             }
             Button {
@@ -262,8 +273,11 @@ Dialog {
             spacing: 6
             TextField {
                 id: roomIdInput
+                objectName: "groupRoomIdInput"
                 width: parent.width - assignButton.width - 6
                 placeholderText: "输入房间号后分配到所选分组"
+                color: Theme.text
+                placeholderTextColor: Theme.mutedText
                 inputMethodHints: Qt.ImhDigitsOnly
                 selectByMouse: true
             }
@@ -352,10 +366,21 @@ Dialog {
         }
     }
 
-    footer: DialogButtonBox {
+    footer: Rectangle {
+        objectName: "groupManagerDialogFooter"
+        implicitHeight: 56
+        color: Theme.controlSurface
+        border.color: Theme.border
         Button {
+            anchors.right: parent.right
+            anchors.rightMargin: 0
+            anchors.verticalCenter: parent.verticalCenter
+            width: 92
+            height: 34
             text: "关闭"
             onClicked: root.close()
+            contentItem: Text { text: parent.text; color: Theme.text; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.pixelSize: 12 }
+            background: Rectangle { radius: Theme.radiusSmall; color: parent.down ? Theme.borderStrong : (parent.hovered ? Theme.border : Theme.well); border.color: Theme.borderStrong }
         }
     }
 }

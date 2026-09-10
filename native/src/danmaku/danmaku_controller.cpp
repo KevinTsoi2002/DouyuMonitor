@@ -129,6 +129,18 @@ const NativeDanmakuConfiguration &DanmakuController::configuration() const noexc
     return configuration_;
 }
 
+bool DanmakuController::presentationSuspended() const noexcept
+{
+    return presentationSuspended_;
+}
+
+void DanmakuController::setPresentationSuspended(bool suspended)
+{
+    if (presentationSuspended_ == suspended) return;
+    presentationSuspended_ = suspended;
+    emit presentationSuspendedChanged();
+}
+
 void DanmakuController::setConfiguration(const NativeDanmakuConfiguration &configuration)
 {
     NativeDanmakuConfiguration normalized = configuration;
@@ -250,6 +262,7 @@ void DanmakuController::clearRoomGovernanceOverride(const QString &roomId)
 
 QVariantMap DanmakuController::takeNextMessage(const QString &roomId)
 {
+    if (presentationSuspended_) return {};
     const auto message = sessions_.takeNextMessage(roomId);
     if (!message.has_value()) return {};
     return {

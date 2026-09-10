@@ -356,6 +356,8 @@ Popup {
                             width: parent.width
                             text: root.governanceSettings.keywordBlacklist.join(", ")
                             placeholderText: "输入需要过滤的关键词"
+                            color: Theme.text
+                            placeholderTextColor: Theme.mutedText
                             enabled: root.danmakuController !== null && (root.governanceScope === "global" || governanceRoomPicker.currentValue)
                             selectByMouse: true
                             onEditingFinished: root.applyGovernanceSetting("keywordBlacklist", root.keywordList(text))

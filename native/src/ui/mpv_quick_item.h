@@ -46,6 +46,9 @@ public:
     bool isMuted() const noexcept;
     bool setVolume(int volume);
     int volume() const noexcept;
+    bool renderingSuspended() const noexcept;
+    void suspendRendering();
+    void resumeRendering();
     PlaybackState playbackState() const noexcept;
     QString safeErrorLabel() const;
 

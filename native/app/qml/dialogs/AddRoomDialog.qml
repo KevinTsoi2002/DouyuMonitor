@@ -19,6 +19,14 @@ Dialog {
     height: 560
     padding: 16
     anchors.centerIn: parent
+    palette.window: Theme.controlSurface
+    palette.base: Theme.well
+    palette.button: Theme.controlSurface
+    palette.buttonText: Theme.text
+    palette.text: Theme.text
+    palette.windowText: Theme.text
+    palette.highlight: Theme.accent
+    palette.highlightedText: Theme.text
 
     background: Rectangle {
         color: Theme.controlSurface
@@ -93,6 +101,8 @@ Dialog {
                 objectName: "roomSearchInput"
                 width: parent.width - searchButton.width - 6
                 placeholderText: "输入房间号、斗鱼链接或主播名字"
+                color: Theme.text
+                placeholderTextColor: Theme.mutedText
                 selectByMouse: true
                 onAccepted: root.submit()
                 background: Rectangle {
@@ -236,6 +246,8 @@ Dialog {
                     height: 30
                     text: "加入"
                     onClicked: root.addCandidate(resultRow.modelData.roomId)
+                    contentItem: Text { text: parent.text; color: Theme.text; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.pixelSize: 11 }
+                    background: Rectangle { radius: Theme.radiusSmall; color: parent.down ? Theme.borderStrong : (parent.hovered ? Theme.border : Theme.well); border.color: Theme.borderStrong }
                 }
 
                 MouseArea {
@@ -256,11 +268,21 @@ Dialog {
         }
     }
 
-    footer: DialogButtonBox {
+    footer: Rectangle {
+        objectName: "addRoomDialogFooter"
+        implicitHeight: 56
+        color: Theme.controlSurface
+        border.color: Theme.border
         Button {
+            anchors.right: parent.right
+            anchors.rightMargin: 0
+            anchors.verticalCenter: parent.verticalCenter
+            width: 92
+            height: 34
             text: "取消"
-            DialogButtonBox.buttonRole: DialogButtonBox.RejectRole
             onClicked: root.close()
+            contentItem: Text { text: parent.text; color: Theme.text; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.pixelSize: 12 }
+            background: Rectangle { radius: Theme.radiusSmall; color: parent.down ? Theme.borderStrong : (parent.hovered ? Theme.border : Theme.well); border.color: Theme.borderStrong }
         }
     }
 }

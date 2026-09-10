@@ -19,9 +19,11 @@
 #include "workspace/notification_policy.h"
 
 class MultiRoomCoordinator;
+class FavoriteMonitor;
 class StreamgetProcessClient;
 class SystemNotificationSink;
 class WindowsNotificationService;
+class WindowsTrayService;
 class QSettings;
 
 class AppController final : public QObject {
@@ -33,6 +35,10 @@ class AppController final : public QObject {
     Q_PROPERTY(QVariantList libraryRooms READ libraryRooms NOTIFY libraryRoomsChanged)
     Q_PROPERTY(QVariantMap notificationPreferences READ notificationPreferences
                NOTIFY notificationPreferencesChanged)
+    Q_PROPERTY(bool backgroundHosted READ backgroundHosted NOTIFY backgroundHostedChanged)
+    Q_PROPERTY(bool windowMinimized READ windowMinimized NOTIFY windowMinimizedChanged)
+    Q_PROPERTY(QString closeBehavior READ closeBehavior NOTIFY closeBehaviorChanged)
+    Q_PROPERTY(bool quitRequested READ quitRequested CONSTANT)
     Q_PROPERTY(QVariantList searchResults READ searchResults NOTIFY searchResultsChanged)
     Q_PROPERTY(QString searchStatus READ searchStatus NOTIFY searchStateChanged)
     Q_PROPERTY(QString searchError READ searchError NOTIFY searchStateChanged)
@@ -54,6 +60,10 @@ public:
     QVariantList searchResults() const;
     QString searchStatus() const;
     QString searchError() const;
+    bool backgroundHosted() const noexcept;
+    bool windowMinimized() const noexcept;
+    QString closeBehavior() const;
+    bool quitRequested() const noexcept;
     QString fixedPlaybackMessage(const QString &errorCode) const;
     void setMainWindow(QWindow *window);
 
@@ -62,6 +72,7 @@ public:
     Q_INVOKABLE QString addRoomCandidate(const QString &roomId);
     Q_INVOKABLE QString removeRoom(const QString &roomId);
     Q_INVOKABLE void requestRemoveRoom(const QString &roomId);
+    Q_INVOKABLE QString removeHistoryRoom(const QString &roomId);
     Q_INVOKABLE QString setPrimaryRoom(const QString &roomId);
     Q_INVOKABLE QString setAudioRoom(const QString &roomId);
     Q_INVOKABLE bool setAudioMode(const QString &mode);
@@ -93,15 +104,24 @@ public:
                                                    bool roomOnline,
                                                    bool roomOffline,
                                                    bool playbackFailed,
-                                                   bool playbackRecovered);
+                                                   bool playbackRecovered,
+                                                   bool favoriteTitleChanged = true);
     Q_INVOKABLE void refreshRoom(const QString &roomId);
     Q_INVOKABLE void attachPlayer(const QString &roomId, MpvQuickItem *item);
     Q_INVOKABLE void detachPlayer(const QString &roomId, MpvQuickItem *item);
     Q_INVOKABLE void minimizeWindow();
+    Q_INVOKABLE void restoreFromMinimized();
     Q_INVOKABLE void toggleMaximizedWindow();
     Q_INVOKABLE void toggleFullScreen();
     Q_INVOKABLE void exitFullScreen();
     Q_INVOKABLE void closeWindow();
+    Q_INVOKABLE void requestClose();
+    Q_INVOKABLE bool setCloseBehavior(const QString &behavior, bool persist = true);
+    Q_INVOKABLE void clearCloseBehavior();
+    Q_INVOKABLE void minimizeToBackground();
+    Q_INVOKABLE void closeToTray();
+    Q_INVOKABLE void restoreFromBackground();
+    Q_INVOKABLE void requestQuit();
     Q_INVOKABLE void shutdown();
 
 #ifdef DOUYU_TESTING
@@ -115,6 +135,9 @@ signals:
     void notificationPreferencesChanged();
     void searchResultsChanged();
     void searchStateChanged();
+    void backgroundHostedChanged();
+    void windowMinimizedChanged();
+    void closeBehaviorChanged();
 
 private:
     void restoreWorkspace();
@@ -123,6 +146,10 @@ private:
     void onServiceResponse(const ServiceResponse &response);
     void onServiceRequestFailed(quint64 requestId, const QString &errorCode);
     void onRoomStatusRefreshed(const QString &roomId, bool online);
+    void synchronizeFavoriteMonitor();
+    void onFavoriteRoomUpdated(const QString &roomId,
+                               const RoomMetadata &metadata,
+                               RoomLiveStatus liveStatus);
     void refreshPresentation();
     void synchronizeDanmaku();
     void touchHistory(const QString &roomId);
@@ -136,9 +163,11 @@ private:
     QSettings *settings_ = nullptr;
     std::unique_ptr<StreamgetProcessClient> service_;
     std::unique_ptr<MultiRoomCoordinator> coordinator_;
+    std::unique_ptr<FavoriteMonitor> favoriteMonitor_;
     NativeWorkspaceStore workspaceStore_;
     NotificationPolicy notificationPolicy_;
     std::unique_ptr<WindowsNotificationService> notificationService_;
+    std::unique_ptr<WindowsTrayService> trayService_;
     std::unique_ptr<RoomListModel> rooms_;
     std::unique_ptr<WorkspaceModel> workspace_;
     std::unique_ptr<MonitoringModel> monitoring_;
@@ -149,10 +178,15 @@ private:
     bool hadPreFullScreenVisibility_ = false;
     bool restoring_ = false;
     bool shuttingDown_ = false;
+    bool backgroundHosted_ = false;
+    bool windowMinimized_ = false;
+    QString closeBehavior_ = QStringLiteral("ask");
+    bool quitRequested_ = false;
     QVariantList searchResults_;
     QHash<QString, RoomMetadata> searchCandidates_;
     quint64 searchRequestId_ = 0;
     QString searchStatus_ = QStringLiteral("idle");
     QString searchError_;
     QHash<QString, RoomLiveStatus> lastLiveStatuses_;
+    QHash<QString, RoomLiveStatus> favoriteLiveStatuses_;
 };

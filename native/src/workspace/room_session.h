@@ -57,6 +57,8 @@ public:
     void cancel();
     void stop();
     void release();
+    void suspendRendering();
+    void resumeRendering();
 
 #ifdef DOUYU_TESTING
     bool hasPendingSourceForTest() const noexcept;

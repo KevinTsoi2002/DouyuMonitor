@@ -2,6 +2,7 @@
 #include <QCommandLineParser>
 #include <QCoreApplication>
 #include <QDir>
+#include <QFileInfo>
 #include <QElapsedTimer>
 #include <QGuiApplication>
 #include <QSettings>
@@ -158,8 +159,10 @@ int main(int argc, char *argv[])
                        QStringLiteral("DouyuMonitor"), QStringLiteral("DouyuMonitor"));
     std::unique_ptr<AppController> controller;
     if (!selfTest) {
-        const QString serviceProgram = QDir(QCoreApplication::applicationDirPath())
-            .filePath(QStringLiteral("streamget_service.exe"));
+        const QDir appDir(QCoreApplication::applicationDirPath());
+        const QString bundledService = appDir.filePath(QStringLiteral("streamget_service/streamget_service.exe"));
+        const QString legacyService = appDir.filePath(QStringLiteral("streamget_service.exe"));
+        const QString serviceProgram = QFileInfo::exists(bundledService) ? bundledService : legacyService;
         controller = std::make_unique<AppController>(serviceProgram, &settings);
     }
 

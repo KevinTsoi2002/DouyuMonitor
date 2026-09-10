@@ -11,6 +11,7 @@ class DanmakuController final : public QObject {
     Q_PROPERTY(bool globalEnabled READ globalEnabled NOTIFY settingsChanged)
     Q_PROPERTY(QVariantMap displaySettings READ displaySettings NOTIFY settingsChanged)
     Q_PROPERTY(QVariantMap governanceSettings READ governanceSettings NOTIFY settingsChanged)
+    Q_PROPERTY(bool presentationSuspended READ presentationSuspended NOTIFY presentationSuspendedChanged)
 
 public:
     explicit DanmakuController(DanmakuClientFactory factory = {}, QObject *parent = nullptr);
@@ -19,6 +20,8 @@ public:
     QVariantMap displaySettings() const;
     QVariantMap governanceSettings() const;
     const NativeDanmakuConfiguration &configuration() const noexcept;
+    bool presentationSuspended() const noexcept;
+    void setPresentationSuspended(bool suspended);
 
     void setConfiguration(const NativeDanmakuConfiguration &configuration);
     void synchronize(const QVector<DanmakuRoomEligibility> &rooms);
@@ -45,6 +48,7 @@ signals:
     void settingsChanged();
     void roomStateChanged(const QString &roomId);
     void messageAvailable(const QString &roomId);
+    void presentationSuspendedChanged();
 
 private:
     static DanmakuGovernanceOverride overrideWithSetting(
@@ -56,4 +60,5 @@ private:
 
     NativeDanmakuConfiguration configuration_;
     DanmakuSessionManager sessions_;
+    bool presentationSuspended_ = false;
 };

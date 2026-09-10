@@ -11,7 +11,7 @@ $cmakeListPath = Join-Path $nativeRoot 'CMakeLists.txt'
 
 foreach ($requiredFile in @(
     (Join-Path $releaseDir 'douyu_monitor_native.exe'),
-    (Join-Path $releaseDir 'streamget_service.exe'),
+    (Join-Path $releaseDir 'streamget_service\streamget_service.exe'),
     $appIconPath,
     $installerScript
 )) {
@@ -41,9 +41,13 @@ Remove-Item $installerRoot -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $stageDir | Out-Null
 
 Get-ChildItem $releaseDir -File | Where-Object {
-    $_.Name -in @('douyu_monitor_native.exe', 'streamget_service.exe') -or
+    $_.Name -eq 'douyu_monitor_native.exe' -or
     ($_.Extension -eq '.dll' -and $_.Name -notlike 'test*')
 } | Copy-Item -Destination $stageDir
+$serviceSourceDir = Join-Path $releaseDir 'streamget_service'
+if (Test-Path $serviceSourceDir) {
+    Copy-Item $serviceSourceDir -Destination $stageDir -Recurse
+}
 Copy-Item $appIconPath -Destination $stageDir
 
 foreach ($directory in @('platforms', 'qml', 'imageformats', 'iconengines', 'styles', 'tls', 'networkinformation', 'generic')) {

@@ -43,6 +43,7 @@ class MpvQuickItemTest final : public QObject {
     Q_OBJECT
 
 private slots:
+    void suspendsRenderingWithoutChangingPlaybackControls();
     void rendersOneLocalFrameAndReleasesCleanly();
     void doesNotRestoreMediaStateAfterReleaseDuringLoad();
     void rendersLocalFramePixelsIntoTheQuickFramebuffer();
@@ -53,6 +54,24 @@ private slots:
     void appliesValidatedVolume();
     void usesWakeupDrivenEventDraining();
 };
+
+void MpvQuickItemTest::suspendsRenderingWithoutChangingPlaybackControls()
+{
+    MpvQuickItem item;
+    QVERIFY(!item.renderingSuspended());
+    QVERIFY(item.setMuted(true));
+    QVERIFY(item.setVolume(37));
+    item.suspendRendering();
+    QVERIFY(item.renderingSuspended());
+    QCOMPARE(item.volume(), 37);
+    QVERIFY(item.isMuted());
+    item.suspendRendering();
+    QVERIFY(item.renderingSuspended());
+    item.resumeRendering();
+    QVERIFY(!item.renderingSuspended());
+    item.resumeRendering();
+    QVERIFY(!item.renderingSuspended());
+}
 
 void MpvQuickItemTest::rendersOneLocalFrameAndReleasesCleanly()
 {

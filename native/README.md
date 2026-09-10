@@ -60,7 +60,7 @@ Release 可执行文件为：
 native/out/build/windows-x64-release/douyu_monitor_native.exe
 ```
 
-部署步骤由 CMake 调用匹配的 `windeployqt` 完成。Release 目录必须包含 `platforms/qwindows.dll`；不要混用 Debug 与 Release 的 Qt DLL 或平台插件。
+部署步骤由 CMake 调用匹配的 `windeployqt` 完成。Release 目录必须包含 `platforms/qwindows.dll` 和按导入库实际名称部署的 `mpv.dll`；不要混用 Debug 与 Release 的 Qt DLL 或平台插件。SDK 源文件仍为 `libmpv-2.dll`，构建后会复制为应用加载名 `mpv.dll`。
 
 ## StreamGet 服务
 
@@ -72,6 +72,10 @@ native/out/build/windows-x64-release/douyu_monitor_native.exe
 ```
 
 服务以私有 JSONL stdin/stdout 协议运行。主程序只在内存中持有当前播放会话的地址；不会持久化播放 URL、查询参数、Cookie、Token、签名、原始弹幕帧或原始服务诊断。
+
+## 后台托管
+
+关闭窗口和最小化都会隐藏主窗口并进入 Windows 托盘。后台期间 StreamGet、房间状态检测、系统通知和 libmpv 音频继续运行；Qt Quick 视频渲染和弹幕展示会暂停，以降低后台资源占用。通过托盘“显示窗口”恢复时，播放器重新建立渲染上下文并恢复弹幕展示。托盘“退出程序”才会停止服务并结束应用进程。
 
 ## 自测与安装包
 

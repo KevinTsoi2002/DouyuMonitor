@@ -13,14 +13,17 @@ set(REQUIRED_RUNTIME_FILES
     Qt6Gui.dll
     Qt6Qml.dll
     Qt6Quick.dll
-    libmpv-2.dll
-    streamget_service.exe
+    mpv.dll
 )
 foreach(runtime_file IN LISTS REQUIRED_RUNTIME_FILES)
     if(NOT EXISTS "${RUNTIME_DIR}/${runtime_file}")
         message(FATAL_ERROR "Required runtime file is missing: ${runtime_file}")
     endif()
 endforeach()
+if(NOT EXISTS "${RUNTIME_DIR}/streamget_service/streamget_service.exe"
+   AND NOT EXISTS "${RUNTIME_DIR}/streamget_service.exe")
+    message(FATAL_ERROR "Required StreamGet service executable is missing")
+endif()
 
 set(FORBIDDEN_RUNTIME_FILE_NAMES
     Qt6Widgets.dll
@@ -69,7 +72,7 @@ if(NOT dumpbin_result EQUAL 0)
 endif()
 
 string(TOLOWER "${dumpbin_output}" dependency_output)
-foreach(required_dependency IN ITEMS qt6core qt6gui qt6qml qt6quick libmpv-2.dll)
+foreach(required_dependency IN ITEMS qt6core qt6gui qt6qml qt6quick mpv.dll)
     string(FIND "${dependency_output}" "${required_dependency}" dependency_index)
     if(dependency_index EQUAL -1)
         message(FATAL_ERROR "Required executable dependency is missing: ${required_dependency}")

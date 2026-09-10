@@ -1,5 +1,6 @@
 #include "app/windows_notification_service.h"
 
+#include <QDateTime>
 #include <QSettings>
 
 #ifdef Q_OS_WIN
@@ -59,7 +60,7 @@ public:
         return iconAdded_;
     }
 
-    void show(const QString &, const QString &) override
+    void show(const QString &title, const QString &body) override
     {
 #ifdef Q_OS_WIN
         if (!available()) return;
@@ -70,8 +71,10 @@ public:
         icon.uFlags = NIF_INFO;
         icon.dwInfoFlags = NIIF_INFO;
         icon.uTimeout = 5000;
-        copy(icon.szInfoTitle, L"斗鱼监控");
-        copy(icon.szInfo, L"房间状态已更新");
+        const std::wstring titleText = title.toStdWString();
+        const std::wstring bodyText = body.toStdWString();
+        copy(icon.szInfoTitle, titleText.c_str());
+        copy(icon.szInfo, bodyText.c_str());
         Shell_NotifyIconW(NIM_MODIFY, &icon);
 #endif
     }
@@ -107,6 +110,8 @@ QString key(NotificationEventType type)
         return QStringLiteral("playbackFailed");
     case NotificationEventType::PlaybackRecovered:
         return QStringLiteral("playbackRecovered");
+    case NotificationEventType::FavoriteTitleChanged:
+        return QStringLiteral("favoriteTitleChanged");
     }
     return {};
 }
@@ -149,6 +154,8 @@ bool WindowsNotificationService::setPreferences(NotificationPreferences preferen
                         preferences_.playbackFailed);
     settings_->setValue(QStringLiteral("notifications/playbackRecovered"),
                         preferences_.playbackRecovered);
+    settings_->setValue(QStringLiteral("notifications/favoriteTitleChanged"),
+                        preferences_.favoriteTitleChanged);
     settings_->sync();
     if (settings_->status() != QSettings::NoError) {
         statusText_ = QStringLiteral("通知设置保存失败");
@@ -164,8 +171,34 @@ bool WindowsNotificationService::deliver(const NotificationEvent &event)
         || !sink_->available()) {
         return false;
     }
+
+    constexpr qint64 dedupeWindowMs = 5 * 60 * 1000;
+    constexpr qint64 rateWindowMs = 60 * 1000;
+    constexpr int maxEventsPerRateWindow = 6;
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    for (auto it = deliveredEventsMs_.begin(); it != deliveredEventsMs_.end();) {
+        if (it.value() <= now - dedupeWindowMs) it = deliveredEventsMs_.erase(it);
+        else ++it;
+    }
+    while (!deliveredAtMs_.isEmpty() && deliveredAtMs_.front() <= now - rateWindowMs) {
+        deliveredAtMs_.dequeue();
+    }
+    if (deliveredAtMs_.size() >= maxEventsPerRateWindow) return false;
+    const QString key = eventKey(event);
+    const auto previous = deliveredEventsMs_.constFind(key);
+    if (previous != deliveredEventsMs_.cend() && now - previous.value() < dedupeWindowMs) {
+        return false;
+    }
+    deliveredEventsMs_.insert(key, now);
+    deliveredAtMs_.enqueue(now);
     sink_->show(event.title, event.body);
     return true;
+}
+
+QString WindowsNotificationService::eventKey(const NotificationEvent &event)
+{
+    return event.roomId + QLatin1Char(':')
+        + QString::number(static_cast<int>(event.type));
 }
 
 QString WindowsNotificationService::statusText() const
@@ -186,6 +219,8 @@ void WindowsNotificationService::loadPreferences()
         settings_->value(QStringLiteral("notifications/playbackFailed"), true).toBool();
     preferences_.playbackRecovered =
         settings_->value(QStringLiteral("notifications/playbackRecovered"), true).toBool();
+    preferences_.favoriteTitleChanged =
+        settings_->value(QStringLiteral("notifications/favoriteTitleChanged"), true).toBool();
 }
 
 bool WindowsNotificationService::isEnabled(NotificationEventType type) const noexcept
@@ -199,6 +234,8 @@ bool WindowsNotificationService::isEnabled(NotificationEventType type) const noe
         return preferences_.playbackFailed;
     case NotificationEventType::PlaybackRecovered:
         return preferences_.playbackRecovered;
+    case NotificationEventType::FavoriteTitleChanged:
+        return preferences_.favoriteTitleChanged;
     }
     return false;
 }

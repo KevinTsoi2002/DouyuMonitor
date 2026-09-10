@@ -242,6 +242,16 @@ void RoomSession::release()
     setState(State::Idle);
 }
 
+void RoomSession::suspendRendering()
+{
+    if (player_ != nullptr) player_->suspendRendering();
+}
+
+void RoomSession::resumeRendering()
+{
+    if (player_ != nullptr) player_->resumeRendering();
+}
+
 void RoomSession::onControllerSourceReady(MediaSource source)
 {
     pendingSource_ = std::move(source);

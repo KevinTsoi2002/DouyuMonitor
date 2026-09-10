@@ -12,6 +12,7 @@
 #include <memory>
 
 #include "app/windows_notification_service.h"
+#include "app/windows_tray_service.h"
 #include "danmaku/danmaku_socket.h"
 #include "danmaku/danmaku_timer_scheduler.h"
 #include "service/streamget_process_client.h"
@@ -20,6 +21,7 @@
 #include "ui/room_list_model.h"
 #include "ui/workspace_model.h"
 #include "workspace/multi_room_coordinator.h"
+#include "workspace/favorite_monitor.h"
 
 namespace {
 
@@ -69,7 +71,17 @@ AppController::AppController(QString serviceProgram,
     }
     service_ = std::make_unique<StreamgetProcessClient>(std::move(serviceProgram), QStringList{}, this);
     coordinator_ = std::make_unique<MultiRoomCoordinator>(service_.get(), this);
+    favoriteMonitor_ = std::make_unique<FavoriteMonitor>(
+        [this](const QString &roomId) {
+            return service_ != nullptr ? service_->search(roomId) : 0;
+        },
+        [this](quint64 requestId) {
+            if (service_ != nullptr) service_->cancel(requestId);
+        },
+        RoomRefreshTiming{},
+        this);
     notificationService_ = std::make_unique<WindowsNotificationService>(settings, notificationSink, this);
+    trayService_ = std::make_unique<WindowsTrayService>(this);
     rooms_ = std::make_unique<RoomListModel>(this);
     workspace_ = std::make_unique<WorkspaceModel>(this, this);
     monitoring_ = std::make_unique<MonitoringModel>(this);
@@ -79,6 +91,13 @@ AppController::AppController(QString serviceProgram,
             this, &AppController::onServiceResponse);
     connect(service_.get(), &StreamgetProcessClient::requestFailed,
             this, &AppController::onServiceRequestFailed);
+    connect(favoriteMonitor_.get(), &FavoriteMonitor::eventsReady,
+            this, [this](const QVector<NotificationEvent> &events) {
+                if (restoring_) return;
+                for (const NotificationEvent &event : events) notificationService_->deliver(event);
+            });
+    connect(favoriteMonitor_.get(), &FavoriteMonitor::roomUpdated,
+            this, &AppController::onFavoriteRoomUpdated);
 
     connect(coordinator_.get(), &MultiRoomCoordinator::roomSnapshotsChanged,
             this, &AppController::onSnapshotsChanged);
@@ -99,10 +118,23 @@ AppController::AppController(QString serviceProgram,
     connect(danmaku_.get(), &DanmakuController::roomStateChanged,
             this, [this](const QString &) { refreshPresentation(); });
     restoreWorkspace();
+    if (settings_ != nullptr) {
+        const QString behavior = settings_->value(QStringLiteral("window/closeBehavior"),
+                                                  QStringLiteral("ask")).toString();
+        if (behavior == QStringLiteral("quit") || behavior == QStringLiteral("background")) {
+            closeBehavior_ = behavior;
+        }
+    }
     const auto notificationStatus = notificationService_->preferences().enabled
         ? MonitoringModel::NotificationStatus::Enabled
         : MonitoringModel::NotificationStatus::Disabled;
     monitoring_->setStatus(notificationStatus, MonitoringModel::RecoveryStatus::Healthy);
+    synchronizeFavoriteMonitor();
+
+    connect(trayService_.get(), &WindowsTrayService::showRequested,
+            this, &AppController::restoreFromBackground);
+    connect(trayService_.get(), &WindowsTrayService::quitRequested,
+            this, &AppController::requestQuit);
 }
 
 AppController::~AppController()
@@ -114,6 +146,7 @@ void AppController::shutdown()
 {
     if (shuttingDown_) return;
     shuttingDown_ = true;
+    if (trayService_ != nullptr) trayService_->stop();
 
     const quint64 pendingSearch = searchRequestId_;
     searchRequestId_ = 0;
@@ -121,6 +154,8 @@ void AppController::shutdown()
     persistWorkspace();
     if (danmaku_ != nullptr) danmaku_->stopAll();
     coordinator_.reset();
+    if (favoriteMonitor_ != nullptr) favoriteMonitor_->stop();
+    favoriteMonitor_.reset();
     if (service_ != nullptr) {
         service_->shutdown();
         service_.reset();
@@ -187,6 +222,9 @@ QVariantList AppController::libraryRooms() const
             {QStringLiteral("favoriteSortOrder"), record->favoriteSortOrder},
             {QStringLiteral("lastOpenedAtMs"), record->lastOpenedAtMs},
             {QStringLiteral("active"), snapshot_.activeRoomIds.contains(record->roomId)},
+            {QStringLiteral("online"), favoriteLiveStatuses_.value(record->roomId,
+                                                                      RoomLiveStatus::Unknown)
+                                             == RoomLiveStatus::Online},
         });
     }
     return projection;
@@ -201,6 +239,7 @@ QVariantMap AppController::notificationPreferences() const
         {QStringLiteral("roomOffline"), preferences.roomOffline},
         {QStringLiteral("playbackFailed"), preferences.playbackFailed},
         {QStringLiteral("playbackRecovered"), preferences.playbackRecovered},
+        {QStringLiteral("favoriteTitleChanged"), preferences.favoriteTitleChanged},
     };
 }
 
@@ -219,6 +258,26 @@ QString AppController::searchError() const
     return searchError_;
 }
 
+bool AppController::backgroundHosted() const noexcept
+{
+    return backgroundHosted_;
+}
+
+bool AppController::windowMinimized() const noexcept
+{
+    return windowMinimized_;
+}
+
+QString AppController::closeBehavior() const
+{
+    return closeBehavior_;
+}
+
+bool AppController::quitRequested() const noexcept
+{
+    return quitRequested_;
+}
+
 QString AppController::fixedPlaybackMessage(const QString &) const
 {
     return QStringLiteral("播放地址不可用");
@@ -227,6 +286,16 @@ QString AppController::fixedPlaybackMessage(const QString &) const
 void AppController::setMainWindow(QWindow *window)
 {
     mainWindow_ = window;
+    if (window == nullptr) return;
+
+    // The QML engine may destroy the window before AppController during test
+    // teardown or application shutdown. Clear both references at that boundary
+    // so the tray service never retains a dangling native window pointer.
+    connect(window, &QObject::destroyed, this, [this] {
+        mainWindow_.clear();
+        if (trayService_ != nullptr) trayService_->stop();
+    });
+    if (trayService_ != nullptr) trayService_->start(window);
 }
 
 QString AppController::addRoom(const QString &roomId)
@@ -305,6 +374,26 @@ QString AppController::removeRoom(const QString &roomId)
     return commandMessage(result);
 }
 
+QString AppController::removeHistoryRoom(const QString &roomId)
+{
+    const QString requestedRoomId = roomId.trimmed();
+    if (requestedRoomId.isEmpty()) return commandMessage(RoomCommandResult::RoomNotFound);
+    if (snapshot_.activeRoomIds.contains(requestedRoomId)) {
+        return QStringLiteral("正在播放的房间无法删除历史记录");
+    }
+
+    NativeRoomRecord *record = libraryRecord(requestedRoomId);
+    if (record == nullptr || record->lastOpenedAtMs <= 0) {
+        return commandMessage(RoomCommandResult::RoomNotFound);
+    }
+
+    record->lastOpenedAtMs = 0;
+
+    emit libraryRoomsChanged();
+    persistWorkspace();
+    return {};
+}
+
 void AppController::requestRemoveRoom(const QString &roomId)
 {
     const QString requestedRoomId = roomId.trimmed();
@@ -378,6 +467,7 @@ QString AppController::setFavorite(const QString &roomId, bool favorite)
         }
         emit libraryRoomsChanged();
     }
+    synchronizeFavoriteMonitor();
     persistWorkspace();
     return {};
 }
@@ -718,23 +808,26 @@ QString AppController::setNotificationsEnabled(bool enabled)
 {
     NotificationPreferences preferences = notificationService_->preferences();
     return setNotificationPreferences(enabled, preferences.roomOnline, preferences.roomOffline,
-                                      preferences.playbackFailed, preferences.playbackRecovered);
+                                      preferences.playbackFailed, preferences.playbackRecovered,
+                                      preferences.favoriteTitleChanged);
 }
 
 QString AppController::setNotificationPreferences(bool enabled,
                                                   bool roomOnline,
-                                                  bool roomOffline,
-                                                  bool playbackFailed,
-                                                  bool playbackRecovered)
+                                                   bool roomOffline,
+                                                   bool playbackFailed,
+                                                   bool playbackRecovered,
+                                                   bool favoriteTitleChanged)
 {
     const NotificationPreferences previous = notificationService_->preferences();
     const NotificationPreferences preferences{
-        enabled, roomOnline, roomOffline, playbackFailed, playbackRecovered,
+        enabled, roomOnline, roomOffline, playbackFailed, playbackRecovered, favoriteTitleChanged,
     };
     if (previous.enabled == preferences.enabled && previous.roomOnline == preferences.roomOnline
         && previous.roomOffline == preferences.roomOffline
         && previous.playbackFailed == preferences.playbackFailed
-        && previous.playbackRecovered == preferences.playbackRecovered) {
+        && previous.playbackRecovered == preferences.playbackRecovered
+        && previous.favoriteTitleChanged == preferences.favoriteTitleChanged) {
         return {};
     }
     if (!notificationService_->setPreferences(preferences)) {
@@ -774,7 +867,68 @@ void AppController::detachPlayer(const QString &roomId, MpvQuickItem *item)
 
 void AppController::minimizeWindow()
 {
+    if (shuttingDown_ || backgroundHosted_) return;
+    if (windowMinimized_) return;
+    if (!windowMinimized_) {
+        windowMinimized_ = true;
+        emit windowMinimizedChanged();
+    }
+    if (coordinator_ != nullptr) coordinator_->suspendRendering();
+    if (danmaku_ != nullptr) danmaku_->setPresentationSuspended(true);
     if (!mainWindow_.isNull()) mainWindow_->showMinimized();
+}
+
+void AppController::minimizeToBackground()
+{
+    if (shuttingDown_) return;
+    if (coordinator_ != nullptr) coordinator_->suspendRendering();
+    if (danmaku_ != nullptr) danmaku_->setPresentationSuspended(true);
+    if (!backgroundHosted_) {
+        backgroundHosted_ = true;
+        emit backgroundHostedChanged();
+    }
+    if (windowMinimized_) {
+        windowMinimized_ = false;
+        emit windowMinimizedChanged();
+    }
+    if (!mainWindow_.isNull()) mainWindow_->hide();
+}
+
+void AppController::closeToTray()
+{
+    minimizeToBackground();
+}
+
+void AppController::restoreFromBackground()
+{
+    if (shuttingDown_) return;
+    if (backgroundHosted_) {
+        backgroundHosted_ = false;
+        emit backgroundHostedChanged();
+    }
+    if (windowMinimized_) {
+        windowMinimized_ = false;
+        emit windowMinimizedChanged();
+    }
+    if (coordinator_ != nullptr) coordinator_->resumeRendering();
+    if (danmaku_ != nullptr) danmaku_->setPresentationSuspended(false);
+    if (mainWindow_.isNull()) return;
+    mainWindow_->show();
+    mainWindow_->raise();
+    mainWindow_->requestActivate();
+}
+
+void AppController::restoreFromMinimized()
+{
+    if (shuttingDown_ || !windowMinimized_) return;
+    windowMinimized_ = false;
+    emit windowMinimizedChanged();
+    if (coordinator_ != nullptr) coordinator_->resumeRendering();
+    if (danmaku_ != nullptr) danmaku_->setPresentationSuspended(false);
+    if (mainWindow_.isNull()) return;
+    mainWindow_->showNormal();
+    mainWindow_->raise();
+    mainWindow_->requestActivate();
 }
 
 void AppController::toggleMaximizedWindow()
@@ -813,6 +967,45 @@ void AppController::exitFullScreen()
 
 void AppController::closeWindow()
 {
+    requestClose();
+}
+
+void AppController::requestClose()
+{
+    if (closeBehavior_ == QStringLiteral("quit")) {
+        requestQuit();
+    } else if (closeBehavior_ == QStringLiteral("background")) {
+        closeToTray();
+    }
+}
+
+bool AppController::setCloseBehavior(const QString &behavior, bool persist)
+{
+    if (behavior != QStringLiteral("ask") && behavior != QStringLiteral("quit")
+        && behavior != QStringLiteral("background")) return false;
+    if (!persist && settings_ != nullptr) {
+        settings_->remove(QStringLiteral("window/closeBehavior"));
+    }
+    if (closeBehavior_ == behavior) {
+        if (persist && settings_ != nullptr) settings_->setValue(QStringLiteral("window/closeBehavior"), behavior);
+        return true;
+    }
+    closeBehavior_ = behavior;
+    if (persist && settings_ != nullptr) settings_->setValue(QStringLiteral("window/closeBehavior"), behavior);
+    emit closeBehaviorChanged();
+    return true;
+}
+
+void AppController::clearCloseBehavior()
+{
+    setCloseBehavior(QStringLiteral("ask"));
+    if (settings_ != nullptr) settings_->remove(QStringLiteral("window/closeBehavior"));
+}
+
+void AppController::requestQuit()
+{
+    if (quitRequested_) return;
+    quitRequested_ = true;
     shutdown();
     if (!mainWindow_.isNull()) mainWindow_->close();
 }
@@ -894,6 +1087,7 @@ void AppController::restoreWorkspace()
 
 void AppController::onServiceResponse(const ServiceResponse &response)
 {
+    if (favoriteMonitor_ != nullptr) favoriteMonitor_->onSearchResponse(response);
     if (searchRequestId_ == 0 || response.requestId != searchRequestId_) return;
     searchRequestId_ = 0;
 
@@ -934,6 +1128,7 @@ void AppController::onServiceResponse(const ServiceResponse &response)
 
 void AppController::onServiceRequestFailed(quint64 requestId, const QString &)
 {
+    if (favoriteMonitor_ != nullptr) favoriteMonitor_->onRequestFailed(requestId);
     if (searchRequestId_ == 0 || requestId != searchRequestId_) return;
     searchRequestId_ = 0;
     searchStatus_ = QStringLiteral("error");
@@ -951,6 +1146,32 @@ void AppController::onRoomStatusRefreshed(const QString &roomId, bool online)
                                    QStringLiteral("success"),
                                    4200);
     }
+}
+
+void AppController::synchronizeFavoriteMonitor()
+{
+    if (favoriteMonitor_ == nullptr) return;
+    QVector<FavoriteRoomSpec> rooms;
+    for (const NativeRoomRecord &record : snapshot_.library) {
+        if (!record.favorite) continue;
+        rooms.push_back({record.roomId,
+                         record.metadata,
+                         favoriteLiveStatuses_.value(record.roomId, RoomLiveStatus::Unknown)});
+    }
+    favoriteMonitor_->synchronize(rooms);
+}
+
+void AppController::onFavoriteRoomUpdated(const QString &roomId,
+                                          const RoomMetadata &metadata,
+                                          RoomLiveStatus liveStatus)
+{
+    NativeRoomRecord *record = libraryRecord(roomId);
+    if (record == nullptr || !record->favorite) return;
+    record->metadata = metadata;
+    record->metadata.roomId = roomId;
+    favoriteLiveStatuses_.insert(roomId, liveStatus);
+    emit libraryRoomsChanged();
+    if (!restoring_) persistWorkspace();
 }
 
 void AppController::persistWorkspace()

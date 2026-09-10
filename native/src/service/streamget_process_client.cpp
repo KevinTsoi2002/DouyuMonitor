@@ -5,6 +5,10 @@
 #include <QProcess>
 #include <QTimer>
 
+#ifdef Q_OS_WIN
+#include <windows.h>
+#endif
+
 namespace {
 
 constexpr int kMaxInFlight = 2;
@@ -28,11 +32,29 @@ StreamgetProcessClient::StreamgetProcessClient(QString program,
             this, &StreamgetProcessClient::onProcessError);
     connect(process_, qOverload<int, QProcess::ExitStatus>(&QProcess::finished),
             this, &StreamgetProcessClient::onProcessFinished);
+#ifdef Q_OS_WIN
+    job_ = CreateJobObjectW(nullptr, nullptr);
+    if (job_ != nullptr) {
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
+        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        if (!SetInformationJobObject(job_, JobObjectExtendedLimitInformation,
+                                     &limits, sizeof(limits))) {
+            CloseHandle(job_);
+            job_ = nullptr;
+        }
+    }
+#endif
 }
 
 StreamgetProcessClient::~StreamgetProcessClient()
 {
     shutdown(250);
+#ifdef Q_OS_WIN
+    if (job_ != nullptr) {
+        CloseHandle(job_);
+        job_ = nullptr;
+    }
+#endif
 }
 
 quint64 StreamgetProcessClient::ping(int timeoutMs)
@@ -89,6 +111,9 @@ bool StreamgetProcessClient::cancel(quint64 requestId)
 void StreamgetProcessClient::shutdown(int timeoutMs)
 {
     if (!process_ || process_->state() == QProcess::NotRunning) {
+#ifdef Q_OS_WIN
+        terminateJob();
+#endif
         failAll(QStringLiteral("CANCELLED"));
         return;
     }
@@ -107,6 +132,9 @@ void StreamgetProcessClient::shutdown(int timeoutMs)
 
     const int boundedTimeout = qBound(0, timeoutMs, 5000);
     if (!process_->waitForFinished(boundedTimeout)) {
+#ifdef Q_OS_WIN
+        terminateJob();
+#endif
         process_->kill();
         process_->waitForFinished(250);
     }
@@ -227,9 +255,31 @@ void StreamgetProcessClient::onRequestTimeout(quint64 requestId)
 
 void StreamgetProcessClient::onProcessStarted()
 {
+#ifdef Q_OS_WIN
+    attachProcessToJob();
+#endif
     emit childStarted();
     pumpQueue();
 }
+
+#ifdef Q_OS_WIN
+void StreamgetProcessClient::attachProcessToJob()
+{
+    if (job_ == nullptr || process_ == nullptr) return;
+    const HANDLE processHandle = OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE
+                                                 | PROCESS_QUERY_LIMITED_INFORMATION,
+                                             FALSE,
+                                             static_cast<DWORD>(process_->processId()));
+    if (processHandle == nullptr) return;
+    AssignProcessToJobObject(job_, processHandle);
+    CloseHandle(processHandle);
+}
+
+void StreamgetProcessClient::terminateJob()
+{
+    if (job_ != nullptr) TerminateJobObject(job_, 1);
+}
+#endif
 
 void StreamgetProcessClient::onProcessReadyRead()
 {

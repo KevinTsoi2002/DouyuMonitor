@@ -16,6 +16,7 @@ Rectangle {
     property color mutedTextColor: Theme.mutedText
     property string viewMode: "current"
     signal addRoomRequested()
+    signal settingsRequested()
 
     color: surfaceColor
     border.color: borderColor
@@ -83,6 +84,7 @@ Rectangle {
                 height: 29
                 placeholderText: "输入房间号"
                 color: root.textColor
+                placeholderTextColor: root.mutedTextColor
                 font.pixelSize: 11
                 selectByMouse: true
                 onAccepted: root.submitRoom()
@@ -150,7 +152,7 @@ Rectangle {
 
         Item {
             width: parent.width
-            height: parent.height - 200
+            height: Math.max(0, parent.height - 168)
 
             ListView {
                 id: roomList
@@ -353,6 +355,47 @@ Rectangle {
                 borderColor: root.borderColor
                 textColor: root.textColor
                 mutedTextColor: root.mutedTextColor
+            }
+        }
+
+        Rectangle {
+            width: parent.width
+            height: 1
+            color: root.borderColor
+        }
+
+        ToolButton {
+            id: settingsButton
+            objectName: "settingsButton"
+            width: parent.width - 20
+            height: 38
+            anchors.horizontalCenter: parent.horizontalCenter
+            Accessible.name: "设置"
+            ToolTip.visible: hovered
+            ToolTip.text: Accessible.name
+            onClicked: root.settingsRequested()
+            contentItem: Row {
+                spacing: 8
+                anchors.fill: parent
+                anchors.leftMargin: 10
+                anchors.rightMargin: 10
+                Image {
+                    width: 16
+                    height: 16
+                    anchors.verticalCenter: parent.verticalCenter
+                    source: Qt.resolvedUrl("../assets/icons/settings.svg")
+                    opacity: settingsButton.hovered ? 1 : 0.8
+                }
+                Text {
+                    text: "设置"
+                    color: root.textColor
+                    font.pixelSize: 11
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+            }
+            background: Rectangle {
+                radius: Theme.radiusSmall
+                color: settingsButton.hovered ? Theme.controlSurface : "transparent"
             }
         }
     }

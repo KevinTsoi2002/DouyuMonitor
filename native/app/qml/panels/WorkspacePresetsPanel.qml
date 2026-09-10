@@ -72,8 +72,11 @@ Popup {
             spacing: 6
             TextField {
                 id: presetNameInput
+                objectName: "presetNameInput"
                 width: parent.width - savePresetButton.width - 6
                 placeholderText: "预设名称"
+                color: Theme.text
+                placeholderTextColor: Theme.mutedText
                 selectByMouse: true
                 background: Rectangle {
                     radius: Theme.radiusSmall
@@ -129,6 +132,8 @@ Popup {
                     text: "应用"
                     enabled: root.controller !== null
                     onClicked: root.applyPreset(modelData.id)
+                    contentItem: Text { text: parent.text; color: Theme.text; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.pixelSize: 11 }
+                    background: Rectangle { radius: Theme.radiusSmall; color: parent.down ? Theme.borderStrong : (parent.hovered ? Theme.border : Theme.well); border.color: Theme.borderStrong }
                 }
                 ToolButton {
                     id: deletePresetButton

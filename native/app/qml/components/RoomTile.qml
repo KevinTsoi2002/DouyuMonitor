@@ -386,6 +386,20 @@ FocusScope {
                     onMoved: {
                         if (root.controller) root.controller.setVolume(root.roomId, Math.round(value * 100))
                     }
+                    handle: Rectangle {
+                        objectName: "roomVolumeSliderHandle"
+                        implicitWidth: 10
+                        implicitHeight: 10
+                        x: roomVolumeSlider.leftPadding
+                           + roomVolumeSlider.visualPosition
+                             * (roomVolumeSlider.availableWidth - width)
+                        y: roomVolumeSlider.topPadding
+                           + (roomVolumeSlider.availableHeight - height) / 2
+                        radius: width / 2
+                        color: roomVolumeSlider.pressed ? Theme.accent : Theme.text
+                        border.color: Theme.borderStrong
+                        border.width: 1
+                    }
                 }
                 ToolButton {
                     objectName: "danmakuRetryAction"

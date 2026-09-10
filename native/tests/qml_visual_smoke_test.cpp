@@ -447,10 +447,12 @@ void QmlVisualSmokeTest::usesAssetBackedIcons()
     QVERIFY(QTest::qWaitForWindowExposed(window));
 
     for (const QString &objectName : {QStringLiteral("headerSidebarIcon"),
+                                      QStringLiteral("brandIcon"),
                                       QStringLiteral("windowCloseIcon")}) {
         QObject *icon = window->findChild<QObject *>(objectName);
         QVERIFY2(icon != nullptr, qPrintable(objectName));
         QVERIFY(!icon->property("source").toUrl().isEmpty());
+        QTRY_COMPARE_WITH_TIMEOUT(icon->property("status").toInt(), 1, 1000);
     }
 
     QVERIFY(QFile::exists(QStringLiteral(":/qml/assets/icons/star.svg")));

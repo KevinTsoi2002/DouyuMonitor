@@ -1,6 +1,8 @@
 #pragma once
 
 #include <QObject>
+#include <QHash>
+#include <QQueue>
 #include <QString>
 
 #include <memory>
@@ -15,6 +17,7 @@ struct NotificationPreferences {
     bool roomOffline = true;
     bool playbackFailed = true;
     bool playbackRecovered = true;
+    bool favoriteTitleChanged = true;
 };
 
 class SystemNotificationSink {
@@ -41,10 +44,13 @@ public:
 private:
     void loadPreferences();
     bool isEnabled(NotificationEventType type) const noexcept;
+    static QString eventKey(const NotificationEvent &event);
 
     QSettings *settings_ = nullptr;
     SystemNotificationSink *sink_ = nullptr;
     std::unique_ptr<SystemNotificationSink> ownedSink_;
     NotificationPreferences preferences_;
+    QHash<QString, qint64> deliveredEventsMs_;
+    QQueue<qint64> deliveredAtMs_;
     QString statusText_;
 };

@@ -21,12 +21,13 @@ DouyuMonitor 是基于 Qt Quick/QML、C++ 和 libmpv 的 Windows x64 斗鱼多�
 - StreamGet 动态清晰度列表、播放源重试和状态 Toast
 - 应用级全屏，支持 F11 切换和 Escape 退出
 - Windows 系统通知、快捷键和关闭生命周期保护
+- Windows 托盘后台托管：隐藏窗口后继续保留音频、状态检测和通知，暂停视频与弹幕渲染；从托盘恢复时自动重新渲染
 
 ## 技术边界
 
 - UI：Qt Quick/QML
 - 应用逻辑：C++20
-- 播放：libmpv + OpenGL
+- 播放：libmpv + OpenGL（发布目录加载名为 `mpv.dll`）
 - 斗鱼解析：独立 `streamget_service.exe` 子进程
 - 弹幕：Qt WebSockets 原生客户端
 - 安装器：Inno Setup 6 Windows 安装器
@@ -65,6 +66,8 @@ ctest --preset windows-x64-release
 ```powershell
 .\out\build\windows-x64-release\douyu_monitor_native.exe
 ```
+
+关闭窗口或最小化会进入 Windows 托盘后台托管，不会停止直播音频、StreamGet 或状态通知。需要真正退出时，在托盘图标右键选择“退出程序”；托盘双击或选择“显示窗口”可恢复画面和弹幕。
 
 ### 构建 Windows 安装包
 

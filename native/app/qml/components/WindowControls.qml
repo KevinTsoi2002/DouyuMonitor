@@ -6,6 +6,7 @@ Row {
     id: root
 
     property var controller: null
+    signal closeRequested()
     height: Theme.controlHeight
 
     ToolButton {
@@ -46,7 +47,11 @@ Row {
         Accessible.name: accessibilityLabel
         ToolTip.visible: hovered
         ToolTip.text: Accessible.name
-        onClicked: if (root.controller) root.controller.closeWindow()
+        onClicked: {
+            if (!root.controller) return
+            if (root.controller.closeBehavior === "ask") root.closeRequested()
+            else root.controller.closeWindow()
+        }
         contentItem: Image {
             objectName: "windowCloseIcon"
             anchors.centerIn: parent

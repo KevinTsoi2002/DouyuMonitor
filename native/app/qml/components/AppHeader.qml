@@ -14,6 +14,7 @@ Rectangle {
     signal systemMoveRequested()
     signal toggleMaximizedRequested()
     signal toggleFullScreenRequested()
+    signal closeRequested()
     readonly property var workspaceModel: root.controller ? root.controller.workspace : null
 
     height: Theme.topBarHeight
@@ -64,7 +65,7 @@ Rectangle {
                 anchors.centerIn: parent
                 width: 18
                 height: 18
-                source: "qrc:/qml/assets/douyu_monitor.svg"
+                source: Qt.resolvedUrl("../assets/douyu_monitor.svg")
                 fillMode: Image.PreserveAspectFit
             }
         }
@@ -221,6 +222,7 @@ Rectangle {
         anchors.right: parent.right
         anchors.verticalCenter: parent.verticalCenter
         controller: root.controller
+        onCloseRequested: root.closeRequested()
     }
 
     Rectangle {
@@ -341,12 +343,32 @@ Rectangle {
         x: Math.max(8, root.width - width - 150)
         title: "选择布局"
 
+        background: Rectangle {
+            objectName: "layoutMenuBackground"
+            implicitWidth: 220
+            implicitHeight: 76
+            color: Theme.controlSurface
+            border.color: Theme.border
+            radius: Theme.radiusSmall
+        }
+
         MenuItem {
             objectName: "autoLayoutOption"
             text: "自动布局"
             checkable: true
             checked: root.workspaceModel ? root.workspaceModel.layoutMode === "auto" : true
             onTriggered: if (root.controller) root.controller.setLayout("auto")
+            contentItem: Text {
+                objectName: "layoutMenuItemLabel"
+                text: parent.text
+                color: Theme.text
+                leftPadding: 12
+                verticalAlignment: Text.AlignVCenter
+            }
+            background: Rectangle {
+                color: parent.highlighted ? Theme.well : "transparent"
+                radius: Theme.radiusSmall
+            }
         }
         MenuItem {
             objectName: "primaryLayoutOption"
@@ -354,6 +376,16 @@ Rectangle {
             checkable: true
             checked: root.workspaceModel ? root.workspaceModel.layoutMode === "primary" : false
             onTriggered: if (root.controller) root.controller.setLayout("primary")
+            contentItem: Text {
+                text: parent.text
+                color: Theme.text
+                leftPadding: 12
+                verticalAlignment: Text.AlignVCenter
+            }
+            background: Rectangle {
+                color: parent.highlighted ? Theme.well : "transparent"
+                radius: Theme.radiusSmall
+            }
         }
     }
 }

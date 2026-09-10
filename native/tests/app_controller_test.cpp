@@ -95,16 +95,89 @@ private slots:
     void restoresActiveGroupMembershipInOrder();
     void searchesRoomCandidatesAndAddsMetadata();
     void projectsRefreshedRoomMetadataAndStatus();
+    void monitorsInactiveFavoriteRoomAndUpdatesLibrary();
     void publishesCommandFailureToToast();
     void restoresLayoutAndRatioFromWorkspacePreset();
     void persistsGlobalAudioPolicy();
     void preservesFavoriteWhenReaddingLibraryRoom();
     void ordersFavoritesByManualOrderAndMovesThem();
+    void removesInactiveHistoryWithoutRemovingFavoriteEntry();
     void appliesWorkspacePresetToAllRoomsRepeatedly();
     void restoresPresetRoomsMissingFromLibrary();
     void deletesWorkspacePresetAndPersistsRemoval();
     void defersRequestedRoomRemovalUntilEventLoop();
+    void preservesPlaybackAndDanmakuStateWhenHostedInBackground();
+    void minimizesWithoutEnteringBackground();
+    void persistsCloseBehaviorPreference();
+    void clearsUnrememberedCloseBehaviorPreference();
 };
+
+void AppControllerTest::preservesPlaybackAndDanmakuStateWhenHostedInBackground()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSettings settings(directory.filePath(QStringLiteral("workspace.ini")), QSettings::IniFormat);
+    FakeNotificationSink sink;
+    AppController controller(fakeServicePath(), &settings, &sink);
+    QCOMPARE(controller.danmaku()->presentationSuspended(), false);
+    controller.minimizeToBackground();
+    QCOMPARE(controller.backgroundHosted(), true);
+    QCOMPARE(controller.danmaku()->presentationSuspended(), true);
+    controller.restoreFromBackground();
+    QCOMPARE(controller.backgroundHosted(), false);
+    QCOMPARE(controller.danmaku()->presentationSuspended(), false);
+}
+
+void AppControllerTest::minimizesWithoutEnteringBackground()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSettings settings(directory.filePath(QStringLiteral("workspace.ini")), QSettings::IniFormat);
+    FakeNotificationSink sink;
+    AppController controller(fakeServicePath(), &settings, &sink);
+
+    controller.minimizeWindow();
+    QCOMPARE(controller.backgroundHosted(), false);
+    QCOMPARE(controller.windowMinimized(), true);
+    controller.restoreFromMinimized();
+    QCOMPARE(controller.windowMinimized(), false);
+}
+
+void AppControllerTest::persistsCloseBehaviorPreference()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString path = directory.filePath(QStringLiteral("workspace.ini"));
+    FakeNotificationSink sink;
+    {
+        QSettings settings(path, QSettings::IniFormat);
+        AppController controller(fakeServicePath(), &settings, &sink);
+        QCOMPARE(controller.closeBehavior(), QStringLiteral("ask"));
+        QVERIFY(controller.setCloseBehavior(QStringLiteral("background"), true));
+    }
+    QSettings restoredSettings(path, QSettings::IniFormat);
+    AppController restored(fakeServicePath(), &restoredSettings, &sink);
+    QCOMPARE(restored.closeBehavior(), QStringLiteral("background"));
+}
+
+void AppControllerTest::clearsUnrememberedCloseBehaviorPreference()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString path = directory.filePath(QStringLiteral("workspace.ini"));
+    FakeNotificationSink sink;
+    {
+        QSettings settings(path, QSettings::IniFormat);
+        AppController controller(fakeServicePath(), &settings, &sink);
+        QVERIFY(controller.setCloseBehavior(QStringLiteral("quit"), true));
+        QVERIFY(controller.setCloseBehavior(QStringLiteral("background"), false));
+        QVERIFY(controller.setCloseBehavior(QStringLiteral("ask"), false));
+        QVERIFY(!settings.contains(QStringLiteral("window/closeBehavior")));
+    }
+    QSettings restoredSettings(path, QSettings::IniFormat);
+    AppController restored(fakeServicePath(), &restoredSettings, &sink);
+    QCOMPARE(restored.closeBehavior(), QStringLiteral("ask"));
+}
 
 void AppControllerTest::addsRoomsThroughModelAndRejectsTheTenth()
 {
@@ -152,6 +225,26 @@ void AppControllerTest::recordsOpenedRoomsForTheLibraryHistory()
     QCOMPARE(entry.value(QStringLiteral("roomId")).toString(), QStringLiteral("63136"));
     QVERIFY(entry.value(QStringLiteral("active")).toBool());
     QVERIFY(entry.value(QStringLiteral("lastOpenedAtMs")).toLongLong() > 0);
+}
+
+void AppControllerTest::removesInactiveHistoryWithoutRemovingFavoriteEntry()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSettings settings(directory.filePath(QStringLiteral("workspace.ini")), QSettings::IniFormat);
+    FakeNotificationSink sink;
+    AppController controller(fakeServicePath(), &settings, &sink);
+
+    QCOMPARE(controller.addRoom(QStringLiteral("63136")), QString());
+    QCOMPARE(controller.setFavorite(QStringLiteral("63136"), true), QString());
+    QCOMPARE(controller.removeRoom(QStringLiteral("63136")), QString());
+
+    QCOMPARE(controller.removeHistoryRoom(QStringLiteral("63136")), QString());
+    const QVariantMap entry = controller.libraryRooms().first().toMap();
+    QCOMPARE(entry.value(QStringLiteral("roomId")).toString(), QStringLiteral("63136"));
+    QVERIFY(entry.value(QStringLiteral("favorite")).toBool());
+    QCOMPARE(entry.value(QStringLiteral("lastOpenedAtMs")).toLongLong(), 0);
+    QVERIFY(!entry.value(QStringLiteral("active")).toBool());
 }
 
 void AppControllerTest::doesNotExposeSensitivePlaybackMaterial()
@@ -703,6 +796,29 @@ void AppControllerTest::projectsRefreshedRoomMetadataAndStatus()
              QUrl(QStringLiteral("https://example.invalid/avatar.jpg")));
     QTest::qWait(150);
     QCOMPARE(controller.workspace()->lastMessage(), QString());
+}
+
+void AppControllerTest::monitorsInactiveFavoriteRoomAndUpdatesLibrary()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSettings settings(directory.filePath(QStringLiteral("workspace.ini")), QSettings::IniFormat);
+    settings.setValue(
+        QStringLiteral("DouyuMonitor/nativeWorkspaceV1"),
+        QByteArray(R"JSON({"version":2,"library":[{"roomId":"63136","metadata":{"roomId":"63136","anchorName":"旧主播","title":"旧标题"},"requestedQuality":"auto","favorite":true,"favoriteAddedAtMs":1,"favoriteSortOrder":1,"lastOpenedAtMs":0,"volume":100,"danmakuEnabled":true}],"groups":[],"activeRoomIds":[],"activeGroupId":"","primaryRoomId":"","audioRoomId":"","presets":[]})JSON"));
+    FakeNotificationSink sink;
+    AppController controller(fakeServicePath(), &settings, &sink);
+
+    QTRY_VERIFY_WITH_TIMEOUT([&] {
+        const QVariantList rooms = controller.libraryRooms();
+        if (rooms.size() != 1) return false;
+        const QVariantMap room = rooms.first().toMap();
+        return room.value(QStringLiteral("anchorName")).toString() == QStringLiteral("Fake Anchor")
+            && room.value(QStringLiteral("title")).toString() == QStringLiteral("Fake Room")
+            && room.value(QStringLiteral("online")).toBool();
+    }(), 3000);
+    QVERIFY(!controller.libraryRooms().first().toMap().value(QStringLiteral("active")).toBool());
+    QCOMPARE(sink.shownCount, 0);
 }
 
 void AppControllerTest::publishesCommandFailureToToast()

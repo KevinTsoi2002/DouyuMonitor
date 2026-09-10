@@ -472,6 +472,20 @@ void MultiRoomCoordinator::refreshRoomStatusNow(const QString &roomId)
     scheduler_.requestNow(roomId);
 }
 
+void MultiRoomCoordinator::suspendRendering()
+{
+    for (const QString &roomId : order_) {
+        if (RoomSession *session = sessions_.value(roomId, nullptr)) session->suspendRendering();
+    }
+}
+
+void MultiRoomCoordinator::resumeRendering()
+{
+    for (const QString &roomId : order_) {
+        if (RoomSession *session = sessions_.value(roomId, nullptr)) session->resumeRendering();
+    }
+}
+
 void MultiRoomCoordinator::recomputeQuality()
 {
     const int count = order_.size();

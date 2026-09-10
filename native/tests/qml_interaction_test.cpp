@@ -270,7 +270,117 @@ private slots:
     void deletesWorkspacePresetFromPanel();
     void defersWorkspacePresetApplyUntilPopupHandlerReturns();
     void refreshesRoomSidebarAfterPresetLikeModelUpdate();
+    void keepsTransientDialogSurfacesDark();
+    void keepsInputAndMenuControlsOnDarkTheme();
+    void exposesFavoriteTitleNotificationPreference();
 };
+
+void QmlInteractionTest::keepsTransientDialogSurfacesDark()
+{
+    registerQmlTypes();
+    QQmlApplicationEngine engine;
+    QQuickWindow hostWindow;
+    hostWindow.resize(QSize(640, 720));
+    hostWindow.show();
+
+    QQmlComponent notificationComponent(&engine,
+                                        QUrl(QStringLiteral("qrc:/qml/dialogs/NotificationSettingsDialog.qml")));
+    QVERIFY2(notificationComponent.isReady(), qPrintable(notificationComponent.errorString()));
+    std::unique_ptr<QObject> notification(notificationComponent.createWithInitialProperties({
+        {QStringLiteral("parent"), QVariant::fromValue(hostWindow.contentItem())},
+    }));
+    QVERIFY(notification != nullptr);
+    QObject *notificationFooter = notification->findChild<QObject *>(QStringLiteral("notificationDialogFooter"));
+    QVERIFY(notificationFooter != nullptr);
+    QCOMPARE(notificationFooter->property("color").value<QColor>(), QColor(QStringLiteral("#202731")));
+    QObject *notificationLabel = notification->findChild<QObject *>(QStringLiteral("notificationEnabledLabel"));
+    QVERIFY(notificationLabel != nullptr);
+    QCOMPARE(notificationLabel->property("color").value<QColor>(), QColor(QStringLiteral("#eef2f7")));
+
+    QQmlComponent addRoomComponent(&engine,
+                                   QUrl(QStringLiteral("qrc:/qml/dialogs/AddRoomDialog.qml")));
+    QVERIFY2(addRoomComponent.isReady(), qPrintable(addRoomComponent.errorString()));
+    std::unique_ptr<QObject> addRoom(addRoomComponent.createWithInitialProperties({
+        {QStringLiteral("parent"), QVariant::fromValue(hostWindow.contentItem())},
+    }));
+    QVERIFY(addRoom != nullptr);
+    QObject *addRoomFooter = addRoom->findChild<QObject *>(QStringLiteral("addRoomDialogFooter"));
+    QVERIFY(addRoomFooter != nullptr);
+    QCOMPARE(addRoomFooter->property("color").value<QColor>(), QColor(QStringLiteral("#202731")));
+}
+
+void QmlInteractionTest::keepsInputAndMenuControlsOnDarkTheme()
+{
+    registerQmlTypes();
+    QQmlApplicationEngine engine;
+    QQuickWindow hostWindow;
+    hostWindow.resize(QSize(1280, 720));
+    hostWindow.show();
+
+    QQmlComponent addRoomComponent(&engine,
+                                   QUrl(QStringLiteral("qrc:/qml/dialogs/AddRoomDialog.qml")));
+    QVERIFY2(addRoomComponent.isReady(), qPrintable(addRoomComponent.errorString()));
+    std::unique_ptr<QObject> addRoom(addRoomComponent.createWithInitialProperties({
+        {QStringLiteral("parent"), QVariant::fromValue(hostWindow.contentItem())},
+    }));
+    QVERIFY(addRoom != nullptr);
+    QObject *roomInput = addRoom->findChild<QObject *>(QStringLiteral("roomSearchInput"));
+    QVERIFY(roomInput != nullptr);
+    QCOMPARE(roomInput->property("color").value<QColor>(), QColor(QStringLiteral("#eef2f7")));
+
+    QQmlApplicationEngine mainEngine;
+    QQuickWindow *window = loadWindow(mainEngine);
+    QVERIFY(window != nullptr);
+    auto *layoutButton = window->findChild<QObject *>(QStringLiteral("layoutMenuButton"));
+    QVERIFY(layoutButton != nullptr);
+    QVERIFY(QMetaObject::invokeMethod(layoutButton, "clicked"));
+    QObject *layoutMenu = window->findChild<QObject *>(QStringLiteral("layoutMenu"));
+    QVERIFY(layoutMenu != nullptr);
+    QTRY_VERIFY(layoutMenu->property("visible").toBool());
+    QObject *menuBackground = layoutMenu->findChild<QObject *>(QStringLiteral("layoutMenuBackground"));
+    QVERIFY(menuBackground != nullptr);
+    QCOMPARE(menuBackground->property("color").value<QColor>(), QColor(QStringLiteral("#202731")));
+    QObject *menuItemLabel = layoutMenu->findChild<QObject *>(QStringLiteral("layoutMenuItemLabel"));
+    QVERIFY(menuItemLabel != nullptr);
+    QCOMPARE(menuItemLabel->property("color").value<QColor>(), QColor(QStringLiteral("#eef2f7")));
+
+    QObject *notification = nullptr;
+    QQmlComponent notificationComponent(&engine,
+                                        QUrl(QStringLiteral("qrc:/qml/dialogs/NotificationSettingsDialog.qml")));
+    QVERIFY2(notificationComponent.isReady(), qPrintable(notificationComponent.errorString()));
+    std::unique_ptr<QObject> notificationObject(notificationComponent.createWithInitialProperties({
+        {QStringLiteral("parent"), QVariant::fromValue(hostWindow.contentItem())},
+    }));
+    notification = notificationObject.get();
+    QVERIFY(notification != nullptr);
+    QObject *checkBoxLabel = notification->findChild<QObject *>(QStringLiteral("notificationEnabledLabel"));
+    QVERIFY(checkBoxLabel != nullptr);
+    QVERIFY(checkBoxLabel->property("leftPadding").toInt() >= 12);
+
+    QObject *closeIcon = window->findChild<QObject *>(QStringLiteral("windowCloseIcon"));
+    QObject *minimizeIcon = window->findChild<QObject *>(QStringLiteral("minimizeIcon"));
+    QObject *maximizeIcon = window->findChild<QObject *>(QStringLiteral("maximizeIcon"));
+    QObject *fullscreenIcon = window->findChild<QObject *>(QStringLiteral("fullscreenIcon"));
+    QVERIFY(closeIcon != nullptr);
+    QVERIFY(minimizeIcon != nullptr);
+    QVERIFY(maximizeIcon != nullptr);
+    QVERIFY(fullscreenIcon != nullptr);
+    for (QObject *icon : {closeIcon, minimizeIcon, maximizeIcon, fullscreenIcon}) {
+        QVERIFY(icon->property("source").toUrl().isValid());
+    }
+}
+
+void QmlInteractionTest::exposesFavoriteTitleNotificationPreference()
+{
+    registerQmlTypes();
+    QQmlApplicationEngine engine;
+    QQmlComponent component(&engine,
+                            QUrl(QStringLiteral("qrc:/qml/dialogs/NotificationSettingsDialog.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    std::unique_ptr<QObject> dialog(component.create());
+    QVERIFY(dialog != nullptr);
+    QVERIFY(dialog->findChild<QObject *>(QStringLiteral("notificationFavoriteTitleCheckBox")) != nullptr);
+}
 
 void QmlInteractionTest::opensAddRoomDialogAndRejectsInvalidRoomId()
 {
@@ -1012,6 +1122,10 @@ void QmlInteractionTest::exposesRoomVolumeAndRefreshControls()
     QVERIFY(slider != nullptr);
     QVERIFY(refresh != nullptr);
     QCOMPARE(slider->objectName(), QStringLiteral("roomVolumeSlider"));
+    QObject *sliderHandle = tile->findChild<QObject *>(QStringLiteral("roomVolumeSliderHandle"));
+    QVERIFY(sliderHandle != nullptr);
+    QVERIFY(sliderHandle->property("implicitWidth").toDouble() <= 14.0);
+    QVERIFY(sliderHandle->property("implicitHeight").toDouble() <= 14.0);
 
     slider->setProperty("value", 0.35);
     QVERIFY(QMetaObject::invokeMethod(slider, "moved"));

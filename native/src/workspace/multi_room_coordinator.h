@@ -74,6 +74,8 @@ public:
     void detachPlayer(const QString &roomId, MpvQuickItem *player);
     MpvQuickItem *playerForRoom(const QString &roomId) const noexcept;
     void refreshRoomStatusNow(const QString &roomId);
+    void suspendRendering();
+    void resumeRendering();
 
 signals:
     void roomAdded(QString roomId);

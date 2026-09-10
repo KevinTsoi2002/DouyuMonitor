@@ -3,6 +3,7 @@ import QtQuick.Controls
 import "."
 import "components"
 import "dialogs"
+import "pages"
 import "panels"
 
 ApplicationWindow {
@@ -22,6 +23,7 @@ ApplicationWindow {
     property bool refreshRequested: false
     property bool editableFocus: false
     property bool showPreviewRooms: false
+    property string currentView: "monitoring"
     readonly property color canvasColor: Theme.canvas
     readonly property color surfaceColor: Theme.controlSurface
     readonly property color borderColor: Theme.border
@@ -49,7 +51,25 @@ ApplicationWindow {
     }
 
     onClosing: function(close) {
-        if (appController) appController.shutdown()
+        if (appController && appController.quitRequested) {
+            close.accepted = true
+            return
+        }
+        close.accepted = false
+        if (!appController) return
+        if (appController.closeBehavior === "ask") closeBehaviorDialog.open()
+        else if (appController.requestClose) appController.requestClose()
+    }
+
+    onVisibilityChanged: function(newVisibility) {
+        if (!appController) return
+        if (newVisibility === Window.Minimized && !appController.backgroundHosted
+                && appController.minimizeWindow) {
+            appController.minimizeWindow()
+        } else if (newVisibility !== Window.Minimized && appController.windowMinimized
+                   && appController.restoreFromMinimized) {
+            appController.restoreFromMinimized()
+        }
     }
 
     function openAddRoom() {
@@ -203,6 +223,7 @@ ApplicationWindow {
         anchors.left: parent.left
         anchors.right: parent.right
         controller: root.appController
+        onCloseRequested: closeBehaviorDialog.open()
         sidebarVisible: root.sidebarVisible
         onToggleSidebar: root.toggleSidebarVisibility()
         onOpenDanmaku: danmakuSettingsPanel.open()
@@ -231,6 +252,7 @@ ApplicationWindow {
         textColor: root.textColor
         mutedTextColor: root.mutedTextColor
         onAddRoomRequested: root.openAddRoom()
+        onSettingsRequested: root.currentView = "settings"
     }
 
     WorkspaceGrid {
@@ -251,6 +273,7 @@ ApplicationWindow {
         accentColor: root.accentColor
         textColor: root.textColor
         mutedTextColor: root.mutedTextColor
+        visible: root.currentView === "monitoring"
     }
 
     WorkspaceStatusBar {
@@ -271,6 +294,20 @@ ApplicationWindow {
                           ? root.workspaceModel.audioRoomId
                           : "无"))
                     : "无"
+        visible: root.currentView === "monitoring"
+    }
+
+    SettingsPage {
+        id: settingsPage
+        objectName: "settingsPage"
+        anchors.top: header.bottom
+        anchors.left: sidebar.right
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        visible: root.currentView === "settings"
+        z: 20
+        controller: root.appController
+        onBackRequested: root.currentView = "monitoring"
     }
 
     ToastViewport {
@@ -314,6 +351,11 @@ ApplicationWindow {
         id: notificationSettingsDialog
         controller: root.appController
         monitoringModel: root.monitoringModel
+    }
+
+    CloseBehaviorDialog {
+        id: closeBehaviorDialog
+        controller: root.appController
     }
 
     Shortcut {

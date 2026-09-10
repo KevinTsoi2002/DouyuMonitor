@@ -8,6 +8,10 @@
 #include <QQueue>
 #include <QStringList>
 
+#ifdef Q_OS_WIN
+#include <windows.h>
+#endif
+
 class QTimer;
 
 class StreamgetProcessClient final : public QObject {
@@ -60,6 +64,10 @@ private:
     void failAll(const QString &errorCode);
     void handleProtocolViolation();
     void onRequestTimeout(quint64 requestId);
+#ifdef Q_OS_WIN
+    void attachProcessToJob();
+    void terminateJob();
+#endif
 
     QString program_;
     QStringList arguments_;
@@ -71,4 +79,7 @@ private:
     quint64 nextRequestId_ = 1;
     bool shuttingDown_ = false;
     bool protocolFailed_ = false;
+#ifdef Q_OS_WIN
+    HANDLE job_ = nullptr;
+#endif
 };

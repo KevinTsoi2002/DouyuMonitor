@@ -1,6 +1,7 @@
 #include "workspace/favorite_monitor.h"
 
 #include <QSet>
+#include <QDateTime>
 
 FavoriteMonitor::FavoriteMonitor(StartSearch startSearch,
                                  CancelRequest cancelRequest,
@@ -8,7 +9,7 @@ FavoriteMonitor::FavoriteMonitor(StartSearch startSearch,
                                  QObject *parent)
     : QObject(parent)
     , scheduler_(std::move(startSearch), std::move(cancelRequest), std::move(timing), this)
-    , policy_([] { return qint64{0}; })
+    , policy_([] { return QDateTime::currentMSecsSinceEpoch(); })
 {
     qRegisterMetaType<QVector<NotificationEvent>>();
 }

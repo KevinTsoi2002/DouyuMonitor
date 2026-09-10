@@ -21,6 +21,8 @@ Item {
     readonly property string density: displaySettings.density || "normal"
     readonly property string fontFamily: displaySettings.fontFamily === "simhei" ? "SimHei" : "Microsoft YaHei"
     readonly property string rendering: displaySettings.rendering || "native"
+    readonly property bool presentationSuspended: controller && controller.presentationSuspended
+                                                  ? controller.presentationSuspended : false
     readonly property int launchInterval: density === "massive" ? 80 : density === "reduced" ? 360 : 180
     readonly property real safeTopInset: Math.max(0, topInset)
     readonly property real usableHeight: Math.max(0, height - safeTopInset - Math.max(0, bottomInset))
@@ -45,7 +47,8 @@ Item {
         id: launchTimer
         interval: root.launchInterval
         repeat: true
-        running: root.enabled && root.controller !== null && root.width > 0 && root.height > 0
+        running: root.enabled && !root.presentationSuspended && root.controller !== null
+                 && root.width > 0 && root.height > 0
         onTriggered: root.launchNextMessage()
     }
 
@@ -143,6 +146,15 @@ Item {
 
     onEnabledChanged: {
         if (!enabled) clearRoom()
+    }
+
+    onPresentationSuspendedChanged: {
+        if (presentationSuspended) {
+            launchTimer.stop()
+            clearActiveItems()
+        } else if (enabled) {
+            launchTimer.restart()
+        }
     }
 
     Component.onDestruction: clearActiveItems()
