@@ -202,7 +202,7 @@ FocusScope {
                     anchors.left: liveStatusBadge.right
                     anchors.leftMargin: visible ? 6 : 0
                     anchors.verticalCenter: parent.verticalCenter
-                    visible: root.primary
+                    visible: root.primary || root.secondaryPrimary
                     width: visible ? primaryRoomLabel.width + 12 : 0
                     height: 19
                     radius: Theme.radiusSmall
@@ -220,7 +220,7 @@ FocusScope {
 
                 Text {
                     id: categoryLabel
-                    anchors.left: root.primary ? primaryRoomBadge.right : liveStatusBadge.right
+                    anchors.left: (root.primary || root.secondaryPrimary) ? primaryRoomBadge.right : liveStatusBadge.right
                     anchors.leftMargin: 7
                     anchors.right: viewerLabel.left
                     anchors.rightMargin: 7
@@ -307,7 +307,7 @@ FocusScope {
                     width: parent.width; height: 27
                     Accessible.name: root.primary ? "当前主画面 1" : "设为主画面 1"
                     onClicked: { if (root.controller) root.controller.setPrimaryRoom(root.roomId); root.menuOpen = false }
-                    contentItem: Text { text: root.primary ? "当前主画面 1" : "设为主画面 1"; color: "#d6dde5"; leftPadding: 6; verticalAlignment: Text.AlignVCenter; font.pixelSize: 10 }
+                    contentItem: Text { text: root.controller && root.controller.workspace && root.controller.workspace.layoutMode === "primary-two" ? (root.primary ? "当前主画面 1" : "设为主画面 1") : (root.primary ? "当前主画面" : "设为主画面"); color: "#d6dde5"; leftPadding: 6; verticalAlignment: Text.AlignVCenter; font.pixelSize: 10 }
                     background: Rectangle { radius: 4; color: parent.hovered ? "#241b17" : "transparent" }
                 }
                 ToolButton {
