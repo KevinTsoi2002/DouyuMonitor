@@ -198,7 +198,7 @@ Item {
                 width: tileGeometry.width
                 height: tileGeometry.height
                 controller: root.controller
-                secondaryPrimary: model.secondaryPrimary
+                secondaryPrimary: roomId === root.secondaryPrimaryRoomId
                 borderColor: root.borderColor
                 accentColor: root.accentColor
                 textColor: root.textColor
