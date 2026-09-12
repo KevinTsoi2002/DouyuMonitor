@@ -292,8 +292,8 @@ FocusScope {
                     background: Rectangle { radius: 4; color: parent.hovered ? "#241b17" : "transparent" }
                 }
                 ToolButton {
-                    visible: root.controller && root.controller.workspace
-                             && root.controller.workspace.layoutMode === "primary-two"
+                    visible: !!(root.controller && root.controller.workspace
+                                && root.controller.workspace.layoutMode === "primary-two")
                     width: parent.width; height: 27
                     Accessible.name: root.secondaryPrimary ? "当前主画面 2" : "设为主画面 2"
                     onClicked: { if (root.controller) root.controller.setSecondaryPrimaryRoom(root.roomId); root.menuOpen = false }
