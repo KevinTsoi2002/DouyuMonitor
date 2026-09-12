@@ -113,4 +113,4 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\generate-app-i
 
 ## 验收边界
 
-自动化验证覆盖 C++、QML、服务协议、libmpv 依赖与自测入口。发布前仍应在目标用户环境完成真实斗鱼 1/4/6/9 路长时间播放验收，重点观察第九路、弹幕、CPU/GPU、内存和关闭稳定性。
+自动化验证覆盖 C++、QML、服务协议、libmpv 依赖与自测入口。发布前仍应在目标用户环境完成真实斗鱼 1/4/6/9/10 路长时间播放验收，重点观察第十路、弹幕、CPU/GPU、内存和关闭稳定性。

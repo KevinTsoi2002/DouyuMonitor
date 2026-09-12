@@ -88,6 +88,7 @@ public:
     Q_INVOKABLE void requestRemoveRoom(const QString &roomId);
     Q_INVOKABLE QString removeHistoryRoom(const QString &roomId);
     Q_INVOKABLE QString setPrimaryRoom(const QString &roomId);
+    Q_INVOKABLE QString setSecondaryPrimaryRoom(const QString &roomId);
     Q_INVOKABLE QString setAudioRoom(const QString &roomId);
     Q_INVOKABLE bool setAudioMode(const QString &mode);
     Q_INVOKABLE bool setGlobalMuted(bool muted);

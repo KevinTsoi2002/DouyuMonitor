@@ -79,7 +79,7 @@ class AppControllerTest final : public QObject {
     Q_OBJECT
 
 private slots:
-    void addsRoomsThroughModelAndRejectsTheTenth();
+    void addsRoomsThroughModelAndRejectsTheEleventh();
     void recordsOpenedRoomsForTheLibraryHistory();
     void doesNotExposeSensitivePlaybackMaterial();
     void restoresSavedMetadataIntoRoomModel();
@@ -196,7 +196,7 @@ void AppControllerTest::clearsUnrememberedCloseBehaviorPreference()
     QCOMPARE(restored.closeBehavior(), QStringLiteral("ask"));
 }
 
-void AppControllerTest::addsRoomsThroughModelAndRejectsTheTenth()
+void AppControllerTest::addsRoomsThroughModelAndRejectsTheEleventh()
 {
     QTemporaryDir directory;
     QVERIFY(directory.isValid());
@@ -204,12 +204,12 @@ void AppControllerTest::addsRoomsThroughModelAndRejectsTheTenth()
     FakeNotificationSink sink;
     AppController controller(fakeServicePath(), &settings, &sink);
 
-    for (int index = 0; index < 9; ++index) {
+    for (int index = 0; index < 10; ++index) {
         QCOMPARE(controller.addRoom(QString::number(63136 + index)), QString());
     }
 
-    QCOMPARE(controller.addRoom(QStringLiteral("999999")), QStringLiteral("最多添加 9 个房间"));
-    QCOMPARE(controller.rooms()->rowCount(), 9);
+    QCOMPARE(controller.addRoom(QStringLiteral("999999")), QStringLiteral("最多添加 10 个房间"));
+    QCOMPARE(controller.rooms()->rowCount(), 10);
 }
 
 void AppControllerTest::defersRequestedRoomRemovalUntilEventLoop()

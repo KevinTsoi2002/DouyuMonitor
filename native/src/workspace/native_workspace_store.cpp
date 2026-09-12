@@ -15,8 +15,8 @@ namespace {
 
 constexpr auto kSettingsKey = "DouyuMonitor/nativeWorkspaceV1";
 constexpr int kCurrentVersion = 4;
-constexpr int kMaxActiveRooms = 9;
-constexpr int kMaxGroupRooms = 9;
+constexpr int kMaxActiveRooms = 10;
+constexpr int kMaxGroupRooms = 10;
 const QRegularExpression kRoomIdPattern(QStringLiteral(R"(^[0-9]{1,20}$)"));
 
 bool isSupportedLayoutId(const QString &layoutId)
@@ -278,6 +278,10 @@ NativeWorkspaceSnapshot normalize(NativeWorkspaceSnapshot snapshot)
         if (!isSupportedAudioMode(preset.audioMode)) preset.audioMode = QStringLiteral("single");
         if (!groupIds.contains(preset.activeGroupId)) preset.activeGroupId.clear();
         if (!preset.roomIds.contains(preset.primaryRoomId)) preset.primaryRoomId.clear();
+        if (!preset.roomIds.contains(preset.secondaryPrimaryRoomId)
+            || preset.secondaryPrimaryRoomId == preset.primaryRoomId) {
+            preset.secondaryPrimaryRoomId.clear();
+        }
         if (!preset.roomIds.contains(preset.audioRoomId)) preset.audioRoomId.clear();
         presetIds.insert(preset.id);
         presets.push_back(std::move(preset));
@@ -286,6 +290,10 @@ NativeWorkspaceSnapshot normalize(NativeWorkspaceSnapshot snapshot)
 
     if (!groupIds.contains(snapshot.activeGroupId)) snapshot.activeGroupId.clear();
     if (!snapshot.activeRoomIds.contains(snapshot.primaryRoomId)) snapshot.primaryRoomId.clear();
+    if (!snapshot.activeRoomIds.contains(snapshot.secondaryPrimaryRoomId)
+        || snapshot.secondaryPrimaryRoomId == snapshot.primaryRoomId) {
+        snapshot.secondaryPrimaryRoomId.clear();
+    }
     if (!snapshot.activeRoomIds.contains(snapshot.audioRoomId)) snapshot.audioRoomId.clear();
     return snapshot;
 }
@@ -397,6 +405,7 @@ QJsonObject toJson(const NativeWorkspacePreset &preset)
         {QStringLiteral("layoutId"), preset.layoutId},
         {QStringLiteral("activeGroupId"), preset.activeGroupId},
         {QStringLiteral("primaryRoomId"), preset.primaryRoomId},
+        {QStringLiteral("secondaryPrimaryRoomId"), preset.secondaryPrimaryRoomId},
         {QStringLiteral("audioRoomId"), preset.audioRoomId},
         {QStringLiteral("roomIds"), roomIds},
         {QStringLiteral("sidebarVisible"), preset.sidebarVisible},
@@ -426,6 +435,7 @@ QJsonObject toJson(const NativeWorkspaceSnapshot &snapshot)
         {QStringLiteral("activeRoomIds"), activeRoomIds},
         {QStringLiteral("activeGroupId"), snapshot.activeGroupId},
         {QStringLiteral("primaryRoomId"), snapshot.primaryRoomId},
+        {QStringLiteral("secondaryPrimaryRoomId"), snapshot.secondaryPrimaryRoomId},
         {QStringLiteral("audioRoomId"), snapshot.audioRoomId},
         {QStringLiteral("layoutId"), snapshot.layoutId},
         {QStringLiteral("primaryRoomRatio"), snapshot.primaryRoomRatio},
@@ -667,6 +677,7 @@ std::optional<NativeWorkspacePreset> presetFromJson(const QJsonObject &object, i
     preset.layoutId = object.value(QStringLiteral("layoutId")).toString();
     preset.activeGroupId = object.value(QStringLiteral("activeGroupId")).toString();
     preset.primaryRoomId = object.value(QStringLiteral("primaryRoomId")).toString();
+    preset.secondaryPrimaryRoomId = object.value(QStringLiteral("secondaryPrimaryRoomId")).toString();
     preset.audioRoomId = object.value(QStringLiteral("audioRoomId")).toString();
     preset.sidebarVisible = object.value(QStringLiteral("sidebarVisible")).toBool();
     if (object.value(QStringLiteral("audioMode")).isString()) {
@@ -727,6 +738,7 @@ NativeWorkspaceSnapshot fromJson(const QJsonObject &object)
     }
     snapshot.activeGroupId = object.value(QStringLiteral("activeGroupId")).toString();
     snapshot.primaryRoomId = object.value(QStringLiteral("primaryRoomId")).toString();
+    snapshot.secondaryPrimaryRoomId = object.value(QStringLiteral("secondaryPrimaryRoomId")).toString();
     snapshot.audioRoomId = object.value(QStringLiteral("audioRoomId")).toString();
     if (object.value(QStringLiteral("layoutId")).isString()) {
         snapshot.layoutId = object.value(QStringLiteral("layoutId")).toString();

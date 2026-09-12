@@ -18,6 +18,7 @@ FocusScope {
     required property string liveState
     required property string playbackState
     required property bool primary
+    property bool secondaryPrimary: false
     required property bool favorite
     required property bool audioFocused
     required property string requestedQuality
@@ -197,7 +198,7 @@ FocusScope {
                 Rectangle {
                     id: primaryRoomBadge
                     objectName: "primaryRoomBadge"
-                    property string text: "主画面"
+                    property string text: root.secondaryPrimary ? "主画面 2" : (root.primary ? "主画面 1" : "主画面")
                     anchors.left: liveStatusBadge.right
                     anchors.leftMargin: visible ? 6 : 0
                     anchors.verticalCenter: parent.verticalCenter
@@ -287,6 +288,15 @@ FocusScope {
                     background: Rectangle { radius: 4; color: parent.hovered ? "#241b17" : "transparent" }
                 }
                 ToolButton {
+                    visible: root.controller && root.controller.workspace
+                             && root.controller.workspace.layoutMode === "primary-two"
+                    width: parent.width; height: 27
+                    Accessible.name: root.secondaryPrimary ? "当前主画面 2" : "设为主画面 2"
+                    onClicked: { if (root.controller) root.controller.setSecondaryPrimaryRoom(root.roomId); root.menuOpen = false }
+                    contentItem: Text { text: root.secondaryPrimary ? "当前主画面 2" : "设为主画面 2"; color: "#d6dde5"; leftPadding: 6; verticalAlignment: Text.AlignVCenter; font.pixelSize: 10 }
+                    background: Rectangle { radius: 4; color: parent.hovered ? "#241b17" : "transparent" }
+                }
+                ToolButton {
                     width: parent.width; height: 27
                     Accessible.name: "重新检查播放源"
                     onClicked: { if (root.controller) root.controller.retryPlayback(root.roomId); root.menuOpen = false }
@@ -295,9 +305,9 @@ FocusScope {
                 }
                 ToolButton {
                     width: parent.width; height: 27
-                    Accessible.name: "设为主画面"
+                    Accessible.name: root.primary ? "当前主画面 1" : "设为主画面 1"
                     onClicked: { if (root.controller) root.controller.setPrimaryRoom(root.roomId); root.menuOpen = false }
-                    contentItem: Text { text: root.primary ? "当前主画面" : "设为主画面"; color: "#d6dde5"; leftPadding: 6; verticalAlignment: Text.AlignVCenter; font.pixelSize: 10 }
+                    contentItem: Text { text: root.primary ? "当前主画面 1" : "设为主画面 1"; color: "#d6dde5"; leftPadding: 6; verticalAlignment: Text.AlignVCenter; font.pixelSize: 10 }
                     background: Rectangle { radius: 4; color: parent.hovered ? "#241b17" : "transparent" }
                 }
                 ToolButton {

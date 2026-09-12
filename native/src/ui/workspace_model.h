@@ -16,6 +16,7 @@ class WorkspaceModel final : public QObject {
     Q_PROPERTY(QString layoutMode READ layoutMode NOTIFY layoutIdChanged)
     Q_PROPERTY(double primaryRoomRatio READ primaryRoomRatio NOTIFY primaryRoomRatioChanged)
     Q_PROPERTY(QString primaryRoomId READ primaryRoomId NOTIFY primaryRoomIdChanged)
+    Q_PROPERTY(QString secondaryPrimaryRoomId READ secondaryPrimaryRoomId NOTIFY secondaryPrimaryRoomIdChanged)
     Q_PROPERTY(QString audioRoomId READ audioRoomId NOTIFY audioRoomIdChanged)
     Q_PROPERTY(QString audioMode READ audioMode NOTIFY audioModeChanged)
     Q_PROPERTY(bool globalMuted READ globalMuted NOTIFY globalMutedChanged)
@@ -35,6 +36,7 @@ public:
     QString layoutMode() const;
     double primaryRoomRatio() const noexcept;
     QString primaryRoomId() const;
+    QString secondaryPrimaryRoomId() const;
     QString audioRoomId() const;
     QString audioMode() const;
     bool globalMuted() const noexcept;
@@ -49,7 +51,7 @@ public:
     QString commandMessage(RoomCommandResult result) const;
     void setAudioRoomId(QString roomId);
     void setSidebarVisible(bool visible);
-    void setCoordinatorState(QString layoutId, QString primaryRoomId, QString audioRoomId);
+    void setCoordinatorState(QString layoutId, QString primaryRoomId, QString secondaryPrimaryRoomId, QString audioRoomId);
     void setAudioPolicy(QString audioMode, bool globalMuted);
     void setLayoutPresentation(QString layoutMode, double primaryRoomRatio);
     Q_INVOKABLE void setLastMessage(QString message);
@@ -65,6 +67,7 @@ signals:
     void layoutIdChanged();
     void primaryRoomRatioChanged();
     void primaryRoomIdChanged();
+    void secondaryPrimaryRoomIdChanged();
     void audioRoomIdChanged();
     void audioModeChanged();
     void globalMutedChanged();
@@ -81,6 +84,7 @@ private:
     QString layoutMode_ = QStringLiteral("auto");
     double primaryRoomRatio_ = 0.6;
     QString primaryRoomId_;
+    QString secondaryPrimaryRoomId_;
     QString audioRoomId_;
     QString audioMode_ = QStringLiteral("single");
     bool globalMuted_ = false;

@@ -69,6 +69,7 @@ struct NativeWorkspacePreset {
     QString layoutId = QStringLiteral("auto");
     QString activeGroupId;
     QString primaryRoomId;
+    QString secondaryPrimaryRoomId;
     QString audioRoomId;
     QStringList roomIds;
     bool sidebarVisible = true;
@@ -89,6 +90,7 @@ struct NativeWorkspaceSnapshot {
     QStringList activeRoomIds;
     QString activeGroupId;
     QString primaryRoomId;
+    QString secondaryPrimaryRoomId;
     QString audioRoomId;
     QString layoutId = QStringLiteral("auto");
     double primaryRoomRatio = 0.6;

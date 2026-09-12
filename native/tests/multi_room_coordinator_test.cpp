@@ -28,8 +28,8 @@ class MultiRoomCoordinatorTest final : public QObject {
     Q_OBJECT
 
 private slots:
-    void acceptsNineRoomsAndRejectsTheTenth();
-    void addsNineRoomsWithoutAWidgetParent();
+    void acceptsTenRoomsAndRejectsTheEleventh();
+    void addsTenRoomsWithoutAWidgetParent();
     void movesAndRetriesOnlyTheRequestedRoom();
     void rejectsDuplicateRoomIds();
     void appliesUserQualityAtFourRooms();
@@ -53,22 +53,25 @@ private slots:
     void replacesRoomsInRequestedOrderAndReleasesRemovedSessions();
     void preservesManualLayoutWhenRoomCountChanges();
     void reducesLayoutModesAndMigratesLegacyChoices();
+    void supportsTwoPrimaryRoomsAndQualityPriority();
+    void rejectsDualPrimaryLayoutBelowFourRooms();
+    void replacesRemovedSecondaryPrimaryRoom();
 };
 
-void MultiRoomCoordinatorTest::acceptsNineRoomsAndRejectsTheTenth()
+void MultiRoomCoordinatorTest::acceptsTenRoomsAndRejectsTheEleventh()
 {
     StreamgetProcessClient client(fakeServicePath());
     MultiRoomCoordinator coordinator(&client);
 
-    for (int index = 0; index < 9; ++index) QVERIFY(coordinator.addRoom(roomId(index)));
-    QCOMPARE(coordinator.roomCount(), 9);
+    for (int index = 0; index < 10; ++index) QVERIFY(coordinator.addRoom(roomId(index)));
+    QCOMPARE(coordinator.roomCount(), 10);
     QCOMPARE(coordinator.layoutId(), QStringLiteral("auto"));
     QVERIFY(!coordinator.addRoom(QStringLiteral("999999")));
-    QCOMPARE(coordinator.roomCount(), 9);
+    QCOMPARE(coordinator.roomCount(), 10);
     client.shutdown();
 }
 
-void MultiRoomCoordinatorTest::addsNineRoomsWithoutAWidgetParent()
+void MultiRoomCoordinatorTest::addsTenRoomsWithoutAWidgetParent()
 {
     StreamgetProcessClient client(fakeServicePath());
     MultiRoomCoordinator coordinator(&client);
@@ -138,6 +141,46 @@ void MultiRoomCoordinatorTest::appliesPrimaryOriginalAndOthers720pAtFiveRooms()
     for (int index = 1; index < 5; ++index) {
         QCOMPARE(coordinator.effectiveQuality(roomId(index)), StreamQuality::Standard);
     }
+    client.shutdown();
+}
+
+void MultiRoomCoordinatorTest::supportsTwoPrimaryRoomsAndQualityPriority()
+{
+    StreamgetProcessClient client(fakeServicePath());
+    MultiRoomCoordinator coordinator(&client);
+    for (int index = 0; index < 5; ++index) {
+        QVERIFY(coordinator.addRoom(roomId(index), StreamQuality::High));
+    }
+
+    QVERIFY(coordinator.setLayout(QStringLiteral("primary-two")));
+    QVERIFY(coordinator.setSecondaryPrimaryRoom(roomId(1)));
+    QCOMPARE(coordinator.secondaryPrimaryRoomId(), roomId(1));
+    QCOMPARE(coordinator.effectiveQuality(roomId(0)), StreamQuality::Original);
+    QCOMPARE(coordinator.effectiveQuality(roomId(1)), StreamQuality::Original);
+    QCOMPARE(coordinator.effectiveQuality(roomId(2)), StreamQuality::Standard);
+    client.shutdown();
+}
+
+void MultiRoomCoordinatorTest::rejectsDualPrimaryLayoutBelowFourRooms()
+{
+    StreamgetProcessClient client(fakeServicePath());
+    MultiRoomCoordinator coordinator(&client);
+    for (int index = 0; index < 3; ++index) QVERIFY(coordinator.addRoom(roomId(index)));
+
+    QVERIFY(!coordinator.setLayout(QStringLiteral("primary-two")));
+    QCOMPARE(coordinator.layoutId(), QStringLiteral("auto"));
+    client.shutdown();
+}
+
+void MultiRoomCoordinatorTest::replacesRemovedSecondaryPrimaryRoom()
+{
+    StreamgetProcessClient client(fakeServicePath());
+    MultiRoomCoordinator coordinator(&client);
+    for (int index = 0; index < 4; ++index) QVERIFY(coordinator.addRoom(roomId(index)));
+    QVERIFY(coordinator.setLayout(QStringLiteral("primary-two")));
+    QVERIFY(coordinator.setSecondaryPrimaryRoom(roomId(1)));
+    QVERIFY(coordinator.removeRoom(roomId(1)));
+    QCOMPARE(coordinator.secondaryPrimaryRoomId(), roomId(2));
     client.shutdown();
 }
 
@@ -538,9 +581,11 @@ void MultiRoomCoordinatorTest::reducesLayoutModesAndMigratesLegacyChoices()
     QCOMPARE(coordinator.layoutMode(), QStringLiteral("auto"));
     QCOMPARE(coordinator.layoutId(), QStringLiteral("auto"));
 
+    QVERIFY(!coordinator.setLayout(QStringLiteral("primary-two")));
+    for (int index = 0; index < 4; ++index) QVERIFY(coordinator.addRoom(roomId(index)));
     QVERIFY(coordinator.setLayout(QStringLiteral("primary-two")));
-    QCOMPARE(coordinator.layoutMode(), QStringLiteral("primary"));
-    QCOMPARE(coordinator.layoutId(), QStringLiteral("primary"));
+    QCOMPARE(coordinator.layoutMode(), QStringLiteral("primary-two"));
+    QCOMPARE(coordinator.layoutId(), QStringLiteral("primary-two"));
 
     QVERIFY(coordinator.setLayout(QStringLiteral("grid-3x3")));
     QCOMPARE(coordinator.layoutMode(), QStringLiteral("auto"));

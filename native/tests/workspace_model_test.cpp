@@ -23,7 +23,7 @@ void WorkspaceModelTest::mapsRoomLimitToFixedChineseFeedback()
     WorkspaceModel model(nullptr);
 
     const QString message = model.commandMessage(RoomCommandResult::RoomLimitReached);
-    QCOMPARE(message, QStringLiteral("最多添加 9 个房间"));
+    QCOMPARE(message, QStringLiteral("最多添加 10 个房间"));
     QVERIFY(!message.contains(QStringLiteral("://")));
 }
 
@@ -54,6 +54,7 @@ void WorkspaceModelTest::projectsCoordinatorWorkspaceState()
 
     model.setCoordinatorState(QStringLiteral("grid-2x2"),
                               QStringLiteral("63137"),
+                              QString(),
                               QStringLiteral("63136"));
 
     QCOMPARE(model.layoutId(), QStringLiteral("grid-2x2"));

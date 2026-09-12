@@ -9,6 +9,7 @@ Item {
     property var roomModel: null
     property string layoutMode: "auto"
     property string primaryRoomId: ""
+    property string secondaryPrimaryRoomId: ""
     property color canvasColor: Theme.canvas
     property color surfaceColor: Theme.controlSurface
     property color borderColor: Theme.border
@@ -71,8 +72,36 @@ Item {
         const gap = 8
         const width = Math.max(0, layoutSurface.width)
         const height = Math.max(0, layoutSurface.height)
-        const count = Math.min(9, roomRepeater.count)
+        const count = Math.min(10, roomRepeater.count)
         if (count === 0) return { x: 0, y: 0, width: 0, height: 0 }
+
+        if (layoutMode === "primary-two") {
+            const first = primaryIndex()
+            let second = -1
+            for (var s = 0; s < roomRepeater.count; ++s) {
+                var secondTile = roomRepeater.itemAt(s)
+                if (secondTile && secondTile.roomId === secondaryPrimaryRoomId) { second = s; break }
+            }
+            if (second < 0 || second === first) second = first === 0 ? 1 : 0
+            const isTop = index === first || index === second
+            if (isTop) {
+                const topHeight = Math.max(0, (height - gap) * 0.62)
+                const tileWidth = Math.max(0, (width - gap) / 2)
+                return { x: (index === second ? tileWidth + gap : 0), y: 0, width: tileWidth, height: topHeight }
+            }
+            var remaining = index
+            if (index > first) remaining -= 1
+            if (index > second) remaining -= 1
+            const bottomCount = Math.max(1, count - 2)
+            const columns = Math.min(4, bottomCount)
+            const rows = Math.ceil(bottomCount / columns)
+            const row = Math.floor(remaining / columns)
+            const col = remaining % columns
+            const bottomY = Math.max(0, (height - gap) * 0.62) + gap
+            const tileWidth = Math.max(0, (width - gap * (columns - 1)) / columns)
+            const tileHeight = Math.max(0, (height - bottomY - gap * (rows - 1)) / rows)
+            return { x: col * (tileWidth + gap), y: bottomY + row * (tileHeight + gap), width: tileWidth, height: tileHeight }
+        }
 
         if (layoutMode === "primary") {
             const activePrimaryIndex = primaryIndex()
@@ -169,6 +198,7 @@ Item {
                 width: tileGeometry.width
                 height: tileGeometry.height
                 controller: root.controller
+                secondaryPrimary: model.secondaryPrimary
                 borderColor: root.borderColor
                 accentColor: root.accentColor
                 textColor: root.textColor
@@ -196,6 +226,6 @@ Item {
             Image { anchors.centerIn: parent; width: 26; height: 26; source: Qt.resolvedUrl("../assets/icons/plus.svg") }
         }
         Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; color: root.textColor; text: "把直播间放进同一张画布"; font.bold: true; font.pixelSize: 16 }
-        Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; color: root.mutedTextColor; text: "输入房间号后即可添加。工作区最多容纳 9 路。"; font.pixelSize: 11; lineHeight: 1.4 }
+        Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; color: root.mutedTextColor; text: "输入房间号后即可添加。工作区最多容纳 10 路。"; font.pixelSize: 11; lineHeight: 1.4 }
     }
 }

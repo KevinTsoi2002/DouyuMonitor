@@ -387,5 +387,16 @@ Rectangle {
                 radius: Theme.radiusSmall
             }
         }
+        MenuItem {
+            objectName: "dualPrimaryLayoutOption"
+            text: "双主直播间"
+            checkable: true
+            enabled: root.controller && root.controller.rooms ? root.controller.rooms.rowCount() >= 4 : false
+            checked: root.workspaceModel ? root.workspaceModel.layoutMode === "primary-two" : false
+            ToolTip.visible: hovered && !enabled
+            ToolTip.text: "双主布局至少需要 4 路直播间"
+            onTriggered: if (root.controller) root.controller.setLayout("primary-two")
+            contentItem: Text { text: parent.text; color: parent.enabled ? Theme.text : Theme.mutedText; leftPadding: 12; verticalAlignment: Text.AlignVCenter }
+        }
     }
 }

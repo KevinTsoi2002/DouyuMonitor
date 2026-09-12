@@ -23,6 +23,7 @@ enum class RoomCommandResult {
 struct RoomSnapshot {
     QString roomId;
     bool isPrimary = false;
+    bool isSecondaryPrimary = false;
     RoomSession::State state = RoomSession::State::Idle;
     StreamQuality requestedQuality = StreamQuality::Auto;
     StreamQuality effectiveQuality = StreamQuality::Auto;

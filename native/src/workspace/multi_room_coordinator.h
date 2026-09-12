@@ -24,7 +24,7 @@ class MultiRoomCoordinator final : public QObject {
     Q_OBJECT
 
 public:
-    static constexpr int kMaxRooms = 9;
+    static constexpr int kMaxRooms = 10;
 
     explicit MultiRoomCoordinator(StreamgetProcessClient *client,
                                   QObject *parent = nullptr);
@@ -37,6 +37,7 @@ public:
                  StreamQuality userQuality = StreamQuality::Auto);
     bool removeRoom(const QString &roomId);
     bool setPrimaryRoom(const QString &roomId);
+    bool setSecondaryPrimaryRoom(const QString &roomId);
     bool setAudioFocus(const QString &roomId);
     bool setFavorite(const QString &roomId, bool favorite);
     QString audioRoomId() const;
@@ -51,6 +52,7 @@ public:
                                       int volume = 100);
     RoomCommandResult removeRoomDetailed(const QString &roomId);
     RoomCommandResult setPrimaryRoomDetailed(const QString &roomId);
+    RoomCommandResult setSecondaryPrimaryRoomDetailed(const QString &roomId);
     RoomCommandResult setRequestedQuality(const QString &roomId,
                                           StreamQuality requestedQuality);
     RoomCommandResult moveRoomDetailed(const QString &roomId, int delta);
@@ -60,6 +62,7 @@ public:
 
     int roomCount() const noexcept;
     QString primaryRoomId() const;
+    QString secondaryPrimaryRoomId() const;
     QStringList roomIds() const;
     QString layoutId() const;
     QString layoutMode() const;
@@ -100,6 +103,7 @@ private:
     QVector<QString> order_;
     QHash<QString, RoomSession *> sessions_;
     QString primaryRoomId_;
+    QString secondaryPrimaryRoomId_;
     QString audioRoomId_;
     QString audioMode_ = QStringLiteral("single");
     bool globalMuted_ = false;

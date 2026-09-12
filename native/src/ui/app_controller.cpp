@@ -432,8 +432,19 @@ QString AppController::addRoomCandidate(const QString &roomId)
 
 QString AppController::removeRoom(const QString &roomId)
 {
+    const bool wasDualPrimary = coordinator_ != nullptr
+        && coordinator_->layoutMode() == QStringLiteral("primary-two");
     const RoomCommandResult result = coordinator_->removeRoomDetailed(roomId);
-    if (result == RoomCommandResult::Accepted) persistWorkspace();
+    if (result == RoomCommandResult::Accepted) {
+        if (wasDualPrimary
+            && coordinator_->roomCount() < 4) {
+            coordinator_->setLayout(QStringLiteral("auto"));
+            snapshot_.layoutId = QStringLiteral("auto");
+            workspace_->setLastMessage(QStringLiteral("双主布局至少需要 4 路直播间"),
+                                       QStringLiteral("info"), 3200);
+        }
+        persistWorkspace();
+    }
     return commandMessage(result);
 }
 
@@ -470,6 +481,13 @@ void AppController::requestRemoveRoom(const QString &roomId)
 QString AppController::setPrimaryRoom(const QString &roomId)
 {
     const RoomCommandResult result = coordinator_->setPrimaryRoomDetailed(roomId);
+    if (result == RoomCommandResult::Accepted) persistWorkspace();
+    return commandMessage(result);
+}
+
+QString AppController::setSecondaryPrimaryRoom(const QString &roomId)
+{
+    const RoomCommandResult result = coordinator_->setSecondaryPrimaryRoomDetailed(roomId);
     if (result == RoomCommandResult::Accepted) persistWorkspace();
     return commandMessage(result);
 }
@@ -751,6 +769,12 @@ void AppController::setActiveGroup(const QString &groupId)
 
 bool AppController::setLayout(const QString &layoutId)
 {
+    if (layoutId.trimmed().compare(QStringLiteral("primary-two"), Qt::CaseInsensitive) == 0
+        && coordinator_ != nullptr && coordinator_->roomCount() < 4) {
+        workspace_->setLastMessage(QStringLiteral("双主布局至少需要 4 路直播间"),
+                                   QStringLiteral("error"), 3200);
+        return false;
+    }
     if (coordinator_ == nullptr || !coordinator_->setLayout(layoutId)) return false;
     snapshot_.layoutId = coordinator_->layoutMode();
     refreshPresentation();
@@ -786,6 +810,7 @@ QString AppController::saveWorkspacePreset(const QString &name)
     preset.layoutId = coordinator_->layoutMode();
     preset.activeGroupId = snapshot_.activeGroupId;
     preset.primaryRoomId = coordinator_->primaryRoomId();
+    preset.secondaryPrimaryRoomId = coordinator_->secondaryPrimaryRoomId();
     preset.audioRoomId = coordinator_->audioRoomId();
     preset.roomIds = coordinator_->roomIds();
     preset.sidebarVisible = workspace_->sidebarVisible();
@@ -837,6 +862,9 @@ QString AppController::applyWorkspacePreset(const QString &presetId)
     coordinator_->setAudioMode(preset.audioMode);
     coordinator_->setGlobalMuted(preset.globalMuted);
     if (!preset.primaryRoomId.isEmpty()) coordinator_->setPrimaryRoomDetailed(preset.primaryRoomId);
+    if (!preset.secondaryPrimaryRoomId.isEmpty()) {
+        coordinator_->setSecondaryPrimaryRoomDetailed(preset.secondaryPrimaryRoomId);
+    }
     if (!preset.audioRoomId.isEmpty()) coordinator_->setAudioFocus(preset.audioRoomId);
     snapshot_.activeGroupId = preset.activeGroupId;
     snapshot_.layoutId = coordinator_->layoutMode();
@@ -1141,6 +1169,9 @@ void AppController::restoreWorkspace()
     if (!snapshot_.primaryRoomId.isEmpty()) {
         coordinator_->setPrimaryRoomDetailed(snapshot_.primaryRoomId);
     }
+    if (!snapshot_.secondaryPrimaryRoomId.isEmpty()) {
+        coordinator_->setSecondaryPrimaryRoomDetailed(snapshot_.secondaryPrimaryRoomId);
+    }
     if (!snapshot_.audioRoomId.isEmpty()) coordinator_->setAudioFocus(snapshot_.audioRoomId);
     restoring_ = false;
     synchronizeDanmaku();
@@ -1246,6 +1277,8 @@ void AppController::onSnapshotsChanged(const RoomSnapshots &snapshots)
 {
     snapshot_.activeRoomIds = coordinator_->roomIds();
     snapshot_.primaryRoomId = coordinator_->primaryRoomId();
+    snapshot_.secondaryPrimaryRoomId = coordinator_->secondaryPrimaryRoomId();
+    snapshot_.layoutId = coordinator_->layoutId();
     snapshot_.audioRoomId = coordinator_->audioRoomId();
     snapshot_.audioMode = coordinator_->audioMode();
     snapshot_.globalMuted = coordinator_->globalMuted();
@@ -1328,7 +1361,7 @@ void AppController::refreshPresentation()
     }
     rooms_->applyPresentationSettings(settings);
     workspace_->setCoordinatorState(coordinator_->layoutId(), coordinator_->primaryRoomId(),
-                                    coordinator_->audioRoomId());
+                                    coordinator_->secondaryPrimaryRoomId(), coordinator_->audioRoomId());
     workspace_->setAudioPolicy(coordinator_->audioMode(), coordinator_->globalMuted());
     workspace_->setLayoutPresentation(coordinator_->layoutMode(),
                                       coordinator_->primaryRoomRatio());

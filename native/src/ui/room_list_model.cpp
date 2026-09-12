@@ -15,6 +15,7 @@ QVector<int> snapshotRoles()
         RoomListModel::LiveStateRole,
         RoomListModel::PlaybackStateRole,
         RoomListModel::PrimaryRole,
+        RoomListModel::SecondaryPrimaryRole,
         RoomListModel::FavoriteRole,
         RoomListModel::AudioFocusedRole,
         RoomListModel::RequestedQualityRole,
@@ -60,6 +61,8 @@ QVariant RoomListModel::data(const QModelIndex &index, int role) const
         return playbackState(snapshot);
     case PrimaryRole:
         return snapshot.isPrimary;
+    case SecondaryPrimaryRole:
+        return snapshot.isSecondaryPrimary;
     case FavoriteRole:
         return snapshot.favorite;
     case AudioFocusedRole:
@@ -115,6 +118,7 @@ QHash<int, QByteArray> RoomListModel::roleNames() const
         {LiveStateRole, "liveState"},
         {PlaybackStateRole, "playbackState"},
         {PrimaryRole, "primary"},
+        {SecondaryPrimaryRole, "secondaryPrimary"},
         {FavoriteRole, "favorite"},
         {AudioFocusedRole, "audioFocused"},
         {RequestedQualityRole, "requestedQuality"},

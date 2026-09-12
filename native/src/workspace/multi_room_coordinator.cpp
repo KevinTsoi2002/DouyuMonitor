@@ -15,9 +15,8 @@ const QRegularExpression kRoomIdPattern(QStringLiteral(R"(^[0-9]{1,20}$)"));
 QString normalizeLayoutMode(const QString &layoutId)
 {
     const QString normalized = layoutId.trimmed().toLower();
-    if (normalized == QStringLiteral("primary")
-        || normalized == QStringLiteral("primary-two")) {
-        return QStringLiteral("primary");
+    if (normalized == QStringLiteral("primary") || normalized == QStringLiteral("primary-two")) {
+        return normalized;
     }
     if (normalized == QStringLiteral("auto") || normalized == QStringLiteral("single")
         || normalized == QStringLiteral("grid-2x2")
@@ -121,6 +120,9 @@ RoomCommandResult MultiRoomCoordinator::addRoomDetailed(const QString &roomId,
     }
 
     const QString previousLayout = layoutId_;
+    if (layoutMode_ == QStringLiteral("primary-two") && order_.size() < 4) {
+        layoutMode_ = QStringLiteral("auto");
+    }
     layoutId_ = layoutMode_;
     recomputeQuality();
     applyAudioFocus();
@@ -153,11 +155,32 @@ RoomCommandResult MultiRoomCoordinator::removeRoomDetailed(const QString &roomId
     if (primaryRoomId_ == roomId) {
         primaryRoomId_ = order_.isEmpty() ? QString() : order_.front();
     }
+    if (secondaryPrimaryRoomId_ == roomId) {
+        secondaryPrimaryRoomId_.clear();
+        for (const QString &candidate : order_) {
+            if (candidate != primaryRoomId_) {
+                secondaryPrimaryRoomId_ = candidate;
+                break;
+            }
+        }
+    }
+    if (secondaryPrimaryRoomId_ == primaryRoomId_) {
+        secondaryPrimaryRoomId_.clear();
+        for (const QString &candidate : order_) {
+            if (candidate != primaryRoomId_) {
+                secondaryPrimaryRoomId_ = candidate;
+                break;
+            }
+        }
+    }
     if (audioRoomId_ == roomId) {
         audioRoomId_ = order_.isEmpty() ? QString() : order_.front();
     }
 
     const QString previousLayout = layoutId_;
+    if (layoutMode_ == QStringLiteral("primary-two") && order_.size() < 4) {
+        layoutMode_ = QStringLiteral("auto");
+    }
     layoutId_ = layoutMode_;
     recomputeQuality();
     applyAudioFocus();
@@ -175,11 +198,30 @@ bool MultiRoomCoordinator::setPrimaryRoom(const QString &roomId)
     return setPrimaryRoomDetailed(roomId) == RoomCommandResult::Accepted;
 }
 
+bool MultiRoomCoordinator::setSecondaryPrimaryRoom(const QString &roomId)
+{
+    return setSecondaryPrimaryRoomDetailed(roomId) == RoomCommandResult::Accepted;
+}
+
 RoomCommandResult MultiRoomCoordinator::setPrimaryRoomDetailed(const QString &roomId)
 {
     if (!sessions_.contains(roomId)) return RoomCommandResult::RoomNotFound;
     if (primaryRoomId_ == roomId) return RoomCommandResult::AlreadyPrimary;
+    const QString previousPrimary = primaryRoomId_;
     primaryRoomId_ = roomId;
+    if (secondaryPrimaryRoomId_ == roomId) secondaryPrimaryRoomId_ = previousPrimary;
+    recomputeQuality();
+    publishSnapshots();
+    return RoomCommandResult::Accepted;
+}
+
+RoomCommandResult MultiRoomCoordinator::setSecondaryPrimaryRoomDetailed(const QString &roomId)
+{
+    if (!sessions_.contains(roomId)) return RoomCommandResult::RoomNotFound;
+    if (roomId == primaryRoomId_ || secondaryPrimaryRoomId_ == roomId) {
+        return RoomCommandResult::AlreadyPrimary;
+    }
+    secondaryPrimaryRoomId_ = roomId;
     recomputeQuality();
     publishSnapshots();
     return RoomCommandResult::Accepted;
@@ -324,6 +366,10 @@ RoomCommandResult MultiRoomCoordinator::replaceRooms(const QVector<CoordinatorRo
     }
 
     primaryRoomId_ = order_.isEmpty() ? QString() : order_.front();
+    secondaryPrimaryRoomId_.clear();
+    for (const QString &candidate : order_) {
+        if (candidate != primaryRoomId_) { secondaryPrimaryRoomId_ = candidate; break; }
+    }
     audioRoomId_ = audioMode_ == QStringLiteral("single")
         ? (targetIds.contains(previousAudio)
                ? previousAudio
@@ -355,6 +401,11 @@ QString MultiRoomCoordinator::primaryRoomId() const
     return primaryRoomId_;
 }
 
+QString MultiRoomCoordinator::secondaryPrimaryRoomId() const
+{
+    return secondaryPrimaryRoomId_;
+}
+
 QStringList MultiRoomCoordinator::roomIds() const
 {
     return QStringList(order_.cbegin(), order_.cend());
@@ -379,6 +430,7 @@ bool MultiRoomCoordinator::setLayout(const QString &layoutId)
 {
     const QString normalized = normalizeLayoutMode(layoutId);
     if (normalized.isEmpty()) return false;
+    if (normalized == QStringLiteral("primary-two") && order_.size() < 4) return false;
 
     const QString previousLayout = layoutId_;
     const QString previousMode = layoutMode_;
@@ -412,6 +464,7 @@ RoomSnapshots MultiRoomCoordinator::roomSnapshots() const
         const bool muted = quickPlayer != nullptr ? quickPlayer->isMuted() : !audible;
         snapshots.push_back({roomId,
                              roomId == primaryRoomId_,
+                             roomId == secondaryPrimaryRoomId_,
                              session->state(),
                              session->userQuality(),
                              session->effectiveQuality(),
@@ -492,8 +545,9 @@ void MultiRoomCoordinator::recomputeQuality()
     for (const QString &roomId : order_) {
         RoomSession *session = sessions_.value(roomId, nullptr);
         if (session == nullptr) continue;
-        const auto decision = resolveRoomQuality(count, roomId == primaryRoomId_,
-                                                 session->userQuality());
+        const auto decision = resolveRoomQuality(
+            count, roomId == primaryRoomId_ || roomId == secondaryPrimaryRoomId_,
+            session->userQuality());
         if (!session->setEffectiveQuality(decision.effectiveQuality)) continue;
         emit qualityChanged(roomId, decision.effectiveQuality);
         session->resolve();

@@ -33,6 +33,11 @@ QString WorkspaceModel::primaryRoomId() const
     return primaryRoomId_;
 }
 
+QString WorkspaceModel::secondaryPrimaryRoomId() const
+{
+    return secondaryPrimaryRoomId_;
+}
+
 QString WorkspaceModel::audioRoomId() const
 {
     return audioRoomId_;
@@ -55,7 +60,7 @@ bool WorkspaceModel::danmakuEnabled() const noexcept
 
 int WorkspaceModel::maxRooms() const noexcept
 {
-    return 9;
+    return 10;
 }
 
 QVariantList WorkspaceModel::groupItems() const
@@ -120,7 +125,7 @@ QString WorkspaceModel::commandMessage(RoomCommandResult result) const
     case RoomCommandResult::DuplicateRoomId:
         return QStringLiteral("该房间已在列表中");
     case RoomCommandResult::RoomLimitReached:
-        return QStringLiteral("最多添加 9 个房间");
+        return QStringLiteral("最多添加 10 个房间");
     case RoomCommandResult::RoomNotFound:
         return QStringLiteral("未找到该房间");
     case RoomCommandResult::AlreadyPrimary:
@@ -140,6 +145,7 @@ void WorkspaceModel::setAudioRoomId(QString roomId)
 
 void WorkspaceModel::setCoordinatorState(QString layoutId,
                                          QString primaryRoomId,
+                                         QString secondaryPrimaryRoomId,
                                          QString audioRoomId)
 {
     if (layoutId_ != layoutId) {
@@ -149,6 +155,10 @@ void WorkspaceModel::setCoordinatorState(QString layoutId,
     if (primaryRoomId_ != primaryRoomId) {
         primaryRoomId_ = std::move(primaryRoomId);
         emit primaryRoomIdChanged();
+    }
+    if (secondaryPrimaryRoomId_ != secondaryPrimaryRoomId) {
+        secondaryPrimaryRoomId_ = std::move(secondaryPrimaryRoomId);
+        emit secondaryPrimaryRoomIdChanged();
     }
     setAudioRoomId(std::move(audioRoomId));
 }

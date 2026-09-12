@@ -267,6 +267,7 @@ ApplicationWindow {
         roomModel: root.roomModel
         layoutMode: root.workspaceModel ? root.workspaceModel.layoutMode : "auto"
         primaryRoomId: root.workspaceModel ? root.workspaceModel.primaryRoomId : "preview-1"
+        secondaryPrimaryRoomId: root.workspaceModel ? root.workspaceModel.secondaryPrimaryRoomId : "preview-2"
         canvasColor: root.canvasColor
         surfaceColor: root.surfaceColor
         borderColor: root.borderColor

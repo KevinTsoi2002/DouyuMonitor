@@ -38,6 +38,7 @@ public:
         LiveStateRole,
         PlaybackStateRole,
         PrimaryRole,
+        SecondaryPrimaryRole,
         FavoriteRole,
         AudioFocusedRole,
         RequestedQualityRole,
