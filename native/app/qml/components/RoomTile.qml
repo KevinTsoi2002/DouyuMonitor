@@ -198,7 +198,11 @@ FocusScope {
                 Rectangle {
                     id: primaryRoomBadge
                     objectName: "primaryRoomBadge"
-                    property string text: root.secondaryPrimary ? "主画面 2" : (root.primary ? "主画面 1" : "主画面")
+                    property string text: root.secondaryPrimary
+                        ? "主画面 2"
+                        : (root.primary && root.controller && root.controller.workspace
+                           && root.controller.workspace.layoutMode === "primary-two"
+                           ? "主画面 1" : "主画面")
                     anchors.left: liveStatusBadge.right
                     anchors.leftMargin: visible ? 6 : 0
                     anchors.verticalCenter: parent.verticalCenter
