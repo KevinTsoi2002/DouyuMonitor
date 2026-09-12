@@ -1,6 +1,7 @@
 #include "ui/app_controller.h"
 
 #include <QDateTime>
+#include <QDesktopServices>
 #include <QRegularExpression>
 #include <QSettings>
 #include <QTimer>
@@ -12,6 +13,7 @@
 #include <memory>
 
 #include "app/windows_notification_service.h"
+#include "app/update_checker.h"
 #include "app/windows_tray_service.h"
 #include "danmaku/danmaku_socket.h"
 #include "danmaku/danmaku_timer_scheduler.h"
@@ -22,6 +24,10 @@
 #include "ui/workspace_model.h"
 #include "workspace/multi_room_coordinator.h"
 #include "workspace/favorite_monitor.h"
+
+#ifndef DOUYU_APP_VERSION
+#define DOUYU_APP_VERSION "dev"
+#endif
 
 namespace {
 
@@ -86,6 +92,9 @@ AppController::AppController(QString serviceProgram,
     workspace_ = std::make_unique<WorkspaceModel>(this, this);
     monitoring_ = std::make_unique<MonitoringModel>(this);
     danmaku_ = std::make_unique<DanmakuController>(std::move(danmakuFactory), this);
+    updateChecker_ = std::make_unique<UpdateChecker>(QStringLiteral(DOUYU_APP_VERSION), QUrl{}, 8000, this);
+    connect(updateChecker_.get(), &UpdateChecker::stateChanged, this, &AppController::updateStateChanged);
+    connect(updateChecker_.get(), &UpdateChecker::resultChanged, this, &AppController::updateStateChanged);
 
     connect(service_.get(), &StreamgetProcessClient::responseReceived,
             this, &AppController::onServiceResponse);
@@ -256,6 +265,60 @@ QString AppController::searchStatus() const
 QString AppController::searchError() const
 {
     return searchError_;
+}
+
+QString AppController::updateState() const
+{
+    if (updateChecker_ == nullptr) return QStringLiteral("idle");
+    switch (updateChecker_->state()) {
+    case UpdateChecker::State::Checking: return QStringLiteral("checking");
+    case UpdateChecker::State::UpToDate: return QStringLiteral("upToDate");
+    case UpdateChecker::State::UpdateAvailable: return QStringLiteral("updateAvailable");
+    case UpdateChecker::State::Error: return QStringLiteral("error");
+    case UpdateChecker::State::Idle: return QStringLiteral("idle");
+    }
+    return QStringLiteral("idle");
+}
+
+QString AppController::updateMessage() const
+{
+    if (updateChecker_ == nullptr) return {};
+    switch (updateChecker_->state()) {
+    case UpdateChecker::State::Checking: return QStringLiteral("正在检查更新...");
+    case UpdateChecker::State::UpToDate:
+        return QStringLiteral("已是最新版本（%1）").arg(updateChecker_->currentVersion());
+    case UpdateChecker::State::UpdateAvailable:
+        return QStringLiteral("发现新版本 %1").arg(updateChecker_->latestVersion());
+    case UpdateChecker::State::Error: return updateChecker_->errorMessage();
+    case UpdateChecker::State::Idle: return {};
+    }
+    return {};
+}
+
+QString AppController::currentVersion() const
+{
+    return updateChecker_ != nullptr ? updateChecker_->currentVersion() : QString();
+}
+
+QString AppController::latestVersion() const
+{
+    return updateChecker_ != nullptr ? updateChecker_->latestVersion() : QString();
+}
+
+QUrl AppController::updateReleaseUrl() const
+{
+    return updateChecker_ != nullptr ? updateChecker_->releaseUrl() : QUrl();
+}
+
+void AppController::checkForUpdates()
+{
+    if (updateChecker_ != nullptr) updateChecker_->check();
+}
+
+bool AppController::openLatestRelease()
+{
+    const QUrl url = updateReleaseUrl();
+    return url.isValid() && QDesktopServices::openUrl(url);
 }
 
 bool AppController::backgroundHosted() const noexcept

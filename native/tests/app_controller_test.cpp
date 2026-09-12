@@ -110,6 +110,7 @@ private slots:
     void minimizesWithoutEnteringBackground();
     void persistsCloseBehaviorPreference();
     void clearsUnrememberedCloseBehaviorPreference();
+    void exposesUpdateCheckerState();
 };
 
 void AppControllerTest::preservesPlaybackAndDanmakuStateWhenHostedInBackground()
@@ -126,6 +127,22 @@ void AppControllerTest::preservesPlaybackAndDanmakuStateWhenHostedInBackground()
     controller.restoreFromBackground();
     QCOMPARE(controller.backgroundHosted(), false);
     QCOMPARE(controller.danmaku()->presentationSuspended(), false);
+}
+
+void AppControllerTest::exposesUpdateCheckerState()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSettings settings(directory.filePath(QStringLiteral("workspace.ini")), QSettings::IniFormat);
+    FakeNotificationSink sink;
+    AppController controller(fakeServicePath(), &settings, &sink);
+
+    QCOMPARE(controller.currentVersion(), QStringLiteral("0.2.4"));
+    QCOMPARE(controller.updateState(), QStringLiteral("idle"));
+    QCOMPARE(controller.updateMessage(), QString());
+    QCOMPARE(controller.latestVersion(), QString());
+    QVERIFY(!controller.updateReleaseUrl().isValid());
+    QVERIFY(!controller.openLatestRelease());
 }
 
 void AppControllerTest::minimizesWithoutEnteringBackground()

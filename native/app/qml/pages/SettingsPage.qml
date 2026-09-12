@@ -10,8 +10,6 @@ Item {
     signal backRequested()
 
     readonly property string closeBehavior: controller ? controller.closeBehavior : "ask"
-    property string updateMessage: ""
-
     function chooseCloseBehavior(behavior) {
         if (!controller) return
         if (behavior === "ask") controller.clearCloseBehavior()
@@ -191,19 +189,35 @@ Item {
                         color: Theme.mutedText
                         font.pixelSize: 11
                     }
-                    Row {
-                        spacing: 10
-                        Button {
-                            objectName: "checkUpdateButton"
-                            text: "检查更新"
-                            onClicked: root.updateMessage = "功能即将上线"
+                    Column {
+                        width: parent.width
+                        spacing: 8
+
+                        Row {
+                            spacing: 10
+                            Button {
+                                objectName: "checkUpdateButton"
+                                text: "检查更新"
+                                enabled: !!root.controller && root.controller.updateState !== "checking"
+                                onClicked: if (root.controller) root.controller.checkForUpdates()
+                            }
+                            Button {
+                                objectName: "openReleaseButton"
+                                visible: !!root.controller
+                                         && root.controller.updateState === "updateAvailable"
+                                         && root.controller.updateReleaseUrl.toString().length > 0
+                                text: "打开发布页"
+                                onClicked: root.controller.openLatestRelease()
+                            }
                         }
+
                         Text {
-                            visible: root.updateMessage.length > 0
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: root.updateMessage
+                            visible: !!root.controller && root.controller.updateMessage.length > 0
+                            width: parent.width
+                            text: root.controller ? root.controller.updateMessage : ""
                             color: Theme.mutedText
                             font.pixelSize: 11
+                            wrapMode: Text.WordWrap
                         }
                     }
                 }

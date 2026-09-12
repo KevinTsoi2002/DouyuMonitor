@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(DouyuMonitorNative VERSION 0.2.3 LANGUAGES CXX)
+project(DouyuMonitorNative VERSION 0.2.4 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -19,6 +19,7 @@ find_package(Qt6 CONFIG REQUIRED COMPONENTS
     Quick
     QuickControls2
     WebSockets
+    Network
     Test
     QuickTest
 )
@@ -292,6 +293,7 @@ add_executable(qml_close_regression_test
     src/ui/monitoring_model.cpp
     src/ui/mpv_quick_item.cpp
     src/app/windows_notification_service.cpp
+    src/app/update_checker.cpp
     src/app/windows_tray_service.cpp
     src/workspace/quality_policy.cpp
     src/workspace/native_workspace_types.cpp
@@ -417,6 +419,22 @@ target_link_libraries(workspace_model_test PRIVATE
 target_include_directories(workspace_model_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 add_test(NAME workspace_model_test COMMAND workspace_model_test)
 
+add_executable(update_checker_test
+    tests/update_checker_test.cpp
+    src/app/update_checker.cpp
+)
+target_link_libraries(update_checker_test PRIVATE
+    Qt6::Core
+    Qt6::Network
+    Qt6::Test
+)
+target_include_directories(update_checker_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+add_test(NAME update_checker_test COMMAND update_checker_test)
+set_property(TEST update_checker_test PROPERTY ENVIRONMENT_MODIFICATION
+    "PATH=path_list_prepend:${QT_ROOT}/bin"
+    "QT_PLUGIN_PATH=set:${QT_ROOT}/plugins"
+)
+
 add_executable(app_controller_test
     tests/app_controller_test.cpp
     src/ui/app_controller.cpp
@@ -425,6 +443,7 @@ add_executable(app_controller_test
     src/ui/monitoring_model.cpp
     src/ui/mpv_quick_item.cpp
     src/app/windows_notification_service.cpp
+    src/app/update_checker.cpp
     src/app/windows_tray_service.cpp
     src/workspace/quality_policy.cpp
     src/workspace/native_workspace_types.cpp
@@ -440,6 +459,7 @@ target_link_libraries(app_controller_test PRIVATE
     Qt6::Core
     Qt6::Quick
     Qt6::OpenGL
+    Qt6::Network
     Qt6::Test
     douyu_danmaku
     remote_playback
@@ -448,6 +468,7 @@ target_link_libraries(app_controller_test PRIVATE
 target_include_directories(app_controller_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_compile_definitions(app_controller_test PRIVATE
     DOUYU_TESTING
+    DOUYU_APP_VERSION="${PROJECT_VERSION}"
     FAKE_STREAMGET_SERVICE_PATH="$<TARGET_FILE:fake_streamget_service>"
 )
 add_dependencies(app_controller_test fake_streamget_service)
@@ -802,6 +823,7 @@ add_executable(douyu_monitor_native
     src/workspace/native_workspace_types.cpp
     src/workspace/native_workspace_store.cpp
     src/app/windows_notification_service.cpp
+    src/app/update_checker.cpp
     src/app/windows_tray_service.cpp
     src/workspace/notification_policy.cpp
     src/workspace/room_session.cpp
@@ -837,6 +859,7 @@ target_link_libraries(douyu_monitor_native
         Qt6::Quick
         Qt6::QuickControls2
         Qt6::OpenGL
+        Qt6::Network
         douyu_qml
         douyu_qmlplugin
         douyu_danmaku
@@ -847,6 +870,9 @@ target_link_libraries(douyu_monitor_native
 qt_import_qml_plugins(douyu_monitor_native)
 
 target_include_directories(douyu_monitor_native PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_definitions(douyu_monitor_native PRIVATE
+    DOUYU_APP_VERSION="${PROJECT_VERSION}"
+)
 
 if(WIN32)
     target_link_libraries(app_controller_test PRIVATE Shell32 User32)

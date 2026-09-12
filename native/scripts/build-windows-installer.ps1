@@ -1,7 +1,15 @@
+param(
+    [string]$ReleaseDir = ''
+)
+
 $ErrorActionPreference = 'Stop'
 
 $nativeRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$releaseDir = Join-Path $nativeRoot 'out\build\windows-x64-release'
+$releaseDir = if ([string]::IsNullOrWhiteSpace($ReleaseDir)) {
+    Join-Path $nativeRoot 'out\build\windows-x64-release'
+} else {
+    (Resolve-Path $ReleaseDir).Path
+}
 $installerRoot = Join-Path $nativeRoot 'out\installer'
 $stageRoot = Join-Path $installerRoot 'stage'
 $stageDir = Join-Path $stageRoot 'DouyuMonitor'
@@ -59,7 +67,12 @@ if (-not (Test-Path (Join-Path $stageDir 'platforms\qwindows.dll'))) {
     throw 'Release Qt platform plugin qwindows.dll is missing from the installer stage.'
 }
 
-$dumpbin = Get-ChildItem 'C:\Program Files\Microsoft Visual Studio\2022' -Filter dumpbin.exe -Recurse -ErrorAction SilentlyContinue |
+$dumpbinRoots = @(
+    $env:VSINSTALLDIR,
+    'C:\Program Files\Microsoft Visual Studio\2022',
+    'D:\VSBuildTools'
+) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and (Test-Path $_) }
+$dumpbin = Get-ChildItem $dumpbinRoots -Filter dumpbin.exe -Recurse -ErrorAction SilentlyContinue |
     Where-Object { $_.FullName -match '\\Hostx64\\x64\\dumpbin\.exe$' } |
     Select-Object -First 1
 if ($null -eq $dumpbin) { throw 'Visual Studio x64 dumpbin.exe is required to validate the installer stage.' }

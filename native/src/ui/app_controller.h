@@ -7,6 +7,7 @@
 #include <QVariantMap>
 #include <QHash>
 #include <QWindow>
+#include <QUrl>
 
 #include <memory>
 
@@ -25,6 +26,7 @@ class SystemNotificationSink;
 class WindowsNotificationService;
 class WindowsTrayService;
 class QSettings;
+class UpdateChecker;
 
 class AppController final : public QObject {
     Q_OBJECT
@@ -42,6 +44,11 @@ class AppController final : public QObject {
     Q_PROPERTY(QVariantList searchResults READ searchResults NOTIFY searchResultsChanged)
     Q_PROPERTY(QString searchStatus READ searchStatus NOTIFY searchStateChanged)
     Q_PROPERTY(QString searchError READ searchError NOTIFY searchStateChanged)
+    Q_PROPERTY(QString updateState READ updateState NOTIFY updateStateChanged)
+    Q_PROPERTY(QString updateMessage READ updateMessage NOTIFY updateStateChanged)
+    Q_PROPERTY(QString currentVersion READ currentVersion CONSTANT)
+    Q_PROPERTY(QString latestVersion READ latestVersion NOTIFY updateStateChanged)
+    Q_PROPERTY(QUrl updateReleaseUrl READ updateReleaseUrl NOTIFY updateStateChanged)
 
 public:
     explicit AppController(QString serviceProgram,
@@ -60,6 +67,11 @@ public:
     QVariantList searchResults() const;
     QString searchStatus() const;
     QString searchError() const;
+    QString updateState() const;
+    QString updateMessage() const;
+    QString currentVersion() const;
+    QString latestVersion() const;
+    QUrl updateReleaseUrl() const;
     bool backgroundHosted() const noexcept;
     bool windowMinimized() const noexcept;
     QString closeBehavior() const;
@@ -69,6 +81,8 @@ public:
 
     Q_INVOKABLE QString addRoom(const QString &roomId);
     Q_INVOKABLE void searchRooms(const QString &query);
+    Q_INVOKABLE void checkForUpdates();
+    Q_INVOKABLE bool openLatestRelease();
     Q_INVOKABLE QString addRoomCandidate(const QString &roomId);
     Q_INVOKABLE QString removeRoom(const QString &roomId);
     Q_INVOKABLE void requestRemoveRoom(const QString &roomId);
@@ -135,6 +149,7 @@ signals:
     void notificationPreferencesChanged();
     void searchResultsChanged();
     void searchStateChanged();
+    void updateStateChanged();
     void backgroundHostedChanged();
     void windowMinimizedChanged();
     void closeBehaviorChanged();
@@ -187,6 +202,7 @@ private:
     quint64 searchRequestId_ = 0;
     QString searchStatus_ = QStringLiteral("idle");
     QString searchError_;
+    std::unique_ptr<UpdateChecker> updateChecker_;
     QHash<QString, RoomLiveStatus> lastLiveStatuses_;
     QHash<QString, RoomLiveStatus> favoriteLiveStatuses_;
 };

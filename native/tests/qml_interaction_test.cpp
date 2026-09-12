@@ -161,6 +161,44 @@ public:
     QString deletedPresetId;
 };
 
+class FakeUpdateController final : public QObject {
+    Q_OBJECT
+    Q_PROPERTY(QString updateState READ updateState NOTIFY updateStateChanged)
+    Q_PROPERTY(QString updateMessage READ updateMessage NOTIFY updateStateChanged)
+    Q_PROPERTY(QUrl updateReleaseUrl READ updateReleaseUrl NOTIFY updateStateChanged)
+
+public:
+    QString updateState() const { return updateState_; }
+    QString updateMessage() const { return updateMessage_; }
+    QUrl updateReleaseUrl() const { return updateReleaseUrl_; }
+
+    Q_INVOKABLE void checkForUpdates() { ++checkCount; }
+    Q_INVOKABLE bool openLatestRelease()
+    {
+        ++openCount;
+        return true;
+    }
+
+    void setUpdate(QString state, QString message, QUrl releaseUrl = {})
+    {
+        updateState_ = std::move(state);
+        updateMessage_ = std::move(message);
+        updateReleaseUrl_ = std::move(releaseUrl);
+        emit updateStateChanged();
+    }
+
+    int checkCount = 0;
+    int openCount = 0;
+
+signals:
+    void updateStateChanged();
+
+private:
+    QString updateState_ = QStringLiteral("idle");
+    QString updateMessage_;
+    QUrl updateReleaseUrl_;
+};
+
 void registerQmlTypes()
 {
     static const int registered = qmlRegisterType<MpvQuickItem>("DouyuNative", 1, 0, "MpvQuickItem");
@@ -273,6 +311,7 @@ private slots:
     void keepsTransientDialogSurfacesDark();
     void keepsInputAndMenuControlsOnDarkTheme();
     void exposesFavoriteTitleNotificationPreference();
+    void checksForUpdatesFromSettingsPage();
 };
 
 void QmlInteractionTest::keepsTransientDialogSurfacesDark()
@@ -307,6 +346,42 @@ void QmlInteractionTest::keepsTransientDialogSurfacesDark()
     QObject *addRoomFooter = addRoom->findChild<QObject *>(QStringLiteral("addRoomDialogFooter"));
     QVERIFY(addRoomFooter != nullptr);
     QCOMPARE(addRoomFooter->property("color").value<QColor>(), QColor(QStringLiteral("#202731")));
+}
+
+void QmlInteractionTest::checksForUpdatesFromSettingsPage()
+{
+    registerQmlTypes();
+    QQmlApplicationEngine engine;
+    QQuickWindow hostWindow;
+    hostWindow.resize(QSize(640, 720));
+    hostWindow.show();
+
+    FakeUpdateController controller;
+    QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qml/pages/SettingsPage.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    std::unique_ptr<QObject> page(component.createWithInitialProperties({
+        {QStringLiteral("parent"), QVariant::fromValue(hostWindow.contentItem())},
+        {QStringLiteral("controller"), QVariant::fromValue(static_cast<QObject *>(&controller))},
+    }));
+    QVERIFY(page != nullptr);
+
+    QObject *checkButton = page->findChild<QObject *>(QStringLiteral("checkUpdateButton"));
+    QVERIFY(checkButton != nullptr);
+    QVERIFY(checkButton->property("enabled").toBool());
+    QVERIFY(QMetaObject::invokeMethod(checkButton, "clicked"));
+    QCOMPARE(controller.checkCount, 1);
+
+    controller.setUpdate(QStringLiteral("checking"), QStringLiteral("正在检查更新..."));
+    QTRY_VERIFY_WITH_TIMEOUT(!checkButton->property("enabled").toBool(), 1000);
+    QObject *openButton = page->findChild<QObject *>(QStringLiteral("openReleaseButton"));
+    QVERIFY(openButton != nullptr);
+    QVERIFY(!openButton->property("visible").toBool());
+
+    controller.setUpdate(QStringLiteral("updateAvailable"), QStringLiteral("发现新版本 0.2.4"),
+                         QUrl(QStringLiteral("https://github.com/KevinTsoi2002/DouyuMonitor/releases/tag/v0.2.4")));
+    QTRY_VERIFY_WITH_TIMEOUT(openButton->property("visible").toBool(), 1000);
+    QVERIFY(QMetaObject::invokeMethod(openButton, "clicked"));
+    QCOMPARE(controller.openCount, 1);
 }
 
 void QmlInteractionTest::keepsInputAndMenuControlsOnDarkTheme()
@@ -1091,9 +1166,11 @@ void QmlInteractionTest::keepsSidebarMetadataClearOfActionsForLongTitles()
     QVERIFY(list != nullptr);
     QTRY_COMPARE(list->property("count").toInt(), 1);
     QQuickItem *row = nullptr;
-    QVERIFY(QMetaObject::invokeMethod(list, "itemAtIndex",
-                                      Q_RETURN_ARG(QQuickItem *, row), Q_ARG(int, 0)));
-    QVERIFY(row != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(QMetaObject::invokeMethod(list, "itemAtIndex",
+                                                       Q_RETURN_ARG(QQuickItem *, row),
+                                                       Q_ARG(int, 0))
+                                 && row != nullptr,
+                             1000);
 
     auto *title = qobject_cast<QQuickItem *>(
         row->findChild<QObject *>(QStringLiteral("sidebarRoomTitle")));
@@ -1249,11 +1326,12 @@ void QmlInteractionTest::exposesRoomOrderingControls()
     QVERIFY(list != nullptr);
     QTRY_COMPARE(list->property("count").toInt(), 1);
     QQuickItem *rowItem = nullptr;
-    QVERIFY(QMetaObject::invokeMethod(list,
-                                      "itemAtIndex",
-                                      Q_RETURN_ARG(QQuickItem *, rowItem),
-                                      Q_ARG(int, 0)));
-    QVERIFY(rowItem != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(QMetaObject::invokeMethod(list,
+                                                       "itemAtIndex",
+                                                       Q_RETURN_ARG(QQuickItem *, rowItem),
+                                                       Q_ARG(int, 0))
+                                 && rowItem != nullptr,
+                             1000);
     QObject *up = rowItem->findChild<QObject *>(QStringLiteral("moveRoomUpButton"));
     QObject *down = rowItem->findChild<QObject *>(QStringLiteral("moveRoomDownButton"));
     QVERIFY(up != nullptr);
@@ -1303,12 +1381,16 @@ void QmlInteractionTest::disablesOrderingAtListBoundaries()
     QTRY_COMPARE(list->property("count").toInt(), 2);
     QQuickItem *firstRow = nullptr;
     QQuickItem *lastRow = nullptr;
-    QVERIFY(QMetaObject::invokeMethod(list, "itemAtIndex",
-                                      Q_RETURN_ARG(QQuickItem *, firstRow), Q_ARG(int, 0)));
-    QVERIFY(QMetaObject::invokeMethod(list, "itemAtIndex",
-                                      Q_RETURN_ARG(QQuickItem *, lastRow), Q_ARG(int, 1)));
-    QVERIFY(firstRow != nullptr);
-    QVERIFY(lastRow != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(QMetaObject::invokeMethod(list, "itemAtIndex",
+                                                       Q_RETURN_ARG(QQuickItem *, firstRow),
+                                                       Q_ARG(int, 0))
+                                 && firstRow != nullptr,
+                             1000);
+    QTRY_VERIFY_WITH_TIMEOUT(QMetaObject::invokeMethod(list, "itemAtIndex",
+                                                       Q_RETURN_ARG(QQuickItem *, lastRow),
+                                                       Q_ARG(int, 1))
+                                 && lastRow != nullptr,
+                             1000);
     QObject *firstUp = firstRow->findChild<QObject *>(QStringLiteral("moveRoomUpButton"));
     QObject *firstDown = firstRow->findChild<QObject *>(QStringLiteral("moveRoomDownButton"));
     QObject *lastUp = lastRow->findChild<QObject *>(QStringLiteral("moveRoomUpButton"));
@@ -1354,9 +1436,11 @@ void QmlInteractionTest::doesNotExposeRoomDragAndDropSurface()
     QVERIFY(list != nullptr);
     QTRY_COMPARE(list->property("count").toInt(), 1);
     QQuickItem *row = nullptr;
-    QVERIFY(QMetaObject::invokeMethod(list, "itemAtIndex",
-                                      Q_RETURN_ARG(QQuickItem *, row), Q_ARG(int, 0)));
-    QVERIFY(row != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(QMetaObject::invokeMethod(list, "itemAtIndex",
+                                                       Q_RETURN_ARG(QQuickItem *, row),
+                                                       Q_ARG(int, 0))
+                                 && row != nullptr,
+                             1000);
     QVERIFY(row->findChild<QObject *>(QStringLiteral("roomDragHandle")) == nullptr);
     QVERIFY(row->findChild<QObject *>(QStringLiteral("roomDropArea")) == nullptr);
 }

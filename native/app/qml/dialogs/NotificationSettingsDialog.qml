@@ -46,6 +46,7 @@ Dialog {
         property bool roomOffline: true
         property bool playbackFailed: true
         property bool playbackRecovered: true
+        property bool favoriteTitleChanged: true
     }
 
     header: Item {
