@@ -148,10 +148,12 @@ FocusScope {
 
         Rectangle {
             id: topBar
+            objectName: "roomTopBar"
             anchors.top: parent.top
             anchors.left: parent.left
             anchors.right: parent.right
             height: 36
+            z: 10
             color: Qt.rgba(Theme.appBar.r, Theme.appBar.g, Theme.appBar.b, 0.88)
             opacity: root.controlsVisible ? 1 : 0
             Behavior on opacity { NumberAnimation { duration: 150 } }
@@ -253,8 +255,8 @@ FocusScope {
                 anchors.right: parent.right
                 anchors.rightMargin: 7
                 anchors.verticalCenter: parent.verticalCenter
-                width: 25
-                height: 25
+                width: 34
+                height: 28
                 Accessible.name: "更多操作"
                 ToolTip.visible: hovered
                 ToolTip.text: Accessible.name
@@ -426,9 +428,19 @@ FocusScope {
                 }
                 ToolButton {
                     width: 27; height: 27
-                    Accessible.name: root.audioFocused ? "关闭声音焦点" : "播放声音"
+                    Accessible.name: root.controller && root.controller.workspace
+                                     && root.controller.workspace.audioMode === "multi"
+                                     ? (root.audioFocused ? "静音直播间" : "取消直播间静音")
+                                     : (root.audioFocused ? "关闭声音焦点" : "播放声音")
                     ToolTip.visible: hovered; ToolTip.text: Accessible.name
-                    onClicked: if (root.controller) root.controller.setAudioRoom(root.audioFocused ? "" : root.roomId)
+                    onClicked: {
+                        if (!root.controller) return
+                        if (root.controller.workspace && root.controller.workspace.audioMode === "multi") {
+                            root.controller.setRoomMuted(root.roomId, !root.muted)
+                        } else {
+                            root.controller.setAudioRoom(root.audioFocused ? "" : root.roomId)
+                        }
+                    }
                     contentItem: Image { anchors.centerIn: parent; width: 16; height: 16; source: Qt.resolvedUrl("../assets/icons/volume-2.svg"); opacity: root.audioFocused ? 1 : 0.62 }
                     background: Rectangle { radius: 4; border.color: parent.hovered || root.audioFocused ? "#9b572f" : "#4a515a"; color: parent.hovered ? "#2a211c" : "#10151b" }
                 }

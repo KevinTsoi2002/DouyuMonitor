@@ -181,6 +181,7 @@ Rectangle {
                     required property bool primary
                     required property bool favorite
                     required property bool audioFocused
+                    required property bool muted
                     width: roomList.width - roomList.leftMargin - roomList.rightMargin
                     height: Theme.roomRowHeight
 
@@ -321,9 +322,18 @@ Rectangle {
                     }
                     ToolButton {
                         width: 23; height: 23
-                        Accessible.name: audioFocused ? "关闭声音焦点" : "播放声音"
+                        Accessible.name: root.workspaceModel && root.workspaceModel.audioMode === "multi"
+                                         ? (audioFocused ? "静音直播间" : "取消直播间静音")
+                                         : (audioFocused ? "关闭声音焦点" : "播放声音")
                         ToolTip.visible: hovered; ToolTip.text: Accessible.name
-                        onClicked: if (root.controller) root.controller.setAudioRoom(roomRow.audioFocused ? "" : roomRow.roomId)
+                        onClicked: {
+                            if (!root.controller) return
+                            if (root.workspaceModel && root.workspaceModel.audioMode === "multi") {
+                                root.controller.setRoomMuted(roomRow.roomId, !roomRow.muted)
+                            } else {
+                                root.controller.setAudioRoom(roomRow.audioFocused ? "" : roomRow.roomId)
+                            }
+                        }
                         contentItem: Image { anchors.centerIn: parent; width: 15; height: 15; source: Qt.resolvedUrl("../assets/icons/volume-2.svg"); opacity: audioFocused ? 1 : 0.62 }
                         background: Rectangle { radius: 3; color: parent.hovered ? "#252c34" : "transparent" }
                     }

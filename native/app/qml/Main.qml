@@ -291,9 +291,11 @@ ApplicationWindow {
         audioLabel: root.workspaceModel
                     ? (root.workspaceModel.globalMuted
                        ? "全局静音"
-                       : (root.workspaceModel.audioRoomId.length > 0
+                       : (root.workspaceModel.audioMode === "multi"
+                          ? "多声道"
+                          : (root.workspaceModel.audioRoomId.length > 0
                           ? root.workspaceModel.audioRoomId
-                          : "无"))
+                          : "无")))
                     : "无"
         visible: root.currentView === "monitoring"
     }

@@ -363,6 +363,10 @@ void AppController::setMainWindow(QWindow *window)
 
 QString AppController::addRoom(const QString &roomId)
 {
+    if (coordinator_ != nullptr && coordinator_->roomCount() >= 9
+        && coordinator_->layoutMode() != QStringLiteral("primary-two")) {
+        return QStringLiteral("当前布局最多支持 9 个房间");
+    }
     const NativeRoomRecord *record = libraryRecord(roomId);
     const RoomCommandResult result = coordinator_->addRoomDetailed(
         roomId,
@@ -415,6 +419,10 @@ QString AppController::addRoomCandidate(const QString &roomId)
 {
     const auto candidate = searchCandidates_.constFind(roomId);
     if (candidate == searchCandidates_.cend()) return addRoom(roomId);
+    if (coordinator_ != nullptr && coordinator_->roomCount() >= 9
+        && coordinator_->layoutMode() != QStringLiteral("primary-two")) {
+        return QStringLiteral("当前布局最多支持 9 个房间");
+    }
 
     const NativeRoomRecord *record = libraryRecord(roomId);
     const RoomCommandResult result = coordinator_->addRoomDetailed(
@@ -501,6 +509,14 @@ QString AppController::setAudioRoom(const QString &roomId)
     coordinator_->setAudioFocus(roomId);
     persistWorkspace();
     return {};
+}
+
+bool AppController::setRoomMuted(const QString &roomId, bool muted)
+{
+    if (coordinator_ == nullptr || !coordinator_->setRoomMuted(roomId, muted)) return false;
+    refreshPresentation();
+    persistWorkspace();
+    return true;
 }
 
 bool AppController::setAudioMode(const QString &mode)
@@ -776,6 +792,13 @@ bool AppController::setLayout(const QString &layoutId)
         return false;
     }
     if (coordinator_ == nullptr || !coordinator_->setLayout(layoutId)) return false;
+
+    const bool leftDualPrimaryAtCapacity = coordinator_->layoutMode() != QStringLiteral("primary-two")
+        && coordinator_->roomCount() == MultiRoomCoordinator::kMaxRooms;
+    if (leftDualPrimaryAtCapacity) {
+        const QStringList roomIds = coordinator_->roomIds();
+        if (!roomIds.isEmpty()) coordinator_->removeRoomDetailed(roomIds.constLast());
+    }
     snapshot_.layoutId = coordinator_->layoutMode();
     refreshPresentation();
     persistWorkspace();

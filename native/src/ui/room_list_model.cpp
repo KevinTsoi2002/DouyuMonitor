@@ -36,6 +36,11 @@ int RoomListModel::rowCount(const QModelIndex &parent) const
     return parent.isValid() ? 0 : entries_.size();
 }
 
+int RoomListModel::roomCount() const noexcept
+{
+    return entries_.size();
+}
+
 QVariant RoomListModel::data(const QModelIndex &index, int role) const
 {
     if (!index.isValid() || index.row() < 0 || index.row() >= entries_.size()) return {};
@@ -143,6 +148,10 @@ QHash<int, QByteArray> RoomListModel::roleNames() const
 
 void RoomListModel::applySnapshots(const RoomSnapshots &snapshots)
 {
+    const int previousCount = entries_.size();
+    const auto notifyCountChanged = [this, previousCount] {
+        if (entries_.size() != previousCount) emit roomCountChanged();
+    };
     QSet<QString> incomingIds;
     for (const RoomSnapshot &snapshot : snapshots) incomingIds.insert(snapshot.roomId);
     if (incomingIds.size() != snapshots.size()) {
@@ -151,6 +160,7 @@ void RoomListModel::applySnapshots(const RoomSnapshots &snapshots)
         entries_.reserve(snapshots.size());
         for (const RoomSnapshot &snapshot : snapshots) entries_.append({snapshot, {}});
         endResetModel();
+        notifyCountChanged();
         return;
     }
 
@@ -161,6 +171,7 @@ void RoomListModel::applySnapshots(const RoomSnapshots &snapshots)
             entries_.append({snapshot, {}});
         }
         endInsertRows();
+        notifyCountChanged();
         return;
     }
 
@@ -182,6 +193,7 @@ void RoomListModel::applySnapshots(const RoomSnapshots &snapshots)
                 entries_.append({snapshots.at(row), {}});
             }
             endInsertRows();
+            notifyCountChanged();
             return;
         }
     }
@@ -220,6 +232,7 @@ void RoomListModel::applySnapshots(const RoomSnapshots &snapshots)
         entry.snapshot = snapshots.at(row);
         emit dataChanged(index(row, 0), index(row, 0), snapshotRoles());
     }
+    notifyCountChanged();
 }
 
 void RoomListModel::applyPresentationSettings(

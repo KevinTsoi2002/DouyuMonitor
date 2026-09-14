@@ -26,6 +26,7 @@ struct RoomPresentationSettings {
 
 class RoomListModel final : public QAbstractListModel {
     Q_OBJECT
+    Q_PROPERTY(int roomCount READ roomCount NOTIFY roomCountChanged)
 
 public:
     enum Role : int {
@@ -64,11 +65,15 @@ public:
     explicit RoomListModel(QObject *parent = nullptr);
 
     int rowCount(const QModelIndex &parent = {}) const override;
+    int roomCount() const noexcept;
     QVariant data(const QModelIndex &index, int role = Qt::DisplayRole) const override;
     QHash<int, QByteArray> roleNames() const override;
 
     void applySnapshots(const RoomSnapshots &snapshots);
     void applyPresentationSettings(const QHash<QString, RoomPresentationSettings> &settings);
+
+signals:
+    void roomCountChanged();
 
 private:
     struct Entry {

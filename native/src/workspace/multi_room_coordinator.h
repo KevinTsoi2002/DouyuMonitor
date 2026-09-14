@@ -2,6 +2,7 @@
 
 #include <QHash>
 #include <QObject>
+#include <QSet>
 #include <QStringList>
 #include <QVector>
 
@@ -39,6 +40,7 @@ public:
     bool setPrimaryRoom(const QString &roomId);
     bool setSecondaryPrimaryRoom(const QString &roomId);
     bool setAudioFocus(const QString &roomId);
+    bool setRoomMuted(const QString &roomId, bool muted);
     bool setFavorite(const QString &roomId, bool favorite);
     QString audioRoomId() const;
     QString audioMode() const;
@@ -107,6 +109,7 @@ private:
     QString audioRoomId_;
     QString audioMode_ = QStringLiteral("single");
     bool globalMuted_ = false;
+    QSet<QString> mutedRooms_;
     QString layoutId_ = QStringLiteral("auto");
     QString layoutMode_ = QStringLiteral("auto");
     double primaryRoomRatio_ = 0.6;

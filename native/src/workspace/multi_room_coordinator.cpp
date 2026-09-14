@@ -151,6 +151,7 @@ RoomCommandResult MultiRoomCoordinator::removeRoomDetailed(const QString &roomId
     if (session != nullptr) session->release();
     sessions_.erase(it);
     order_.removeAll(roomId);
+    mutedRooms_.remove(roomId);
 
     if (primaryRoomId_ == roomId) {
         primaryRoomId_ = order_.isEmpty() ? QString() : order_.front();
@@ -231,6 +232,18 @@ bool MultiRoomCoordinator::setAudioFocus(const QString &roomId)
 {
     if (!sessions_.contains(roomId)) return false;
     audioRoomId_ = roomId;
+    applyAudioFocus();
+    publishSnapshots();
+    return true;
+}
+
+bool MultiRoomCoordinator::setRoomMuted(const QString &roomId, bool muted)
+{
+    if (!sessions_.contains(roomId)) return false;
+    const bool alreadyMuted = mutedRooms_.contains(roomId);
+    if (alreadyMuted == muted) return false;
+    if (muted) mutedRooms_.insert(roomId);
+    else mutedRooms_.remove(roomId);
     applyAudioFocus();
     publishSnapshots();
     return true;
@@ -333,6 +346,10 @@ RoomCommandResult MultiRoomCoordinator::replaceRooms(const QVector<CoordinatorRo
     }
 
     const QSet<QString> targetIds = seen;
+    for (auto it = mutedRooms_.begin(); it != mutedRooms_.end();) {
+        if (targetIds.contains(*it)) ++it;
+        else it = mutedRooms_.erase(it);
+    }
     for (auto it = sessions_.begin(); it != sessions_.end();) {
         if (targetIds.contains(it.key())) {
             ++it;
@@ -458,10 +475,15 @@ RoomSnapshots MultiRoomCoordinator::roomSnapshots() const
         const RoomSession *session = sessions_.value(roomId, nullptr);
         if (session == nullptr) continue;
         const MpvQuickItem *quickPlayer = session->player();
+        const bool roomMuted = audioMode_ == QStringLiteral("multi")
+            && mutedRooms_.contains(roomId);
         const bool audible = !globalMuted_
+            && !roomMuted
             && (audioMode_ == QStringLiteral("multi")
                 || (!audioRoomId_.isEmpty() && roomId == audioRoomId_));
-        const bool muted = quickPlayer != nullptr ? quickPlayer->isMuted() : !audible;
+        const bool muted = (audioMode_ == QStringLiteral("multi")
+                            && mutedRooms_.contains(roomId))
+            || (quickPlayer != nullptr ? quickPlayer->isMuted() : !audible);
         snapshots.push_back({roomId,
                              roomId == primaryRoomId_,
                              roomId == secondaryPrimaryRoomId_,
@@ -559,11 +581,16 @@ void MultiRoomCoordinator::applyAudioFocus()
     for (const QString &roomId : order_) {
         RoomSession *session = sessions_.value(roomId, nullptr);
         if (session == nullptr) continue;
+        const bool roomMuted = audioMode_ == QStringLiteral("multi")
+            && mutedRooms_.contains(roomId);
         const bool audible = !globalMuted_
+            && !roomMuted
             && (audioMode_ == QStringLiteral("multi")
                 || (!audioRoomId_.isEmpty() && roomId == audioRoomId_));
         if (session->player() != nullptr) session->player()->setMuted(!audible);
-        const bool focused = !audioRoomId_.isEmpty() && roomId == audioRoomId_;
+        const bool focused = !roomMuted
+            && (audioMode_ == QStringLiteral("multi")
+                || (!audioRoomId_.isEmpty() && roomId == audioRoomId_));
         session->setAudioFocused(focused);
     }
 }

@@ -90,6 +90,7 @@ public:
     Q_INVOKABLE QString setPrimaryRoom(const QString &roomId);
     Q_INVOKABLE QString setSecondaryPrimaryRoom(const QString &roomId);
     Q_INVOKABLE QString setAudioRoom(const QString &roomId);
+    Q_INVOKABLE bool setRoomMuted(const QString &roomId, bool muted);
     Q_INVOKABLE bool setAudioMode(const QString &mode);
     Q_INVOKABLE bool setGlobalMuted(bool muted);
     Q_INVOKABLE QString setQuality(const QString &roomId, int quality);

@@ -80,6 +80,7 @@ class AppControllerTest final : public QObject {
 
 private slots:
     void addsRoomsThroughModelAndRejectsTheEleventh();
+    void limitsTenthRoomToDualPrimaryLayout();
     void recordsOpenedRoomsForTheLibraryHistory();
     void doesNotExposeSensitivePlaybackMaterial();
     void restoresSavedMetadataIntoRoomModel();
@@ -111,6 +112,7 @@ private slots:
     void persistsCloseBehaviorPreference();
     void clearsUnrememberedCloseBehaviorPreference();
     void exposesUpdateCheckerState();
+    void removesLastRoomWhenLeavingDualPrimaryLayoutAtCapacity();
 };
 
 void AppControllerTest::preservesPlaybackAndDanmakuStateWhenHostedInBackground()
@@ -137,7 +139,7 @@ void AppControllerTest::exposesUpdateCheckerState()
     FakeNotificationSink sink;
     AppController controller(fakeServicePath(), &settings, &sink);
 
-    QCOMPARE(controller.currentVersion(), QStringLiteral("0.2.4"));
+    QCOMPARE(controller.currentVersion(), QStringLiteral("0.2.5"));
     QCOMPARE(controller.updateState(), QStringLiteral("idle"));
     QCOMPARE(controller.updateMessage(), QString());
     QCOMPARE(controller.latestVersion(), QString());
@@ -204,12 +206,56 @@ void AppControllerTest::addsRoomsThroughModelAndRejectsTheEleventh()
     FakeNotificationSink sink;
     AppController controller(fakeServicePath(), &settings, &sink);
 
-    for (int index = 0; index < 10; ++index) {
+    for (int index = 0; index < 9; ++index) {
         QCOMPARE(controller.addRoom(QString::number(63136 + index)), QString());
     }
+    QVERIFY(controller.setLayout(QStringLiteral("primary-two")));
+    QCOMPARE(controller.addRoom(QStringLiteral("63145")), QString());
 
     QCOMPARE(controller.addRoom(QStringLiteral("999999")), QStringLiteral("最多添加 10 个房间"));
     QCOMPARE(controller.rooms()->rowCount(), 10);
+}
+
+void AppControllerTest::limitsTenthRoomToDualPrimaryLayout()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSettings settings(directory.filePath(QStringLiteral("workspace.ini")), QSettings::IniFormat);
+    FakeNotificationSink sink;
+    AppController controller(fakeServicePath(), &settings, &sink);
+
+    for (int index = 0; index < 9; ++index) {
+        QCOMPARE(controller.addRoom(QString::number(63136 + index)), QString());
+    }
+    QCOMPARE(controller.addRoom(QStringLiteral("63145")), QStringLiteral("当前布局最多支持 9 个房间"));
+    QCOMPARE(controller.rooms()->rowCount(), 9);
+
+    QVERIFY(controller.setLayout(QStringLiteral("primary-two")));
+    QCOMPARE(controller.addRoom(QStringLiteral("63145")), QString());
+    QCOMPARE(controller.rooms()->rowCount(), 10);
+}
+
+void AppControllerTest::removesLastRoomWhenLeavingDualPrimaryLayoutAtCapacity()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSettings settings(directory.filePath(QStringLiteral("workspace.ini")), QSettings::IniFormat);
+    FakeNotificationSink sink;
+    AppController controller(fakeServicePath(), &settings, &sink);
+
+    for (int index = 0; index < 9; ++index) {
+        QCOMPARE(controller.addRoom(QString::number(63136 + index)), QString());
+    }
+    QVERIFY(controller.setLayout(QStringLiteral("primary-two")));
+    QCOMPARE(controller.addRoom(QStringLiteral("63145")), QString());
+    QCOMPARE(controller.rooms()->rowCount(), 10);
+
+    QVERIFY(controller.setLayout(QStringLiteral("auto")));
+    QCOMPARE(controller.rooms()->rowCount(), 9);
+    QCOMPARE(controller.rooms()
+                 ->data(controller.rooms()->index(8, 0), RoomListModel::RoomIdRole)
+                 .toString(),
+             QStringLiteral("63144"));
 }
 
 void AppControllerTest::defersRequestedRoomRemovalUntilEventLoop()

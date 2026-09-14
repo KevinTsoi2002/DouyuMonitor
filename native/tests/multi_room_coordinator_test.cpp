@@ -44,6 +44,8 @@ private slots:
     void togglesFavoriteAndPublishesIt();
     void appliesSingleAudioFocusAndPublishesIt();
     void appliesAudioModesAndGlobalMute();
+    void marksEveryRoomFocusedInMultiAudioMode();
+    void mutesOnlyTheSelectedRoomInMultiAudioMode();
     void defaultsSingleAudioFocusToFirstRoom();
     void releasesSessionsWithoutDanglingSnapshotAccess();
     void queuesReplayWhenMetadataChangesOfflineToOnline();
@@ -380,6 +382,39 @@ void MultiRoomCoordinatorTest::appliesAudioModesAndGlobalMute()
     QVERIFY(coordinator.roomSnapshots().at(0).muted);
     QVERIFY(coordinator.roomSnapshots().at(1).muted);
     QCOMPARE(coordinator.audioRoomId(), QStringLiteral("63136"));
+    client.shutdown();
+}
+
+void MultiRoomCoordinatorTest::marksEveryRoomFocusedInMultiAudioMode()
+{
+    StreamgetProcessClient client(fakeServicePath());
+    MultiRoomCoordinator coordinator(&client);
+
+    QVERIFY(coordinator.addRoom(QStringLiteral("63136")));
+    QVERIFY(coordinator.addRoom(QStringLiteral("63137")));
+    QVERIFY(coordinator.setAudioMode(QStringLiteral("multi")));
+
+    const RoomSnapshots snapshots = coordinator.roomSnapshots();
+    QVERIFY(snapshots.at(0).audioFocused);
+    QVERIFY(snapshots.at(1).audioFocused);
+    client.shutdown();
+}
+
+void MultiRoomCoordinatorTest::mutesOnlyTheSelectedRoomInMultiAudioMode()
+{
+    StreamgetProcessClient client(fakeServicePath());
+    MultiRoomCoordinator coordinator(&client);
+
+    QVERIFY(coordinator.addRoom(QStringLiteral("63136")));
+    QVERIFY(coordinator.addRoom(QStringLiteral("63137")));
+    QVERIFY(coordinator.setAudioMode(QStringLiteral("multi")));
+    QVERIFY(coordinator.setRoomMuted(QStringLiteral("63136"), true));
+
+    const RoomSnapshots snapshots = coordinator.roomSnapshots();
+    QVERIFY(!snapshots.at(0).audioFocused);
+    QVERIFY(snapshots.at(0).muted);
+    QVERIFY(snapshots.at(1).audioFocused);
+    QVERIFY(!snapshots.at(1).muted);
     client.shutdown();
 }
 

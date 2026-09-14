@@ -49,6 +49,7 @@ public:
 class FakeHeaderController final : public QObject {
     Q_OBJECT
     Q_PROPERTY(WorkspaceModel *workspace READ workspace CONSTANT)
+    Q_PROPERTY(RoomListModel *rooms READ rooms CONSTANT)
 
 public:
     FakeHeaderController()
@@ -58,6 +59,19 @@ public:
     }
 
     WorkspaceModel *workspace() noexcept { return &workspaceModel; }
+    RoomListModel *rooms() noexcept { return &roomModel; }
+
+    void setRoomCount(int count)
+    {
+        RoomSnapshots snapshots;
+        snapshots.reserve(count);
+        for (int index = 0; index < count; ++index) {
+            RoomSnapshot snapshot;
+            snapshot.roomId = QStringLiteral("room-%1").arg(index + 1);
+            snapshots.append(snapshot);
+        }
+        roomModel.applySnapshots(snapshots);
+    }
 
     Q_INVOKABLE bool setGlobalMuted(bool muted)
     {
@@ -79,9 +93,17 @@ public:
         return true;
     }
 
+    Q_INVOKABLE bool setLayout(const QString &layoutId)
+    {
+        lastLayout = layoutId;
+        return true;
+    }
+
     WorkspaceModel workspaceModel;
+    RoomListModel roomModel;
     bool lastMuted = false;
     QString lastAudioMode;
+    QString lastLayout;
     bool fullScreenToggled = false;
 };
 
@@ -288,7 +310,8 @@ private slots:
     void usesFramelessWindowWithTitleBarInteractions();
     void doesNotExposeGroupManagementControls();
     void rendersAndAddsSearchCandidate();
-    void exposesOnlyAutomaticAndPrimaryLayoutOptions();
+    void exposesSupportedLayoutOptions();
+    void enablesDualPrimaryLayoutAfterFourthRoomIsAdded();
     void laysOutFiveAutomaticRoomsInThreeAndTwoRows();
     void laysOutPrimaryRoomsAcrossFullHeight();
     void exposesGlobalAudioControls();
@@ -418,6 +441,15 @@ void QmlInteractionTest::keepsInputAndMenuControlsOnDarkTheme()
     QObject *menuItemLabel = layoutMenu->findChild<QObject *>(QStringLiteral("layoutMenuItemLabel"));
     QVERIFY(menuItemLabel != nullptr);
     QCOMPARE(menuItemLabel->property("color").value<QColor>(), QColor(QStringLiteral("#eef2f7")));
+
+    QObject *dualPrimary = layoutMenu->findChild<QObject *>(QStringLiteral("dualPrimaryLayoutOption"));
+    QVERIFY(dualPrimary != nullptr);
+    QObject *dualPrimaryBackground =
+        dualPrimary->findChild<QObject *>(QStringLiteral("dualPrimaryLayoutOptionBackground"));
+    QVERIFY(dualPrimaryBackground != nullptr);
+    dualPrimary->setProperty("highlighted", true);
+    QCOMPARE(dualPrimaryBackground->property("color").value<QColor>(),
+             QColor(QStringLiteral("#12171e")));
 
     QObject *notification = nullptr;
     QQmlComponent notificationComponent(&engine,
@@ -829,7 +861,7 @@ void QmlInteractionTest::rendersAndAddsSearchCandidate()
     QCOMPARE(controller.addedRoomId, QStringLiteral("63136"));
 }
 
-void QmlInteractionTest::exposesOnlyAutomaticAndPrimaryLayoutOptions()
+void QmlInteractionTest::exposesSupportedLayoutOptions()
 {
     QQmlApplicationEngine engine;
     QQuickWindow *window = loadWindow(engine);
@@ -845,6 +877,7 @@ void QmlInteractionTest::exposesOnlyAutomaticAndPrimaryLayoutOptions()
 
     QVERIFY(window->findChild<QObject *>(QStringLiteral("autoLayoutOption")) != nullptr);
     QVERIFY(window->findChild<QObject *>(QStringLiteral("primaryLayoutOption")) != nullptr);
+    QVERIFY(window->findChild<QObject *>(QStringLiteral("dualPrimaryLayoutOption")) != nullptr);
     QVERIFY(window->findChild<QObject *>(QStringLiteral("singleLayoutOption")) == nullptr);
     QVERIFY(window->findChild<QObject *>(QStringLiteral("grid2LayoutOption")) == nullptr);
     QVERIFY(window->findChild<QObject *>(QStringLiteral("grid3LayoutOption")) == nullptr);
@@ -852,6 +885,38 @@ void QmlInteractionTest::exposesOnlyAutomaticAndPrimaryLayoutOptions()
     QVERIFY(window->findChild<QObject *>(QStringLiteral("primaryTwoLayoutOption")) == nullptr);
     QVERIFY(window->findChild<QObject *>(QStringLiteral("splitHorizontalLayoutOption")) == nullptr);
     QVERIFY(window->findChild<QObject *>(QStringLiteral("splitVerticalLayoutOption")) == nullptr);
+}
+
+void QmlInteractionTest::enablesDualPrimaryLayoutAfterFourthRoomIsAdded()
+{
+    registerQmlTypes();
+    QQmlApplicationEngine engine;
+    QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qml/components/AppHeader.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+
+    FakeHeaderController controller;
+    QQuickWindow hostWindow;
+    hostWindow.resize(QSize(800, 120));
+    hostWindow.show();
+    std::unique_ptr<QObject> header(component.createWithInitialProperties({
+        {QStringLiteral("parent"), QVariant::fromValue(hostWindow.contentItem())},
+        {QStringLiteral("width"), 800},
+        {QStringLiteral("controller"), QVariant::fromValue(static_cast<QObject *>(&controller))},
+    }));
+    QVERIFY2(header != nullptr, qPrintable(component.errorString()));
+
+    QObject *layoutButton = header->findChild<QObject *>(QStringLiteral("layoutMenuButton"));
+    QObject *dualPrimary = header->findChild<QObject *>(QStringLiteral("dualPrimaryLayoutOption"));
+    QVERIFY(layoutButton != nullptr);
+    QVERIFY(dualPrimary != nullptr);
+    QVERIFY(!dualPrimary->property("enabled").toBool());
+
+    controller.setRoomCount(4);
+    QTRY_VERIFY(dualPrimary->property("enabled").toBool());
+
+    click(layoutButton);
+    click(dualPrimary);
+    QCOMPARE(controller.lastLayout, QStringLiteral("primary-two"));
 }
 
 void QmlInteractionTest::closesToastFromQml()
@@ -1196,8 +1261,14 @@ void QmlInteractionTest::exposesRoomVolumeAndRefreshControls()
 
     QObject *slider = tile->findChild<QObject *>(QStringLiteral("roomVolumeSlider"));
     QObject *refresh = tile->findChild<QObject *>(QStringLiteral("refreshRoomAction"));
+    QObject *topBar = tile->findChild<QObject *>(QStringLiteral("roomTopBar"));
+    QObject *topActions = tile->findChild<QObject *>(QStringLiteral("roomTopActions"));
     QVERIFY(slider != nullptr);
     QVERIFY(refresh != nullptr);
+    QVERIFY(topBar != nullptr);
+    QVERIFY(topActions != nullptr);
+    QVERIFY(topActions->property("width").toDouble() >= 32.0);
+    QVERIFY(topBar->property("z").toDouble() > 3.0);
     QCOMPARE(slider->objectName(), QStringLiteral("roomVolumeSlider"));
     QObject *sliderHandle = tile->findChild<QObject *>(QStringLiteral("roomVolumeSliderHandle"));
     QVERIFY(sliderHandle != nullptr);
