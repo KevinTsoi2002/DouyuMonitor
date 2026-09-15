@@ -139,7 +139,7 @@ void AppControllerTest::exposesUpdateCheckerState()
     FakeNotificationSink sink;
     AppController controller(fakeServicePath(), &settings, &sink);
 
-    QCOMPARE(controller.currentVersion(), QStringLiteral("0.2.5"));
+    QCOMPARE(controller.currentVersion(), QStringLiteral("0.2.6"));
     QCOMPARE(controller.updateState(), QStringLiteral("idle"));
     QCOMPARE(controller.updateMessage(), QString());
     QCOMPARE(controller.latestVersion(), QString());

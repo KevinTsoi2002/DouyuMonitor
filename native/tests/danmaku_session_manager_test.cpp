@@ -56,6 +56,7 @@ private slots:
     void deduplicatesAndBoundsEachRoomQueue();
     void appliesGovernanceBeforeQueueing();
     void clearsQueuesAndStopsAllOnShutdown();
+    void handlesReentrantClearDuringStop();
 };
 
 namespace {
@@ -164,6 +165,28 @@ void DanmakuSessionManagerTest::clearsQueuesAndStopsAllOnShutdown()
     QCOMPARE(stopCounts.at(1), 1);
 }
 
+
+void DanmakuSessionManagerTest::handlesReentrantClearDuringStop()
+{
+    DanmakuSessionManager manager(
+        [](const QString &roomId, QObject *parent) -> std::unique_ptr<DanmakuClient> {
+            return std::make_unique<FakeDanmakuClient>(roomId, parent);
+        });
+    manager.synchronize({eligible(QStringLiteral("63136"))});
+
+    bool reentered = false;
+    QObject::connect(&manager, &DanmakuSessionManager::roomStateChanged,
+                     &manager, [&manager, &reentered](const QString &roomId) {
+                         if (roomId != QStringLiteral("63136") || reentered) return;
+                         reentered = true;
+                         manager.clearRoom(roomId);
+                     });
+
+    manager.clearRoom(QStringLiteral("63136"));
+
+    QVERIFY(reentered);
+    QCOMPARE(manager.activeSessionCount(), 0);
+}
 QTEST_GUILESS_MAIN(DanmakuSessionManagerTest)
 
 #include "danmaku_session_manager_test.moc"

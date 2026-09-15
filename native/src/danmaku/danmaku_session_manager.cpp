@@ -1,6 +1,7 @@
 #include "danmaku/danmaku_session_manager.h"
 
 #include <QDateTime>
+#include <QDebug>
 
 namespace {
 
@@ -114,16 +115,16 @@ void DanmakuSessionManager::clearStats(const QString &roomId)
 
 void DanmakuSessionManager::stopAll()
 {
-    const auto ids = sessions_.keys();
-    for (const QString &roomId : ids) {
-        auto it = sessions_.find(roomId);
-        if (it == sessions_.end()) continue;
+    auto sessions = std::move(sessions_);
+    sessions_.clear();
+    for (auto it = sessions.begin(); it != sessions.end(); ++it) {
+        const QString roomId = it.key();
+        qInfo().noquote() << "danmaku session stopping room=" << roomId;
         it.value()->client->stop();
         it.value()->queue.clear();
         statuses_[roomId] = DanmakuConnectionStatus{roomId};
         emit roomStateChanged(roomId);
     }
-    sessions_.clear();
 }
 
 void DanmakuSessionManager::clearRoom(const QString &roomId)
@@ -199,8 +200,13 @@ void DanmakuSessionManager::removeSession(const QString &roomId)
 {
     auto it = sessions_.find(roomId);
     if (it == sessions_.end()) return;
-    it.value()->client->stop();
+
+    // Client::stop() can synchronously emit statusChanged. Remove first so a
+    // nested clear request cannot erase the iterator currently in use.
+    const std::shared_ptr<Session> session = it.value();
     sessions_.erase(it);
+    qInfo().noquote() << "danmaku session stopping room=" << roomId;
+    session->client->stop();
     statuses_[roomId] = DanmakuConnectionStatus{roomId};
     emit roomStateChanged(roomId);
 }

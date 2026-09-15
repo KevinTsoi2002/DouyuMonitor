@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(DouyuMonitorNative VERSION 0.2.5 LANGUAGES CXX)
+project(DouyuMonitorNative VERSION 0.2.6 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -585,6 +585,17 @@ set_tests_properties(danmaku_session_manager_test PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${QT_ROOT}/bin"
 )
 
+add_executable(application_logger_test
+    tests/application_logger_test.cpp
+    src/app/application_logger.cpp
+)
+target_link_libraries(application_logger_test PRIVATE Qt6::Core Qt6::Test)
+target_include_directories(application_logger_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+add_test(NAME application_logger_test COMMAND application_logger_test)
+set_tests_properties(application_logger_test PROPERTIES
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${QT_ROOT}/bin"
+)
+
 add_executable(fake_streamget_service
     tests/fake_streamget_service.cpp
 )
@@ -818,6 +829,7 @@ endif()
 
 add_executable(douyu_monitor_native
     app/main.cpp
+    src/app/application_logger.cpp
     src/media/media_source.cpp
     src/workspace/quality_policy.cpp
     src/workspace/native_workspace_types.cpp

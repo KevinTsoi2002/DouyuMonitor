@@ -128,6 +128,7 @@ FocusScope {
             anchors.fill: parent
             roomId: root.roomId
             controller: root.controller ? root.controller.danmaku : null
+            signalController: root.controller ? root.controller.danmaku : null
             enabled: root.danmakuEnabled && root.controller !== null
                      && root.controller.danmaku.globalEnabled
             topInset: topBar.height

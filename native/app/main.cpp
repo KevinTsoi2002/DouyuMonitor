@@ -18,6 +18,7 @@
 
 #include "ui/app_controller.h"
 #include "ui/mpv_quick_item.h"
+#include "app/application_logger.h"
 
 namespace {
 
@@ -137,6 +138,11 @@ int main(int argc, char *argv[])
     qputenv("QT_QPA_PLATFORM", "windows");
 #endif
     QGuiApplication application(argc, argv);
+    QCoreApplication::setOrganizationName(QStringLiteral("DouyuMonitor"));
+    QCoreApplication::setOrganizationDomain(QStringLiteral("douyu-monitor.local"));
+    QCoreApplication::setApplicationName(QStringLiteral("DouyuMonitor"));
+    ApplicationLogger::install();
+    qInfo() << "application started";
     QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
     QQuickStyle::setStyle(QStringLiteral("Basic"));
 

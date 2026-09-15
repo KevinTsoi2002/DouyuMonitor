@@ -172,8 +172,8 @@ void QmlDanmakuOverlayTest::clearsActiveAndQueuedMessagesWhenDisabled()
 
     overlay->setProperty("enabled", false);
     QTRY_COMPARE_WITH_TIMEOUT(activeLines(overlay.get()).size(), 0, 1000);
-    QCOMPARE(controller.clearCount(), 1);
-    QCOMPARE(controller.lastClearedRoomId(), QStringLiteral("63136"));
+    QCOMPARE(controller.clearCount(), 0);
+    QCOMPARE(controller.lastClearedRoomId(), QString());
 }
 
 QTEST_MAIN(QmlDanmakuOverlayTest)

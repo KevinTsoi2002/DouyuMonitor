@@ -6,6 +6,7 @@ Item {
 
     required property string roomId
     property var controller: null
+    property var signalController: null
     property var activeItems: []
     property var pendingMessage: ({})
     property int activeItemLimit: 64
@@ -53,7 +54,7 @@ Item {
     }
 
     Connections {
-        target: root.controller
+        target: root.signalController || root.controller
 
         function onMessageAvailable(roomId) {
             if (roomId === root.roomId && root.enabled) launchTimer.restart()
@@ -102,7 +103,6 @@ Item {
 
     function clearRoom() {
         clearActiveItems()
-        if (controller) controller.clearRoom(roomId)
     }
 
     function launchNextMessage() {

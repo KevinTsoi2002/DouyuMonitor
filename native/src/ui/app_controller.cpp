@@ -1,6 +1,7 @@
 #include "ui/app_controller.h"
 
 #include <QDateTime>
+#include <QDebug>
 #include <QDesktopServices>
 #include <QRegularExpression>
 #include <QSettings>
@@ -626,7 +627,12 @@ QString AppController::setVolume(const QString &roomId, int volume)
 void AppController::toggleDanmaku(const QString &roomId)
 {
     NativeRoomRecord *record = libraryRecord(roomId);
-    if (record == nullptr || coordinator_->sessionForRoom(roomId) == nullptr) return;
+    if (record == nullptr || coordinator_->sessionForRoom(roomId) == nullptr) {
+        qWarning().noquote() << "danmaku toggle ignored room=" << roomId;
+        return;
+    }
+    qInfo().noquote() << "danmaku toggle room=" << roomId
+                      << "enabled=" << (!record->danmakuEnabled);
     record->danmakuEnabled = !record->danmakuEnabled;
     synchronizeDanmaku();
     refreshPresentation();

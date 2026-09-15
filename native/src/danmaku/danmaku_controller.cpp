@@ -1,6 +1,7 @@
 #include "danmaku/danmaku_controller.h"
 
 #include <QDateTime>
+#include <QDebug>
 
 #include <utility>
 
@@ -154,6 +155,7 @@ void DanmakuController::setConfiguration(const NativeDanmakuConfiguration &confi
 
 void DanmakuController::synchronize(const QVector<DanmakuRoomEligibility> &rooms)
 {
+    qInfo() << "danmaku synchronize rooms=" << rooms.size();
     sessions_.synchronize(rooms);
 }
 
@@ -306,11 +308,13 @@ void DanmakuController::clearStats(const QString &roomId)
 
 void DanmakuController::retry(const QString &roomId)
 {
+    qInfo().noquote() << "danmaku retry room=" << roomId;
     sessions_.retry(roomId);
 }
 
 void DanmakuController::clearRoom(const QString &roomId)
 {
+    qInfo().noquote() << "danmaku clear room=" << roomId;
     sessions_.clearRoom(roomId);
 }
 
