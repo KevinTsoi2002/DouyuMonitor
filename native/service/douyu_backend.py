@@ -65,6 +65,62 @@ def _viewer_label(value: Any) -> str:
     return f"{round(viewers):,}"
 
 
+def _quality_rate_for(quality: str) -> str:
+    if quality == "original":
+        return "0"
+    if quality == "super":
+        return "8"
+    if quality == "auto":
+        return "-1"
+    if quality == "high":
+        return "3"
+    if quality == "standard":
+        return "2"
+    return "-1"
+
+
+def _stream_field(data: Any, name: str) -> Any:
+    if isinstance(data, dict):
+        return data.get(name)
+    return getattr(data, name, None)
+
+
+def _quality_label(options: Any, rate: int) -> str:
+    if isinstance(options, list):
+        for option in options:
+            if isinstance(option, dict) and option.get("rate") == rate:
+                label = _scalar_string(option.get("label") or option.get("name"))
+                if label:
+                    return label
+    return f"清晰度 {rate}"
+
+
+def _quality_options(payload: Any) -> list[dict[str, Any]]:
+    if not isinstance(payload, dict) or payload.get("error") != 0:
+        return []
+    data = payload.get("data")
+    if not isinstance(data, dict) or not isinstance(data.get("multirates"), list):
+        return []
+    options: list[dict[str, Any]] = []
+    seen: set[int] = set()
+    for item in data["multirates"]:
+        if not isinstance(item, dict):
+            continue
+        rate = item.get("rate")
+        name = _scalar_string(item.get("name"))
+        if (
+            not isinstance(rate, int)
+            or isinstance(rate, bool)
+            or not 0 <= rate <= 255
+            or not name
+            or rate in seen
+        ):
+            continue
+        seen.add(rate)
+        options.append({"id": f"rate-{rate}", "label": name, "rate": rate})
+    return options
+
+
 def _default_fetch_json(url: str, timeout: float) -> Any:
     request = Request(url, headers={"Accept": "application/json"})
     try:
@@ -146,9 +202,17 @@ class DouyuBackend:
             result["avatarUrl"] = avatar_url
         return result
 
-    async def resolve(self, room_id: str, quality: str) -> tuple[bool, list[dict[str, Any]]]:
+    async def resolve(
+        self,
+        room_id: str,
+        quality: str,
+        quality_rate: int | None = None,
+    ) -> tuple[bool, list[dict[str, Any]], list[dict[str, Any]]]:
         if not ROOM_ID_RE.fullmatch(room_id) or quality not in QUALITY_VALUES:
             raise BackendError(ErrorCode.INVALID_RESPONSE)
+        if quality_rate is not None and not 0 <= quality_rate <= 255:
+            raise BackendError(ErrorCode.INVALID_RESPONSE)
+
         try:
             if self._stream_factory is None:
                 from streamget import DouyuLiveStream
@@ -156,23 +220,63 @@ class DouyuBackend:
                 stream = DouyuLiveStream()
             else:
                 stream = self._stream_factory()
-            result = stream.fetch_app_stream_data(f"https://www.douyu.com/{room_id}")
-            data = await result if inspect.isawaitable(result) else result
+
+            room_result = stream.fetch_web_stream_data(f"https://www.douyu.com/{room_id}")
+            room_data = await room_result if inspect.isawaitable(room_result) else room_result
         except BackendError:
             raise
         except Exception as error:
             raise BackendError(ErrorCode.STREAMGET_UNAVAILABLE) from error
 
-        if not isinstance(data, dict) or not isinstance(data.get("is_live"), bool):
+        if not isinstance(room_data, dict) or not isinstance(room_data.get("is_live"), bool):
             raise BackendError(ErrorCode.INVALID_RESPONSE)
-        if not data["is_live"]:
-            return False, []
+        if not room_data["is_live"]:
+            return False, [], []
 
-        playback_url = _safe_stream_url(data.get("flv_url"))
+        options: list[dict[str, Any]] = []
+        try:
+            option_rate = quality_rate if quality_rate is not None else _quality_rate_for(quality)
+            stream_result = stream._fetch_web_stream_url(
+                str(room_data.get("room_id", room_id)),
+                rate=str(option_rate),
+            )
+            stream_data = await stream_result if inspect.isawaitable(stream_result) else stream_result
+            options = _quality_options(stream_data)
+            if not options:
+                raise BackendError(ErrorCode.INVALID_RESPONSE)
+            option_rates = {option["rate"] for option in options}
+            reported_rate = _stream_field(stream_data.get("data"), "rate")
+            if isinstance(reported_rate, int) and not isinstance(reported_rate, bool) \
+                    and reported_rate in option_rates:
+                rate = reported_rate
+            elif quality_rate is not None and quality_rate in option_rates:
+                rate = quality_rate
+            else:
+                rate = options[0]["rate"]
+        except BackendError:
+            raise
+        except Exception as error:
+            raise BackendError(ErrorCode.STREAMGET_UNAVAILABLE) from error
+
+        if not isinstance(stream_data, dict) or stream_data.get("error") != 0:
+            raise BackendError(ErrorCode.INVALID_RESPONSE)
+        stream_info = stream_data.get("data")
+        if not isinstance(stream_info, dict):
+            raise BackendError(ErrorCode.INVALID_RESPONSE)
+        rtmp_url = _stream_field(stream_info, "rtmp_url")
+        rtmp_live = _stream_field(stream_info, "rtmp_live")
+        if not isinstance(rtmp_url, str) or not isinstance(rtmp_live, str):
+            raise BackendError(ErrorCode.INVALID_RESPONSE)
+        playback_url = _safe_stream_url(f"{rtmp_url.rstrip('/')}/{rtmp_live.lstrip('/')}")
+        if quality_rate is None:
+            label = "自动"
+        else:
+            label = _quality_label(options, quality_rate) if options else f"清晰度 {quality_rate}"
         return True, [{
-            "id": "flv-auto",
-            "label": "StreamGet FLV",
+            "id": f"flv-{rate}",
+            "label": label,
             "quality": "auto",
+            "qualityRate": rate,
             "container": "flv",
             "playbackUrl": playback_url,
-        }]
+        }], options

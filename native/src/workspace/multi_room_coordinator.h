@@ -16,6 +16,7 @@ class StreamgetProcessClient;
 struct CoordinatorRoomSpec {
     QString roomId;
     StreamQuality requestedQuality = StreamQuality::Auto;
+    int requestedQualityRate = -1;
     RoomMetadata metadata;
     int volume = 100;
     bool favorite = false;
@@ -49,6 +50,7 @@ public:
     bool setGlobalMuted(bool muted);
     RoomCommandResult addRoomDetailed(const QString &roomId,
                                       StreamQuality requestedQuality = StreamQuality::Auto,
+                                      int requestedQualityRate = -1,
                                       RoomMetadata metadata = {},
                                       bool favorite = false,
                                       int volume = 100);
@@ -56,7 +58,8 @@ public:
     RoomCommandResult setPrimaryRoomDetailed(const QString &roomId);
     RoomCommandResult setSecondaryPrimaryRoomDetailed(const QString &roomId);
     RoomCommandResult setRequestedQuality(const QString &roomId,
-                                          StreamQuality requestedQuality);
+                                          StreamQuality requestedQuality,
+                                          int requestedQualityRate = -1);
     RoomCommandResult moveRoomDetailed(const QString &roomId, int delta);
     RoomCommandResult retryRoomDetailed(const QString &roomId);
     RoomCommandResult setVolume(const QString &roomId, int volume);
@@ -88,6 +91,7 @@ signals:
     void layoutChanged(QString layoutId);
     void roomStateChanged(QString roomId);
     void qualityChanged(QString roomId, StreamQuality effectiveQuality);
+    void qualityRateChanged(QString roomId, int effectiveQualityRate);
     void roomStatusRefreshed(QString roomId, bool online);
     void failed(QString roomId, QString errorCode);
     void roomSnapshotsChanged(RoomSnapshots snapshots);

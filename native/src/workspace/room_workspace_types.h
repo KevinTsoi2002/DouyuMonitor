@@ -26,7 +26,9 @@ struct RoomSnapshot {
     bool isSecondaryPrimary = false;
     RoomSession::State state = RoomSession::State::Idle;
     StreamQuality requestedQuality = StreamQuality::Auto;
+    int requestedQualityRate = -1;
     StreamQuality effectiveQuality = StreamQuality::Auto;
+    int effectiveQualityRate = -1;
     RoomMetadata metadata;
     RoomLiveStatus liveStatus = RoomLiveStatus::Unknown;
     RoomPlaybackHealth playbackHealth = RoomPlaybackHealth::Pending;

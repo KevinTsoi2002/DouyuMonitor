@@ -29,6 +29,10 @@ RemotePlaybackController::RemotePlaybackController(StreamgetProcessClient *clien
     , client_(client)
 {
     qRegisterMetaType<MediaSource>();
+    qRegisterMetaType<StreamVariant>();
+    qRegisterMetaType<StreamQualityOption>();
+    qRegisterMetaType<QVector<StreamVariant>>();
+    qRegisterMetaType<QVector<StreamQualityOption>>();
     if (client_ == nullptr) return;
 
     connect(client_, &StreamgetProcessClient::responseReceived,
@@ -42,7 +46,9 @@ RemotePlaybackController::~RemotePlaybackController()
     release();
 }
 
-quint64 RemotePlaybackController::resolve(const QString &roomId, StreamQuality quality)
+quint64 RemotePlaybackController::resolve(const QString &roomId,
+                                          StreamQuality quality,
+                                          int qualityRate)
 {
     bumpGeneration();
     if (activeRequestId_ != 0 && client_ != nullptr) {
@@ -63,7 +69,7 @@ quint64 RemotePlaybackController::resolve(const QString &roomId, StreamQuality q
 
     roomId_ = roomId;
     setState(State::Resolving);
-    activeRequestId_ = client_->resolve(roomId, quality);
+    activeRequestId_ = client_->resolve(roomId, quality, 10000, qualityRate);
     if (activeRequestId_ == 0) {
         failWithCode(QStringLiteral("SERVICE_FAILED"));
     }
@@ -121,7 +127,7 @@ void RemotePlaybackController::onResponse(ServiceResponse response)
         return;
     }
 
-    emit variantsReady(response.variants);
+    emit variantsReady(response.variants, response.qualityOptions);
 
     const auto source = MediaSource::fromRemoteVariant(response.roomId, response.variants.first());
     if (!source.has_value()) {

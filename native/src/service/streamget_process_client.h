@@ -26,7 +26,8 @@ public:
     quint64 ping(int timeoutMs = 5000);
     quint64 resolve(const QString &roomId,
                     StreamQuality quality = StreamQuality::Auto,
-                    int timeoutMs = 10000);
+                    int timeoutMs = 10000,
+                    int qualityRate = -1);
     quint64 search(const QString &query, int timeoutMs = 10000);
 
     bool cancel(quint64 requestId);

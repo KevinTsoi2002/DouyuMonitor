@@ -14,7 +14,7 @@
 namespace {
 
 constexpr auto kSettingsKey = "DouyuMonitor/nativeWorkspaceV1";
-constexpr int kCurrentVersion = 4;
+constexpr int kCurrentVersion = 5;
 constexpr int kMaxActiveRooms = 10;
 constexpr int kMaxGroupRooms = 10;
 const QRegularExpression kRoomIdPattern(QStringLiteral(R"(^[0-9]{1,20}$)"));
@@ -221,6 +221,9 @@ NativeWorkspaceSnapshot normalize(NativeWorkspaceSnapshot snapshot)
         }
         if (record.metadata.anchorName.isEmpty()) record.metadata.anchorName = record.roomId;
         if (record.volume < 0 || record.volume > 100) record.volume = 100;
+        if (record.requestedQualityRate < -1 || record.requestedQualityRate > 255) {
+            record.requestedQualityRate = -1;
+        }
         if (!record.favorite) {
             record.favoriteAddedAtMs = 0;
             record.favoriteSortOrder = 0;
@@ -316,6 +319,7 @@ QJsonObject toJson(const NativeRoomRecord &record)
     object.insert(QStringLiteral("roomId"), record.roomId);
     object.insert(QStringLiteral("metadata"), toJson(record.metadata));
     object.insert(QStringLiteral("requestedQuality"), qualityToString(record.requestedQuality));
+    object.insert(QStringLiteral("requestedQualityRate"), record.requestedQualityRate);
     object.insert(QStringLiteral("favorite"), record.favorite);
     object.insert(QStringLiteral("lastOpenedAtMs"), record.lastOpenedAtMs);
     object.insert(QStringLiteral("volume"), record.volume);
@@ -621,6 +625,14 @@ std::optional<NativeRoomRecord> recordFromJson(const QJsonObject &object, int ve
             || !object.value(QStringLiteral("favoriteSortOrder")).isDouble())) {
         return std::nullopt;
     }
+    if (version >= 5) {
+        const QJsonValue requestedQualityRate = object.value(QStringLiteral("requestedQualityRate"));
+        if (!requestedQualityRate.isDouble()
+            || requestedQualityRate.toInt() < -1 || requestedQualityRate.toInt() > 255
+            || requestedQualityRate.toDouble() != requestedQualityRate.toInt()) {
+            return std::nullopt;
+        }
+    }
 
     const auto metadata = metadataFromJson(object.value(QStringLiteral("metadata")).toObject());
     if (!metadata.has_value() || metadata->roomId != roomId) return std::nullopt;
@@ -628,6 +640,9 @@ std::optional<NativeRoomRecord> recordFromJson(const QJsonObject &object, int ve
     record.roomId = roomId;
     record.metadata = *metadata;
     record.requestedQuality = *quality;
+    if (version >= 5) {
+        record.requestedQualityRate = object.value(QStringLiteral("requestedQualityRate")).toInt();
+    }
     record.favorite = object.value(QStringLiteral("favorite")).toBool();
     record.lastOpenedAtMs = object.value(QStringLiteral("lastOpenedAtMs")).toInteger();
     if (version >= 2) {
@@ -707,7 +722,7 @@ std::optional<NativeWorkspacePreset> presetFromJson(const QJsonObject &object, i
 NativeWorkspaceSnapshot fromJson(const QJsonObject &object)
 {
     const int version = object.value(QStringLiteral("version")).toInt();
-    if ((version != 1 && version != 2 && version != 3 && version != kCurrentVersion)
+    if ((version < 1 || version > kCurrentVersion)
         || !object.value(QStringLiteral("library")).isArray()
         || !object.value(QStringLiteral("groups")).isArray()
         || !object.value(QStringLiteral("activeRoomIds")).isArray()

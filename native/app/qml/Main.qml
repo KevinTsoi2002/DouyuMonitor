@@ -142,7 +142,9 @@ ApplicationWindow {
             favorite: true
             audioFocused: true
             requestedQuality: "自动"
+            requestedQualityRate: -1
             effectiveQuality: "自动"
+            availableQualities: []
             muted: false
             volume: 100
             danmakuEnabled: false
@@ -169,7 +171,9 @@ ApplicationWindow {
             favorite: false
             audioFocused: false
             requestedQuality: "高清"
+            requestedQualityRate: 3
             effectiveQuality: "高清"
+            availableQualities: []
             muted: true
             volume: 0
             danmakuEnabled: false
@@ -196,7 +200,9 @@ ApplicationWindow {
             favorite: false
             audioFocused: false
             requestedQuality: "自动"
+            requestedQualityRate: -1
             effectiveQuality: "自动"
+            availableQualities: []
             muted: true
             volume: 0
             danmakuEnabled: false

@@ -29,6 +29,18 @@ class ProtocolTests(unittest.TestCase):
                 "quality": "auto",
             },
         )
+        self.assertEqual(
+            parse_request(
+                '{"requestId":2,"op":"resolve","roomId":"63136","quality":"auto","qualityRate":8}'
+            ),
+            {
+                "requestId": 2,
+                "op": "resolve",
+                "roomId": "63136",
+                "quality": "auto",
+                "qualityRate": 8,
+            },
+        )
 
     def test_parses_search_cancel_and_shutdown_requests(self):
         self.assertEqual(
@@ -51,6 +63,10 @@ class ProtocolTests(unittest.TestCase):
             '{"requestId":1,"op":"unknown"}',
             '{"requestId":1,"op":"resolve","roomId":"abc","quality":"auto"}',
             '{"requestId":1,"op":"resolve","roomId":"1","quality":"lossless"}',
+            '{"requestId":1,"op":"resolve","roomId":"1","quality":"auto","qualityRate":-1}',
+            '{"requestId":1,"op":"resolve","roomId":"1","quality":"auto","qualityRate":256}',
+            '{"requestId":1,"op":"resolve","roomId":"1","quality":"auto","qualityRate":true}',
+            '{"requestId":1,"op":"resolve","roomId":"1","quality":"auto","qualityRate":"8"}',
             '{"requestId":1,"op":"search","query":""}',
             '{"requestId":1,"op":"cancel","targetRequestId":0}',
             '[]',
@@ -80,6 +96,18 @@ class ProtocolTests(unittest.TestCase):
                 "variants": [],
             },
         )
+
+    def test_builds_success_response_with_safe_quality_options(self):
+        response = success_resolve(
+            8,
+            "63136",
+            True,
+            [{"id": "flv-8", "label": "Super 8M", "quality": "auto", "qualityRate": 8,
+              "container": "flv", "playbackUrl": "https://live.douyucdn.cn/stream.flv"}],
+            [{"id": "rate-8", "label": "Super 8M", "rate": 8}],
+        )
+        self.assertEqual(response["qualityOptions"], [{"id": "rate-8", "label": "Super 8M", "rate": 8}])
+        self.assertNotIn("playbackUrl", json.dumps(response["qualityOptions"]))
 
     def test_builds_fixed_error_response_without_diagnostics(self):
         response = error_response(7, ErrorCode.TIMEOUT)

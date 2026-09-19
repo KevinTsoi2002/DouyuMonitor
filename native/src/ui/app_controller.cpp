@@ -372,6 +372,7 @@ QString AppController::addRoom(const QString &roomId)
     const RoomCommandResult result = coordinator_->addRoomDetailed(
         roomId,
         record != nullptr ? record->requestedQuality : StreamQuality::Auto,
+        record != nullptr ? record->requestedQualityRate : -1,
         record != nullptr ? record->metadata : RoomMetadata{},
         record != nullptr && record->favorite,
         record != nullptr ? record->volume : 100);
@@ -429,6 +430,7 @@ QString AppController::addRoomCandidate(const QString &roomId)
     const RoomCommandResult result = coordinator_->addRoomDetailed(
         roomId,
         record != nullptr ? record->requestedQuality : StreamQuality::Auto,
+        record != nullptr ? record->requestedQualityRate : -1,
         candidate.value(),
         record != nullptr && record->favorite,
         record != nullptr ? record->volume : 100);
@@ -538,11 +540,13 @@ bool AppController::setGlobalMuted(bool muted)
     return true;
 }
 
-QString AppController::setQuality(const QString &roomId, int quality)
+QString AppController::setQuality(const QString &roomId, int quality, int qualityRate)
 {
-    if (!isValidQuality(quality)) return commandMessage(RoomCommandResult::InvalidRoomId);
+    if (!isValidQuality(quality) || qualityRate < -1 || qualityRate > 255) {
+        return commandMessage(RoomCommandResult::InvalidRoomId);
+    }
     const RoomCommandResult result = coordinator_->setRequestedQuality(
-        roomId, static_cast<StreamQuality>(quality));
+        roomId, static_cast<StreamQuality>(quality), qualityRate);
     if (result == RoomCommandResult::Accepted) persistWorkspace();
     return commandMessage(result);
 }
@@ -767,6 +771,7 @@ void AppController::setActiveGroup(const QString &groupId)
             CoordinatorRoomSpec spec;
             spec.roomId = record->roomId;
             spec.requestedQuality = record->requestedQuality;
+            spec.requestedQualityRate = record->requestedQualityRate;
             spec.metadata = record->metadata;
             spec.volume = record->volume;
             spec.favorite = record->favorite;
@@ -872,6 +877,7 @@ QString AppController::applyWorkspacePreset(const QString &presetId)
             fallback.metadata.roomId = roomId;
             fallback.metadata.anchorName = roomId;
             fallback.requestedQuality = StreamQuality::Auto;
+            fallback.requestedQualityRate = -1;
             fallback.volume = 100;
             fallback.danmakuEnabled = true;
             snapshot_.library.push_back(fallback);
@@ -879,6 +885,7 @@ QString AppController::applyWorkspacePreset(const QString &presetId)
         }
         targetRooms.push_back({record->roomId,
                                record->requestedQuality,
+                               record->requestedQualityRate,
                                record->metadata,
                                record->volume,
                                record->favorite});
@@ -1181,6 +1188,7 @@ void AppController::restoreWorkspace()
         const NativeRoomRecord record = *storedRecord;
         targetRooms.push_back({record.roomId,
                                record.requestedQuality,
+                               record.requestedQualityRate,
                                record.metadata,
                                record.volume,
                                record.favorite});
@@ -1316,10 +1324,12 @@ void AppController::onSnapshotsChanged(const RoomSnapshots &snapshots)
         NativeRoomRecord *record = libraryRecord(room.roomId);
         if (record == nullptr) {
             snapshot_.library.push_back({room.roomId, room.metadata, room.requestedQuality,
-                                         room.favorite, 0, room.volume, true});
+                                         room.requestedQualityRate, room.favorite, 0,
+                                         room.volume, true});
             record = &snapshot_.library.back();
         }
         record->requestedQuality = room.requestedQuality;
+        record->requestedQualityRate = room.requestedQualityRate;
         record->favorite = room.favorite;
         record->volume = room.volume;
         if (!room.metadata.anchorName.isEmpty() || !room.metadata.title.isEmpty()

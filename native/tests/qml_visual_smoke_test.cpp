@@ -194,6 +194,7 @@ QVariantList roomFixtures(int count)
             {QStringLiteral("favorite"), false},
             {QStringLiteral("audioFocused"), false},
             {QStringLiteral("requestedQuality"), QStringLiteral("auto")},
+            {QStringLiteral("requestedQualityRate"), -1},
             {QStringLiteral("effectiveQuality"), QStringLiteral("auto")},
             {QStringLiteral("availableQualities"), QVariantList{}},
             {QStringLiteral("muted"), true},

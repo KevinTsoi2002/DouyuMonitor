@@ -117,7 +117,9 @@ void RoomListModelTest::exposesAvailableQualityOptionsWithoutPlaybackUrl()
                     {QStringLiteral("label"), QStringLiteral("高清")},
                     {QStringLiteral("quality"), QStringLiteral("high")}},
     };
+    snapshot.requestedQualityRate = 8;
     model.applySnapshots({snapshot});
+    QCOMPARE(model.data(model.index(0, 0), RoomListModel::RequestedQualityRateRole).toInt(), 8);
     const QVariant value = model.data(model.index(0, 0), RoomListModel::AvailableQualitiesRole);
     QVERIFY(value.canConvert<QVariantList>());
     const QVariantList options = value.toList();

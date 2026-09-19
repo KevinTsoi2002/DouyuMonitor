@@ -24,6 +24,7 @@ class RoomSessionTest final : public QObject {
 private slots:
     void startsResolvingWithUserAndEffectiveQuality();
     void updatesRequestedQualityWithoutChangingEffectiveQuality();
+    void appliesRateBasedQualityOptions();
     void mapsOfflineResolveToLiveOfflineWithoutPlaybackFailure();
     void appliesValidatedMetadataAndLiveState();
     void acceptsMetadataWithOptionalEmptyPresentationFields();
@@ -61,6 +62,25 @@ void RoomSessionTest::updatesRequestedQualityWithoutChangingEffectiveQuality()
     QCOMPARE(session.userQuality(), StreamQuality::Super);
     QCOMPARE(session.effectiveQuality(), StreamQuality::High);
     QVERIFY(!session.setRequestedQuality(StreamQuality::Super));
+    client.shutdown();
+}
+
+void RoomSessionTest::appliesRateBasedQualityOptions()
+{
+    StreamgetProcessClient client(fakeServicePath());
+    RoomSession session(&client, QStringLiteral("63136"), StreamQuality::Auto, nullptr, {}, 8);
+    QSignalSpy variants(&session, &RoomSession::variantsChanged);
+
+    QCOMPARE(session.userQualityRate(), 8);
+    QCOMPARE(session.effectiveQualityRate(), 8);
+    QVERIFY(session.resolve() > 0);
+    QTRY_VERIFY_WITH_TIMEOUT(variants.count() == 1, 3000);
+
+    const QVariantList options = session.availableQualities();
+    QCOMPARE(options.size(), 5);
+    QCOMPARE(options.at(0).toMap().value(QStringLiteral("rate")).toInt(), 0);
+    QCOMPARE(options.at(1).toMap().value(QStringLiteral("label")).toString(),
+             QStringLiteral("quality-8"));
     client.shutdown();
 }
 

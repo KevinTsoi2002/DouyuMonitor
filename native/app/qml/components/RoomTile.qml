@@ -22,6 +22,7 @@ FocusScope {
     required property bool favorite
     required property bool audioFocused
     required property string requestedQuality
+    required property int requestedQualityRate
     required property string effectiveQuality
     required property bool muted
     required property int volume
@@ -29,7 +30,7 @@ FocusScope {
     required property string danmakuState
     required property string danmakuErrorCode
     required property int index
-    property var availableQualities: []
+    required property var availableQualities
     property var controller: null
     property color borderColor: Theme.border
     property color accentColor: Theme.accent
@@ -46,9 +47,14 @@ FocusScope {
                                          ? root.availableQualities
                                          : [{"id": "auto", "label": "自动", "quality": "auto"}]
 
-    function qualityIndex(token) {
+    function qualityIndex(token, rate) {
         for (var i = 0; i < qualityOptions.length; ++i) {
-            if (qualityOptions[i].quality === token || qualityOptions[i].id === token) return i
+            const optionRate = Number(qualityOptions[i].rate)
+            if (Number.isFinite(optionRate)) {
+                if (optionRate === rate) return i
+            } else if (qualityOptions[i].quality === token || qualityOptions[i].id === token) {
+                return i
+            }
         }
         return 0
     }
@@ -491,16 +497,20 @@ FocusScope {
                 }
                 ComboBox {
                     id: qualityBox
+                    objectName: "roomQualitySelector"
                     width: 52
                     height: 27
                     model: root.qualityOptions
                     textRole: "label"
-                    currentIndex: root.qualityIndex(root.requestedQuality)
+                    currentIndex: root.qualityIndex(root.requestedQuality, root.requestedQualityRate)
                     Accessible.name: "清晰度"
-                    onActivated: {
-                        if (!root.controller || currentIndex < 0 || currentIndex >= root.qualityOptions.length) return
+                    onActivated: function(optionIndex) {
+                        if (!root.controller || optionIndex < 0 || optionIndex >= root.qualityOptions.length) return
+                        const option = root.qualityOptions[optionIndex]
+                        const optionRate = Number(option.rate)
                         root.controller.setQuality(root.roomId,
-                                                   root.qualityEnum(root.qualityOptions[currentIndex].quality))
+                                                   root.qualityEnum(option.quality),
+                                                   Number.isFinite(optionRate) ? optionRate : -1)
                     }
                     contentItem: Text { leftPadding: 6; rightPadding: 4; color: "#d7dee5"; text: qualityBox.displayText; verticalAlignment: Text.AlignVCenter; font.pixelSize: 9 }
                     background: Rectangle { radius: 4; border.color: root.borderColor; color: "#10151b" }

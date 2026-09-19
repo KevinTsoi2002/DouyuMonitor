@@ -29,6 +29,13 @@ struct StreamVariant {
     StreamQuality quality = StreamQuality::Auto;
     QString container;
     QUrl playbackUrl;
+    int qualityRate = -1;
+};
+
+struct StreamQualityOption {
+    QString id;
+    QString label;
+    int rate = -1;
 };
 
 struct RoomSearchResult {
@@ -47,6 +54,7 @@ struct ServiceRequest {
     QString roomId;
     QString query;
     StreamQuality quality = StreamQuality::Auto;
+    int qualityRate = -1;
     quint64 targetRequestId = 0;
 };
 
@@ -61,12 +69,15 @@ struct ServiceResponse {
     QString roomId;
     bool isLive = false;
     QVector<StreamVariant> variants;
+    QVector<StreamQualityOption> qualityOptions;
     QString errorCode;
     bool retryable = false;
     QString errorMessage;
 };
 
 Q_DECLARE_METATYPE(ServiceResponse)
+Q_DECLARE_METATYPE(StreamQualityOption)
+Q_DECLARE_METATYPE(QVector<StreamQualityOption>)
 Q_DECLARE_METATYPE(StreamVariant)
 Q_DECLARE_METATYPE(QVector<StreamVariant>)
 

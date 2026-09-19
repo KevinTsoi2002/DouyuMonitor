@@ -31,11 +31,14 @@ RoomSession::RoomSession(StreamgetProcessClient *client,
                          QString roomId,
                          StreamQuality userQuality,
                          QObject *parent,
-                         RoomMetadata metadata)
+                         RoomMetadata metadata,
+                         int userQualityRate)
     : QObject(parent)
     , roomId_(std::move(roomId))
     , userQuality_(userQuality)
+    , userQualityRate_(userQualityRate < -1 || userQualityRate > 255 ? -1 : userQualityRate)
     , effectiveQuality_(userQuality)
+    , effectiveQualityRate_(userQualityRate_)
     , metadata_(std::move(metadata))
     , controller_(new RemotePlaybackController(client, this))
 {
@@ -93,6 +96,26 @@ bool RoomSession::setRequestedQuality(StreamQuality quality)
     return true;
 }
 
+bool RoomSession::setRequestedQuality(StreamQuality quality, int qualityRate)
+{
+    if (qualityRate < -1 || qualityRate > 255) return false;
+    bool changed = false;
+    if (userQuality_ != quality) {
+        userQuality_ = quality;
+        changed = true;
+    }
+    if (userQualityRate_ != qualityRate) {
+        userQualityRate_ = qualityRate;
+        changed = true;
+    }
+    return changed;
+}
+
+int RoomSession::userQualityRate() const noexcept
+{
+    return userQualityRate_;
+}
+
 StreamQuality RoomSession::effectiveQuality() const noexcept
 {
     return effectiveQuality_;
@@ -103,6 +126,20 @@ bool RoomSession::setEffectiveQuality(StreamQuality quality)
     if (effectiveQuality_ == quality) return false;
     effectiveQuality_ = quality;
     emit qualityChanged(quality);
+    return true;
+}
+
+int RoomSession::effectiveQualityRate() const noexcept
+{
+    return effectiveQualityRate_;
+}
+
+bool RoomSession::setEffectiveQualityRate(int qualityRate)
+{
+    if (qualityRate < -1 || qualityRate > 255 || effectiveQualityRate_ == qualityRate) {
+        return false;
+    }
+    effectiveQualityRate_ = qualityRate;
     return true;
 }
 
@@ -209,7 +246,7 @@ QVariantList RoomSession::availableQualities() const
 quint64 RoomSession::resolve()
 {
     if (controller_ == nullptr) return 0;
-    return controller_->resolve(roomId_, effectiveQuality_);
+    return controller_->resolve(roomId_, effectiveQuality_, effectiveQualityRate_);
 }
 
 void RoomSession::cancel()
@@ -264,15 +301,29 @@ void RoomSession::onControllerSourceReady(MediaSource source)
     setPlaybackHealth(RoomPlaybackHealth::Pending);
 }
 
-void RoomSession::onControllerVariantsReady(QVector<StreamVariant> variants)
+void RoomSession::onControllerVariantsReady(QVector<StreamVariant> variants,
+                                            QVector<StreamQualityOption> qualityOptions)
 {
     QVariantList options;
-    options.reserve(variants.size());
+    if (!qualityOptions.isEmpty()) {
+        options.reserve(qualityOptions.size());
+        for (const StreamQualityOption &option : qualityOptions) {
+            options.push_back(QVariantMap{
+                {QStringLiteral("id"), option.id},
+                {QStringLiteral("label"), option.label},
+                {QStringLiteral("rate"), option.rate},
+            });
+        }
+    } else {
+        options.reserve(variants.size());
+    }
     for (const StreamVariant &variant : variants) {
+        if (!qualityOptions.isEmpty()) break;
         options.push_back(QVariantMap{
             {QStringLiteral("id"), variant.id},
             {QStringLiteral("label"), variant.label},
             {QStringLiteral("quality"), qualityToken(variant.quality)},
+            {QStringLiteral("rate"), variant.qualityRate},
         });
     }
     if (availableQualities_ == options) return;

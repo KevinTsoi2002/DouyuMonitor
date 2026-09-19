@@ -17,7 +17,7 @@ class FakeBackend:
     def search(self, _query):
         return [{"roomId": "63136", "title": "测试"}]
 
-    async def resolve(self, room_id, _quality):
+    async def resolve(self, room_id, _quality, _quality_rate=None):
         self.started.append(room_id)
         self.active += 1
         self.max_active = max(self.max_active, self.active)
@@ -31,7 +31,7 @@ class FakeBackend:
                 "quality": "auto",
                 "container": "flv",
                 "playbackUrl": "https://live.douyucdn.cn/live/test.flv?secret=redacted",
-            }]
+            }], [{"id": "rate-0", "label": "原画", "rate": 0}]
         finally:
             self.active -= 1
 

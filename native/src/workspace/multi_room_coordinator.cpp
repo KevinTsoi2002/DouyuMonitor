@@ -98,6 +98,7 @@ bool MultiRoomCoordinator::addRoom(const QString &roomId, StreamQuality userQual
 
 RoomCommandResult MultiRoomCoordinator::addRoomDetailed(const QString &roomId,
                                                          StreamQuality requestedQuality,
+                                                         int requestedQualityRate,
                                                          RoomMetadata metadata,
                                                          bool favorite,
                                                          int volume)
@@ -108,7 +109,7 @@ RoomCommandResult MultiRoomCoordinator::addRoomDetailed(const QString &roomId,
     if (client_ == nullptr) return RoomCommandResult::Unavailable;
 
     RoomSession *session = new RoomSession(client_, roomId, requestedQuality, this,
-                                           std::move(metadata));
+                                           std::move(metadata), requestedQualityRate);
     session->setFavorite(favorite);
     session->setVolume(qBound(0, volume, 100));
     sessions_.insert(roomId, session);
@@ -295,11 +296,14 @@ bool MultiRoomCoordinator::setGlobalMuted(bool muted)
 }
 
 RoomCommandResult MultiRoomCoordinator::setRequestedQuality(const QString &roomId,
-                                                             StreamQuality requestedQuality)
+                                                             StreamQuality requestedQuality,
+                                                             int requestedQualityRate)
 {
     RoomSession *session = sessionForRoom(roomId);
     if (session == nullptr) return RoomCommandResult::RoomNotFound;
-    if (!session->setRequestedQuality(requestedQuality)) return RoomCommandResult::Unchanged;
+    if (!session->setRequestedQuality(requestedQuality, requestedQualityRate)) {
+        return RoomCommandResult::Unchanged;
+    }
     recomputeQuality();
     publishSnapshots();
     return RoomCommandResult::Accepted;
@@ -371,11 +375,11 @@ RoomCommandResult MultiRoomCoordinator::replaceRooms(const QVector<CoordinatorRo
         RoomSession *session = sessions_.value(spec.roomId, nullptr);
         if (session == nullptr) {
             session = new RoomSession(client_, spec.roomId, spec.requestedQuality, this,
-                                      spec.metadata);
+                                      spec.metadata, spec.requestedQualityRate);
             sessions_.insert(spec.roomId, session);
             connectSession(session);
         } else {
-            session->setRequestedQuality(spec.requestedQuality);
+            session->setRequestedQuality(spec.requestedQuality, spec.requestedQualityRate);
         }
         session->setFavorite(spec.favorite);
         session->setVolume(qBound(0, spec.volume, 100));
@@ -489,7 +493,9 @@ RoomSnapshots MultiRoomCoordinator::roomSnapshots() const
                              roomId == secondaryPrimaryRoomId_,
                              session->state(),
                              session->userQuality(),
+                             session->userQualityRate(),
                              session->effectiveQuality(),
+                             session->effectiveQualityRate(),
                              session->metadata(),
                              session->liveStatus(),
                              session->playbackHealth(),
@@ -567,10 +573,15 @@ void MultiRoomCoordinator::recomputeQuality()
     for (const QString &roomId : order_) {
         RoomSession *session = sessions_.value(roomId, nullptr);
         if (session == nullptr) continue;
+        const bool usesPerRoomRate = count <= 4;
         const auto decision = resolveRoomQuality(
             count, roomId == primaryRoomId_ || roomId == secondaryPrimaryRoomId_,
             session->userQuality());
-        if (!session->setEffectiveQuality(decision.effectiveQuality)) continue;
+        const int effectiveRate = usesPerRoomRate ? session->userQualityRate() : -1;
+        const bool effectiveQualityChanged = session->setEffectiveQuality(decision.effectiveQuality);
+        const bool rateChanged = session->setEffectiveQualityRate(effectiveRate);
+        if (!effectiveQualityChanged && !rateChanged) continue;
+        if (rateChanged) emit qualityRateChanged(roomId, effectiveRate);
         emit qualityChanged(roomId, decision.effectiveQuality);
         session->resolve();
     }

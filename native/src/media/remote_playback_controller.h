@@ -21,7 +21,7 @@ public:
                                       QObject *parent = nullptr);
     ~RemotePlaybackController() override;
 
-    quint64 resolve(const QString &roomId, StreamQuality quality);
+    quint64 resolve(const QString &roomId, StreamQuality quality, int qualityRate = -1);
     void cancel();
     void stop();
     void release();
@@ -31,7 +31,8 @@ public:
 
 signals:
     void sourceReady(MediaSource source);
-    void variantsReady(QVector<StreamVariant> variants);
+    void variantsReady(QVector<StreamVariant> variants,
+                       QVector<StreamQualityOption> qualityOptions);
     void failed(QString errorCode);
     void stateChanged(State state);
 

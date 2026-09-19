@@ -24,6 +24,7 @@ StreamVariant validVariant()
         StreamQuality::Auto,
         QStringLiteral("flv"),
         QUrl(QStringLiteral("https://live.douyucdn.cn/fake.flv")),
+        4,
     };
 }
 
@@ -35,6 +36,7 @@ ServiceResponse validResolveResponse(quint64 requestId, const QString &roomId)
     response.roomId = roomId;
     response.isLive = true;
     response.variants.push_back(validVariant());
+    response.qualityOptions.push_back({QStringLiteral("rate-4"), QStringLiteral("quality-4"), 4});
     return response;
 }
 
@@ -51,6 +53,7 @@ class RemotePlaybackControllerTest final : public QObject {
 private slots:
     void initTestCase();
     void resolvesOneTypedSource();
+    void receivesQualityOptionsWithVariant();
     void mapsOfflineAndServiceErrorsToFixedCodes();
     void cancelSuppressesLateSource();
     void newerGenerationSuppressesOlderResponse();
@@ -62,6 +65,10 @@ void RemotePlaybackControllerTest::initTestCase()
 {
     qRegisterMetaType<ServiceResponse>();
     qRegisterMetaType<MediaSource>();
+    qRegisterMetaType<StreamVariant>();
+    qRegisterMetaType<StreamQualityOption>();
+    qRegisterMetaType<QVector<StreamVariant>>();
+    qRegisterMetaType<QVector<StreamQualityOption>>();
 }
 
 void RemotePlaybackControllerTest::resolvesOneTypedSource()
@@ -112,6 +119,27 @@ void RemotePlaybackControllerTest::mapsOfflineAndServiceErrorsToFixedCodes()
         QCOMPARE(controller.state(), RemotePlaybackController::State::Error);
         client.shutdown();
     }
+}
+
+void RemotePlaybackControllerTest::receivesQualityOptionsWithVariant()
+{
+    StreamgetProcessClient client(fakeServicePath());
+    RemotePlaybackController controller(&client);
+    QSignalSpy variants(&controller, &RemotePlaybackController::variantsReady);
+    QSignalSpy sources(&controller, &RemotePlaybackController::sourceReady);
+
+    controller.resolve(QStringLiteral("63136"), StreamQuality::Auto, 8);
+    waitForSignalCount(sources, 1);
+
+    QCOMPARE(variants.count(), 1);
+    const auto receivedVariants = variants.at(0).at(0).value<QVector<StreamVariant>>();
+    const auto options = variants.at(0).at(1).value<QVector<StreamQualityOption>>();
+    QCOMPARE(receivedVariants.size(), 1);
+    QCOMPARE(receivedVariants.front().qualityRate, 8);
+    QCOMPARE(options.size(), 5);
+    QCOMPARE(options.at(0).rate, 0);
+    QCOMPARE(options.at(1).rate, 8);
+    client.shutdown();
 }
 
 void RemotePlaybackControllerTest::cancelSuppressesLateSource()

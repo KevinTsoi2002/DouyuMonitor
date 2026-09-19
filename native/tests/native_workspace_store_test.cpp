@@ -68,6 +68,8 @@ private slots:
     void roundTripsVersionThreeDanmakuSettingsAndOverrides();
     void roundTripsAudioModeAndGlobalMute();
     void roundTripsFavoriteAddedTimeAndManualOrder();
+    void roundTripsRequestedQualityRate();
+    void migratesVersionFourRecordsWithoutQualityRate();
     void migratesVersionThreeFavoritesWithoutLosingMembership();
     void normalizesPresetRoomIdsWithoutDuplicatingEntries();
 };
@@ -207,6 +209,41 @@ void NativeWorkspaceStoreTest::roundTripsFavoriteAddedTimeAndManualOrder()
     QCOMPARE(loaded.library.front().favoriteSortOrder, qint64(20));
     QCOMPARE(loaded.library.back().favoriteAddedAtMs, qint64(0));
     QCOMPARE(loaded.library.back().favoriteSortOrder, qint64(0));
+}
+
+void NativeWorkspaceStoreTest::roundTripsRequestedQualityRate()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSettings settings(directory.filePath(QStringLiteral("workspace.ini")), QSettings::IniFormat);
+    NativeWorkspaceStore store(&settings);
+    NativeWorkspaceSnapshot snapshot = fixtureWorkspace();
+    snapshot.library.front().requestedQualityRate = 8;
+    snapshot.library.back().requestedQualityRate = -1;
+
+    QVERIFY(store.save(snapshot));
+    const NativeWorkspaceSnapshot loaded = store.load();
+    QCOMPARE(loaded.version, 5);
+    QCOMPARE(loaded.library.front().requestedQualityRate, 8);
+    QCOMPARE(loaded.library.back().requestedQualityRate, -1);
+    QCOMPARE(loaded, snapshot);
+}
+
+void NativeWorkspaceStoreTest::migratesVersionFourRecordsWithoutQualityRate()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSettings settings(directory.filePath(QStringLiteral("workspace.ini")), QSettings::IniFormat);
+    settings.setValue(
+        QStringLiteral("DouyuMonitor/nativeWorkspaceV1"),
+        QByteArray(R"JSON({"version":4,"library":[{"roomId":"63136","metadata":{"roomId":"63136","anchorName":"主播","title":"标题","category":"游戏","viewerLabel":"1"},"requestedQuality":"high","favorite":false,"lastOpenedAtMs":0,"volume":100,"danmakuEnabled":true,"favoriteAddedAtMs":0,"favoriteSortOrder":0}],"groups":[],"activeRoomIds":["63136"],"activeGroupId":"","primaryRoomId":"63136","audioRoomId":"","presets":[],"danmaku":{"globalEnabled":true,"display":{"durationSeconds":8,"fontSize":24,"opacity":0.85,"region":"top","density":"normal","fontFamily":"simhei","rendering":"native"},"governance":{"enabled":true,"keywordBlacklist":[],"duplicateWindowSeconds":3,"peakProtectionEnabled":true},"roomOverrides":{}},"layoutId":"auto","primaryRoomRatio":0.6,"sidebarVisible":true,"audioMode":"single","globalMuted":false})JSON"));
+    NativeWorkspaceStore store(&settings);
+
+    const NativeWorkspaceSnapshot loaded = store.load();
+    QCOMPARE(loaded.version, 5);
+    QCOMPARE(loaded.library.size(), 1);
+    QCOMPARE(loaded.library.front().requestedQuality, StreamQuality::High);
+    QCOMPARE(loaded.library.front().requestedQualityRate, -1);
 }
 
 void NativeWorkspaceStoreTest::migratesVersionThreeFavoritesWithoutLosingMembership()

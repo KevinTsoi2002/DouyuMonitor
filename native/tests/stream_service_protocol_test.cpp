@@ -8,10 +8,12 @@ class StreamServiceProtocolTest final : public QObject {
 private slots:
     void encodesPingRequest();
     void encodesResolveRequest();
+    void encodesResolveRequestWithQualityRate();
     void encodesSearchCancelAndShutdownRequests();
     void decodesControlResponsesAndSearchResults();
     void decodesSearchResultWithOptionalPresentationFields();
     void decodesValidSuccessResponse();
+    void decodesQualityOptionsAndVariantRate();
     void decodesOfflineResponseWithoutUrl();
     void decodesFixedErrorWithoutMessage();
     void rejectsMalformedAndInvalidResponses();
@@ -67,6 +69,21 @@ void StreamServiceProtocolTest::encodesSearchCancelAndShutdownRequests()
     QCOMPARE(decodeRequest(encodeRequest(shutdown))->operation, ServiceOperation::Shutdown);
 }
 
+void StreamServiceProtocolTest::encodesResolveRequestWithQualityRate()
+{
+    ServiceRequest request;
+    request.requestId = 6;
+    request.operation = ServiceOperation::Resolve;
+    request.roomId = QStringLiteral("63136");
+    request.quality = StreamQuality::Auto;
+    request.qualityRate = 8;
+
+    const auto decoded = decodeRequest(encodeRequest(request));
+    QVERIFY(decoded.has_value());
+    QCOMPARE(decoded->quality, StreamQuality::Auto);
+    QCOMPARE(decoded->qualityRate, 8);
+}
+
 void StreamServiceProtocolTest::decodesControlResponsesAndSearchResults()
 {
     const auto pong = decodeResponse(
@@ -116,6 +133,19 @@ void StreamServiceProtocolTest::decodesValidSuccessResponse()
     QCOMPARE(response->variants.size(), 1);
     QCOMPARE(response->variants.front().quality, StreamQuality::Auto);
     QCOMPARE(response->variants.front().playbackUrl.host(), QStringLiteral("live.douyucdn2.cn"));
+    QVERIFY(response->qualityOptions.isEmpty());
+}
+
+void StreamServiceProtocolTest::decodesQualityOptionsAndVariantRate()
+{
+    const auto response = decodeResponse(
+        QByteArray(R"({"requestId":9,"ok":true,"roomId":"63136","isLive":true,"qualityOptions":[{"id":"rate-8","label":"Super 8M","rate":8}],"variants":[{"id":"flv-8","label":"Super 8M","quality":"auto","qualityRate":8,"container":"flv","playbackUrl":"https://live.douyucdn2.cn/live/63136.flv?wsAuth=redacted"}]})"));
+
+    QVERIFY(response.has_value());
+    QCOMPARE(response->qualityOptions.size(), 1);
+    QCOMPARE(response->qualityOptions.front().id, QStringLiteral("rate-8"));
+    QCOMPARE(response->qualityOptions.front().rate, 8);
+    QCOMPARE(response->variants.front().qualityRate, 8);
 }
 
 void StreamServiceProtocolTest::decodesOfflineResponseWithoutUrl()

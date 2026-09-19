@@ -19,6 +19,7 @@ QVector<int> snapshotRoles()
         RoomListModel::FavoriteRole,
         RoomListModel::AudioFocusedRole,
         RoomListModel::RequestedQualityRole,
+        RoomListModel::RequestedQualityRateRole,
         RoomListModel::EffectiveQualityRole,
         RoomListModel::MutedRole,
         RoomListModel::AvailableQualitiesRole,
@@ -74,6 +75,8 @@ QVariant RoomListModel::data(const QModelIndex &index, int role) const
         return snapshot.audioFocused;
     case RequestedQualityRole:
         return qualityLabel(snapshot.requestedQuality);
+    case RequestedQualityRateRole:
+        return snapshot.requestedQualityRate;
     case EffectiveQualityRole:
         return qualityLabel(snapshot.effectiveQuality);
     case MutedRole:
@@ -127,6 +130,7 @@ QHash<int, QByteArray> RoomListModel::roleNames() const
         {FavoriteRole, "favorite"},
         {AudioFocusedRole, "audioFocused"},
         {RequestedQualityRole, "requestedQuality"},
+        {RequestedQualityRateRole, "requestedQualityRate"},
         {EffectiveQualityRole, "effectiveQuality"},
         {MutedRole, "muted"},
         {VolumeRole, "volume"},
@@ -290,7 +294,9 @@ bool RoomListModel::snapshotsEqual(const RoomSnapshot &left, const RoomSnapshot 
         && left.isPrimary == right.isPrimary
         && left.state == right.state
         && left.requestedQuality == right.requestedQuality
+        && left.requestedQualityRate == right.requestedQualityRate
         && left.effectiveQuality == right.effectiveQuality
+        && left.effectiveQualityRate == right.effectiveQualityRate
         && left.metadata == right.metadata
         && left.liveStatus == right.liveStatus
         && left.playbackHealth == right.playbackHealth

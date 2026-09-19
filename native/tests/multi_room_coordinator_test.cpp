@@ -41,6 +41,7 @@ private slots:
     void returnsSpecificResultsForManagementCommands();
     void publishesOrderedSnapshotsWithPolicyOverrides();
     void restoresChangedRequestedQualityAfterDroppingToFourRooms();
+    void appliesRateAtFourRoomsAndPolicyRateAtFiveRooms();
     void togglesFavoriteAndPublishesIt();
     void appliesSingleAudioFocusAndPublishesIt();
     void appliesAudioModesAndGlobalMute();
@@ -385,6 +386,36 @@ void MultiRoomCoordinatorTest::appliesAudioModesAndGlobalMute()
     client.shutdown();
 }
 
+void MultiRoomCoordinatorTest::appliesRateAtFourRoomsAndPolicyRateAtFiveRooms()
+{
+    StreamgetProcessClient client(fakeServicePath());
+    MultiRoomCoordinator coordinator(&client);
+
+    for (int index = 0; index < 4; ++index) {
+        QCOMPARE(coordinator.addRoomDetailed(roomId(index), StreamQuality::Auto, 8),
+                 RoomCommandResult::Accepted);
+    }
+    QCOMPARE(coordinator.roomSnapshots().at(0).requestedQualityRate, 8);
+    QCOMPARE(coordinator.roomSnapshots().at(0).effectiveQualityRate, 8);
+    QCOMPARE(coordinator.setRequestedQuality(roomId(3), StreamQuality::High, 3),
+             RoomCommandResult::Accepted);
+    QCOMPARE(coordinator.roomSnapshots().at(3).requestedQualityRate, 3);
+    QCOMPARE(coordinator.roomSnapshots().at(3).effectiveQualityRate, 3);
+
+    QCOMPARE(coordinator.addRoomDetailed(roomId(4), StreamQuality::Auto, 2),
+             RoomCommandResult::Accepted);
+    QCOMPARE(coordinator.roomSnapshots().size(), 5);
+    const RoomSnapshots fiveRoomSnapshots = coordinator.roomSnapshots();
+    for (const RoomSnapshot &snapshot : fiveRoomSnapshots) {
+        QCOMPARE(snapshot.effectiveQualityRate, -1);
+    }
+
+    QCOMPARE(coordinator.removeRoomDetailed(roomId(4)), RoomCommandResult::Accepted);
+    QCOMPARE(coordinator.roomSnapshots().at(0).effectiveQualityRate, 8);
+    QCOMPARE(coordinator.roomSnapshots().at(3).effectiveQualityRate, 3);
+    client.shutdown();
+}
+
 void MultiRoomCoordinatorTest::marksEveryRoomFocusedInMultiAudioMode()
 {
     StreamgetProcessClient client(fakeServicePath());
@@ -567,8 +598,8 @@ void MultiRoomCoordinatorTest::replacesRoomsInRequestedOrderAndReleasesRemovedSe
     QVERIFY(coordinator.attachPlayer(QStringLiteral("63137"), &removedPlayer));
 
     const QVector<CoordinatorRoomSpec> target{
-        {QStringLiteral("63138"), StreamQuality::High, {}, 42, true},
-        {QStringLiteral("63136"), StreamQuality::Auto, {}, 88, false},
+        {QStringLiteral("63138"), StreamQuality::High, -1, {}, 42, true},
+        {QStringLiteral("63136"), StreamQuality::Auto, -1, {}, 88, false},
     };
     QCOMPARE(coordinator.replaceRooms(target), RoomCommandResult::Accepted);
     QCOMPARE(coordinator.roomIds(), QStringList({QStringLiteral("63138"), QStringLiteral("63136")}));

@@ -130,6 +130,14 @@ public:
         return {};
     }
 
+    Q_INVOKABLE QString setQuality(const QString &roomId, int quality, int qualityRate = -1)
+    {
+        lastQualityRoom = roomId;
+        lastQuality = quality;
+        lastQualityRate = qualityRate;
+        return {};
+    }
+
     Q_INVOKABLE void refreshRoom(const QString &roomId)
     {
         refreshedRoom = roomId;
@@ -155,6 +163,9 @@ public:
 
     QString lastVolumeRoom;
     int lastVolume = -1;
+    QString lastQualityRoom;
+    int lastQuality = -1;
+    int lastQualityRate = -2;
     QString refreshedRoom;
     QString movedRoom;
     int movedDelta = 0;
@@ -262,14 +273,15 @@ QVariantMap roomTileProperties(const QString &danmakuState)
         {QStringLiteral("favorite"), false},
         {QStringLiteral("audioFocused"), false},
         {QStringLiteral("requestedQuality"), QStringLiteral("auto")},
+        {QStringLiteral("requestedQualityRate"), -1},
         {QStringLiteral("effectiveQuality"), QStringLiteral("auto")},
         {QStringLiteral("availableQualities"), QVariantList{
             QVariantMap{{QStringLiteral("id"), QStringLiteral("auto")},
                         {QStringLiteral("label"), QStringLiteral("自动")},
-                        {QStringLiteral("quality"), QStringLiteral("auto")}},
-            QVariantMap{{QStringLiteral("id"), QStringLiteral("high")},
+                        {QStringLiteral("rate"), 4}},
+            QVariantMap{{QStringLiteral("id"), QStringLiteral("rate-3")},
                         {QStringLiteral("label"), QStringLiteral("高清")},
-                        {QStringLiteral("quality"), QStringLiteral("high")}},
+                        {QStringLiteral("rate"), 3}},
         }},
         {QStringLiteral("muted"), true},
         {QStringLiteral("volume"), 100},
@@ -322,6 +334,8 @@ private slots:
     void truncatesLongRoomTitleBeforeActions();
     void keepsSidebarMetadataClearOfActionsForLongTitles();
     void exposesRoomVolumeAndRefreshControls();
+    void switchesRoomQualityByStreamRate();
+    void rendersAvailableQualitiesFromModelRole();
     void defersRoomRemovalUntilAfterQmlHandlerReturns();
     void rebindsPlayerWhenRoomIdentityChanges();
     void rendersFallbackMetadataAndUnknownStatus();
@@ -1284,6 +1298,93 @@ void QmlInteractionTest::exposesRoomVolumeAndRefreshControls()
     QCOMPARE(controller.refreshedRoom, QStringLiteral("63136"));
 }
 
+void QmlInteractionTest::switchesRoomQualityByStreamRate()
+{
+    registerQmlTypes();
+    QQmlApplicationEngine engine;
+    QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qml/components/RoomTile.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+
+    FakeRoomController controller;
+    QVariantMap properties = roomTileProperties(QStringLiteral("connected"));
+    properties[QStringLiteral("requestedQualityRate")] = 3;
+    properties[QStringLiteral("controller")] = QVariant::fromValue(static_cast<QObject *>(&controller));
+    std::unique_ptr<QObject> tile(component.createWithInitialProperties(properties));
+    QVERIFY2(tile != nullptr, qPrintable(component.errorString()));
+
+    QObject *quality = tile->findChild<QObject *>(QStringLiteral("roomQualitySelector"));
+    QVERIFY(quality != nullptr);
+    QCOMPARE(quality->property("count").toInt(), 2);
+    QCOMPARE(quality->property("currentIndex").toInt(), 1);
+    QVERIFY(QMetaObject::invokeMethod(quality, "activated", Q_ARG(int, 0)));
+    QCOMPARE(controller.lastQualityRoom, QStringLiteral("63136"));
+    QCOMPARE(controller.lastQualityRate, 4);
+    QCOMPARE(controller.lastQuality, 0);
+}
+
+void QmlInteractionTest::rendersAvailableQualitiesFromModelRole()
+{
+    registerQmlTypes();
+    QQmlApplicationEngine engine;
+    QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qml/components/WorkspaceGrid.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+
+    QQuickWindow hostWindow;
+    hostWindow.resize(QSize(1280, 720));
+    hostWindow.show();
+
+    const QVariantList rooms{
+        QVariantMap{
+            {QStringLiteral("roomId"), QStringLiteral("63136")},
+            {QStringLiteral("anchorName"), QStringLiteral("主播")},
+            {QStringLiteral("title"), QStringLiteral("标题")},
+            {QStringLiteral("category"), QStringLiteral("游戏")},
+            {QStringLiteral("viewerLabel"), QStringLiteral("1.2万")},
+            {QStringLiteral("avatarUrl"), QUrl()},
+            {QStringLiteral("liveState"), QStringLiteral("online")},
+            {QStringLiteral("playbackState"), QStringLiteral("playing")},
+            {QStringLiteral("primary"), true},
+            {QStringLiteral("favorite"), false},
+            {QStringLiteral("audioFocused"), false},
+            {QStringLiteral("requestedQuality"), QStringLiteral("high")},
+            {QStringLiteral("requestedQualityRate"), 3},
+            {QStringLiteral("effectiveQuality"), QStringLiteral("high")},
+            {QStringLiteral("availableQualities"), QVariantList{
+                 QVariantMap{{QStringLiteral("id"), QStringLiteral("auto")},
+                             {QStringLiteral("label"), QStringLiteral("自动")},
+                             {QStringLiteral("rate"), 4}},
+                 QVariantMap{{QStringLiteral("id"), QStringLiteral("rate-3")},
+                             {QStringLiteral("label"), QStringLiteral("高清")},
+                             {QStringLiteral("rate"), 3}},
+             }},
+            {QStringLiteral("muted"), false},
+            {QStringLiteral("volume"), 100},
+            {QStringLiteral("danmakuEnabled"), false},
+            {QStringLiteral("danmakuState"), QStringLiteral("idle")},
+            {QStringLiteral("danmakuErrorCode"), QStringLiteral("NONE")},
+        },
+    };
+
+    std::unique_ptr<QObject> grid(component.createWithInitialProperties({
+        {QStringLiteral("parent"), QVariant::fromValue(hostWindow.contentItem())},
+        {QStringLiteral("width"), 1280},
+        {QStringLiteral("height"), 720},
+        {QStringLiteral("roomModel"), rooms},
+        {QStringLiteral("layoutMode"), QStringLiteral("auto")},
+        {QStringLiteral("primaryRoomId"), QStringLiteral("63136")},
+    }));
+    QVERIFY2(grid != nullptr, qPrintable(component.errorString()));
+
+    auto *surface = grid->findChild<QQuickItem *>(QStringLiteral("layoutSurface"));
+    QVERIFY(surface != nullptr);
+    const QList<QQuickItem *> tiles = roomTiles(surface);
+    QCOMPARE(tiles.size(), 1);
+
+    QObject *quality = tiles.constFirst()->findChild<QObject *>(QStringLiteral("roomQualitySelector"));
+    QVERIFY(quality != nullptr);
+    QCOMPARE(quality->property("count").toInt(), 2);
+    QCOMPARE(quality->property("currentIndex").toInt(), 1);
+}
 void QmlInteractionTest::defersRoomRemovalUntilAfterQmlHandlerReturns()
 {
     registerQmlTypes();

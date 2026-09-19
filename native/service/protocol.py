@@ -6,6 +6,7 @@ from typing import Any
 
 ROOM_ID_RE = re.compile(r"^[0-9]{1,20}$")
 QUALITY_VALUES = frozenset({"auto", "original", "super", "high", "standard"})
+MAX_QUALITY_RATE = 255
 OPERATIONS = frozenset({"ping", "resolve", "search", "cancel", "shutdown"})
 
 
@@ -46,6 +47,14 @@ def _valid_quality(value: Any) -> bool:
     return isinstance(value, str) and value in QUALITY_VALUES
 
 
+def _valid_quality_rate(value: Any) -> bool:
+    return (
+        isinstance(value, int)
+        and not isinstance(value, bool)
+        and 0 <= value <= MAX_QUALITY_RATE
+    )
+
+
 def parse_request(line: str) -> dict[str, Any]:
     try:
         value = json.loads(line)
@@ -66,14 +75,22 @@ def parse_request(line: str) -> dict[str, Any]:
     if operation == "resolve":
         room_id = value.get("roomId")
         quality = value.get("quality")
-        if not _valid_room_id(room_id) or not _valid_quality(quality):
+        quality_rate = value.get("qualityRate")
+        if (
+            not _valid_room_id(room_id)
+            or not _valid_quality(quality)
+            or (quality_rate is not None and not _valid_quality_rate(quality_rate))
+        ):
             raise ProtocolError(ErrorCode.INVALID_INPUT)
-        return {
+        result = {
             "requestId": request_id,
             "op": operation,
             "roomId": room_id,
             "quality": quality,
         }
+        if quality_rate is not None:
+            result["qualityRate"] = quality_rate
+        return result
 
     if operation == "search":
         query = value.get("query")
@@ -96,14 +113,18 @@ def success_resolve(
     room_id: str,
     is_live: bool,
     variants: list[dict[str, Any]],
+    quality_options: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    return {
+    response = {
         "requestId": request_id,
         "ok": True,
         "roomId": room_id,
         "isLive": bool(is_live),
         "variants": list(variants),
     }
+    if quality_options:
+        response["qualityOptions"] = list(quality_options)
+    return response
 
 
 def error_response(request_id: int, code: ErrorCode) -> dict[str, Any]:

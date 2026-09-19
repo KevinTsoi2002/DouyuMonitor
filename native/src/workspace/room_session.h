@@ -29,7 +29,8 @@ public:
                 QString roomId,
                 StreamQuality userQuality,
                 QObject *parent = nullptr,
-                RoomMetadata metadata = {});
+                RoomMetadata metadata = {},
+                int userQualityRate = -1);
     ~RoomSession() override;
 
     QString roomId() const;
@@ -37,8 +38,12 @@ public:
     void applyMetadata(const RoomSearchResult &result);
     StreamQuality userQuality() const noexcept;
     bool setRequestedQuality(StreamQuality quality);
+    bool setRequestedQuality(StreamQuality quality, int qualityRate);
+    int userQualityRate() const noexcept;
     StreamQuality effectiveQuality() const noexcept;
     bool setEffectiveQuality(StreamQuality quality);
+    int effectiveQualityRate() const noexcept;
+    bool setEffectiveQualityRate(int qualityRate);
     State state() const noexcept;
     RoomLiveStatus liveStatus() const noexcept;
     RoomPlaybackHealth playbackHealth() const noexcept;
@@ -73,7 +78,8 @@ signals:
     void qualityChanged(StreamQuality quality);
 
 private slots:
-    void onControllerVariantsReady(QVector<StreamVariant> variants);
+    void onControllerVariantsReady(QVector<StreamVariant> variants,
+                                   QVector<StreamQualityOption> qualityOptions);
     void onControllerSourceReady(MediaSource source);
     void onControllerFailed(QString errorCode);
     void onControllerStateChanged(RemotePlaybackController::State state);
@@ -88,7 +94,9 @@ private:
     QString roomId_;
     RoomMetadata metadata_;
     StreamQuality userQuality_ = StreamQuality::Auto;
+    int userQualityRate_ = -1;
     StreamQuality effectiveQuality_ = StreamQuality::Auto;
+    int effectiveQualityRate_ = -1;
     State state_ = State::Idle;
     RoomLiveStatus liveStatus_ = RoomLiveStatus::Unknown;
     RoomPlaybackHealth playbackHealth_ = RoomPlaybackHealth::Pending;

@@ -122,6 +122,9 @@ QByteArray encodeRequest(const ServiceRequest &request)
     case ServiceOperation::Resolve:
         object.insert(QStringLiteral("roomId"), request.roomId);
         object.insert(QStringLiteral("quality"), qualityToString(request.quality));
+        if (request.qualityRate >= 0) {
+            object.insert(QStringLiteral("qualityRate"), request.qualityRate);
+        }
         break;
     case ServiceOperation::Search:
         object.insert(QStringLiteral("query"), request.query);
@@ -158,8 +161,16 @@ std::optional<ServiceRequest> decodeRequest(const QByteArray &line)
     if (*operation == ServiceOperation::Resolve) {
         request.roomId = object.value(QStringLiteral("roomId")).toString();
         const auto quality = qualityFromString(object.value(QStringLiteral("quality")).toString());
-        if (!isValidRoomId(request.roomId) || !quality.has_value()) return std::nullopt;
+        const QJsonValue qualityRate = object.value(QStringLiteral("qualityRate"));
+        if (!isValidRoomId(request.roomId) || !quality.has_value()
+            || (!qualityRate.isUndefined()
+                && (!qualityRate.isDouble() || qualityRate.toInt() < 0
+                    || qualityRate.toInt() > 255
+                    || qualityRate.toDouble() != qualityRate.toInt()))) {
+            return std::nullopt;
+        }
         request.quality = *quality;
+        request.qualityRate = qualityRate.isUndefined() ? -1 : qualityRate.toInt();
     } else if (*operation == ServiceOperation::Search) {
         request.query = object.value(QStringLiteral("query")).toString().trimmed();
         if (request.query.isEmpty() || request.query.size() > 200) return std::nullopt;
@@ -261,6 +272,29 @@ std::optional<ServiceResponse> decodeResponse(const QByteArray &line)
         return std::nullopt;
     }
 
+    if (object.contains(QStringLiteral("qualityOptions"))) {
+        if (!object.value(QStringLiteral("qualityOptions")).isArray()) return std::nullopt;
+        QSet<QString> optionIds;
+        QSet<int> optionRates;
+        const QJsonArray options = object.value(QStringLiteral("qualityOptions")).toArray();
+        for (const QJsonValue &value : options) {
+            if (!value.isObject()) return std::nullopt;
+            const QJsonObject option = value.toObject();
+            const QString id = option.value(QStringLiteral("id")).toString();
+            const QString label = option.value(QStringLiteral("label")).toString();
+            const QJsonValue rate = option.value(QStringLiteral("rate"));
+            if (id.isEmpty() || label.isEmpty() || !rate.isDouble()
+                || rate.toInt() < 0 || rate.toInt() > 255
+                || rate.toDouble() != rate.toInt()
+                || optionIds.contains(id) || optionRates.contains(rate.toInt())) {
+                return std::nullopt;
+            }
+            optionIds.insert(id);
+            optionRates.insert(rate.toInt());
+            response.qualityOptions.push_back({id, label, rate.toInt()});
+        }
+    }
+
     QSet<QString> variantIds;
     const QJsonArray variants = object.value(QStringLiteral("variants")).toArray();
     for (const QJsonValue &value : variants) {
@@ -269,14 +303,26 @@ std::optional<ServiceResponse> decodeResponse(const QByteArray &line)
         const QString id = variant.value(QStringLiteral("id")).toString();
         const QString label = variant.value(QStringLiteral("label")).toString();
         const auto quality = qualityFromString(variant.value(QStringLiteral("quality")).toString());
+        const QJsonValue qualityRate = variant.value(QStringLiteral("qualityRate"));
         const QString container = variant.value(QStringLiteral("container")).toString();
         const QUrl playbackUrl(variant.value(QStringLiteral("playbackUrl")).toString());
         if (id.isEmpty() || label.isEmpty() || container.isEmpty() || !quality.has_value()
+            || (!qualityRate.isUndefined()
+                && (!qualityRate.isDouble() || qualityRate.toInt() < 0
+                    || qualityRate.toInt() > 255
+                    || qualityRate.toDouble() != qualityRate.toInt()))
             || !isAllowedPlaybackUrl(playbackUrl) || variantIds.contains(id)) {
             return std::nullopt;
         }
         variantIds.insert(id);
-        response.variants.push_back({id, label, *quality, container, playbackUrl});
+        StreamVariant parsed;
+        parsed.id = id;
+        parsed.label = label;
+        parsed.quality = *quality;
+        parsed.qualityRate = qualityRate.isUndefined() ? -1 : qualityRate.toInt();
+        parsed.container = container;
+        parsed.playbackUrl = playbackUrl;
+        response.variants.push_back(std::move(parsed));
     }
 
     if (response.isLive && response.variants.isEmpty()) return std::nullopt;

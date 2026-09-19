@@ -36,6 +36,7 @@ struct NativeRoomRecord {
     QString roomId;
     RoomMetadata metadata;
     StreamQuality requestedQuality = StreamQuality::Auto;
+    int requestedQualityRate = -1;
     bool favorite = false;
     qint64 lastOpenedAtMs = 0;
     int volume = 100;
@@ -82,7 +83,7 @@ struct NativeWorkspacePreset {
 };
 
 struct NativeWorkspaceSnapshot {
-    int version = 4;
+    int version = 5;
     QVector<NativeRoomRecord> library;
     QVector<NativeRoomGroup> groups;
     QVector<NativeWorkspacePreset> presets;

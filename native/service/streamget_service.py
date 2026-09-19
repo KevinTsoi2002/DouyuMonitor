@@ -46,8 +46,18 @@ async def run_service(
         try:
             async with semaphore:
                 if request["op"] == "resolve":
-                    is_live, variants = await backend.resolve(request["roomId"], request["quality"])
-                    await emit(success_resolve(request_id, request["roomId"], is_live, variants))
+                    is_live, variants, options = await backend.resolve(
+                        request["roomId"],
+                        request["quality"],
+                        request.get("qualityRate"),
+                    )
+                    await emit(success_resolve(
+                        request_id,
+                        request["roomId"],
+                        is_live,
+                        variants,
+                        options,
+                    ))
                 elif request["op"] == "search":
                     results = await asyncio.to_thread(backend.search, request["query"])
                     await emit({"requestId": request_id, "ok": True, "results": results})

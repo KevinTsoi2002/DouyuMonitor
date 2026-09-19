@@ -43,6 +43,7 @@ public:
         FavoriteRole,
         AudioFocusedRole,
         RequestedQualityRole,
+        RequestedQualityRateRole,
         EffectiveQualityRole,
         MutedRole,
         VolumeRole,

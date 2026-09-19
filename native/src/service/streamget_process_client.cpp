@@ -66,12 +66,14 @@ quint64 StreamgetProcessClient::ping(int timeoutMs)
 
 quint64 StreamgetProcessClient::resolve(const QString &roomId,
                                         StreamQuality quality,
-                                        int timeoutMs)
+                                        int timeoutMs,
+                                        int qualityRate)
 {
     ServiceRequest request;
     request.operation = ServiceOperation::Resolve;
     request.roomId = roomId;
     request.quality = quality;
+    request.qualityRate = qualityRate;
     return enqueue(request, timeoutMs);
 }
 

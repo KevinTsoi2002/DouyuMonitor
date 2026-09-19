@@ -172,7 +172,7 @@ int main(int argc, char **argv)
                 pending.insert(request->requestId, timer);
                 QObject::connect(timer, &QTimer::timeout, &application,
                                  [&, timer, requestId = request->requestId, roomId = request->roomId,
-                                  resolveIndex] {
+                                  qualityRate = request->qualityRate, resolveIndex] {
                                      pending.remove(requestId);
                                      timer->deleteLater();
                                      if (!options.errorCode.isEmpty()) {
@@ -193,19 +193,36 @@ int main(int argc, char **argv)
                                      }
                                      QJsonObject variant;
                                      variant.insert(QStringLiteral("id"), QStringLiteral("flv-auto"));
-                                     variant.insert(QStringLiteral("label"), QStringLiteral("fake"));
+                                     variant.insert(QStringLiteral("label"),
+                                                    qualityRate >= 0
+                                                        ? QStringLiteral("rate-%1").arg(qualityRate)
+                                                        : QStringLiteral("fake"));
                                      variant.insert(QStringLiteral("quality"), QStringLiteral("auto"));
+                                     variant.insert(QStringLiteral("qualityRate"),
+                                                    qualityRate >= 0
+                                                        ? qualityRate : 4);
                                      variant.insert(QStringLiteral("container"), QStringLiteral("flv"));
                                      variant.insert(QStringLiteral("playbackUrl"),
                                                    QStringLiteral("https://live.douyucdn.cn/fake.flv"));
                                      QJsonArray variants;
                                      variants.append(variant);
+                                     QJsonArray qualityOptions;
+                                     for (const int rate : {0, 8, 4, 3, 2}) {
+                                         QJsonObject option;
+                                         option.insert(QStringLiteral("id"),
+                                                       QStringLiteral("rate-%1").arg(rate));
+                                         option.insert(QStringLiteral("label"),
+                                                       QStringLiteral("quality-%1").arg(rate));
+                                         option.insert(QStringLiteral("rate"), rate);
+                                         qualityOptions.append(option);
+                                     }
                                      QJsonObject response;
                                      response.insert(QStringLiteral("requestId"), static_cast<qint64>(requestId));
                                      response.insert(QStringLiteral("ok"), true);
                                      response.insert(QStringLiteral("roomId"), roomId);
                                      response.insert(QStringLiteral("isLive"), true);
                                      response.insert(QStringLiteral("variants"), variants);
+                                     response.insert(QStringLiteral("qualityOptions"), qualityOptions);
                                      emitObject(response);
                                  });
                 timer->start(options.delayMs);
