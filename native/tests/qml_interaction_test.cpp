@@ -301,6 +301,16 @@ QList<QQuickItem *> roomTiles(QQuickItem *surface)
     return tiles;
 }
 
+QQuickItem *quickItemByObjectName(QQuickItem *root, const QString &objectName)
+{
+    if (!root) return nullptr;
+    if (root->objectName() == objectName) return root;
+    for (QQuickItem *child : root->childItems()) {
+        if (QQuickItem *match = quickItemByObjectName(child, objectName)) return match;
+    }
+    return nullptr;
+}
+
 } // namespace
 
 class QmlInteractionTest final : public QObject {
@@ -335,6 +345,8 @@ private slots:
     void keepsSidebarMetadataClearOfActionsForLongTitles();
     void exposesRoomVolumeAndRefreshControls();
     void switchesRoomQualityByStreamRate();
+    void keepsQualityLabelGeometryWhileHoveringSelector();
+    void rendersQualityPopupOptions();
     void rendersAvailableQualitiesFromModelRole();
     void defersRoomRemovalUntilAfterQmlHandlerReturns();
     void rebindsPlayerWhenRoomIdentityChanges();
@@ -1316,10 +1328,126 @@ void QmlInteractionTest::switchesRoomQualityByStreamRate()
     QVERIFY(quality != nullptr);
     QCOMPARE(quality->property("count").toInt(), 2);
     QCOMPARE(quality->property("currentIndex").toInt(), 1);
+    QVERIFY(quality->property("width").toDouble() >= 82.0);
+    QObject *qualityLabel = tile->findChild<QObject *>(QStringLiteral("roomQualityLabel"));
+    QVERIFY(qualityLabel != nullptr);
+    QCOMPARE(qualityLabel->property("text").toString(), QStringLiteral("高清"));
+    QCOMPARE(qualityLabel->property("elide").toInt(), int(Qt::ElideNone));
     QVERIFY(QMetaObject::invokeMethod(quality, "activated", Q_ARG(int, 0)));
     QCOMPARE(controller.lastQualityRoom, QStringLiteral("63136"));
     QCOMPARE(controller.lastQualityRate, 4);
     QCOMPARE(controller.lastQuality, 0);
+}
+
+void QmlInteractionTest::keepsQualityLabelGeometryWhileHoveringSelector()
+{
+    registerQmlTypes();
+    QQmlApplicationEngine engine;
+    QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qml/components/RoomTile.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+
+    QQuickWindow hostWindow;
+    hostWindow.resize(QSize(640, 480));
+    hostWindow.show();
+
+    FakeRoomController controller;
+    QVariantMap properties = roomTileProperties(QStringLiteral("connected"));
+    properties[QStringLiteral("controller")] = QVariant::fromValue(static_cast<QObject *>(&controller));
+    properties[QStringLiteral("parent")] = QVariant::fromValue(hostWindow.contentItem());
+    properties[QStringLiteral("width")] = 640;
+    properties[QStringLiteral("height")] = 360;
+    std::unique_ptr<QObject> tile(component.createWithInitialProperties(properties));
+    QVERIFY2(tile != nullptr, qPrintable(component.errorString()));
+
+    auto *quality = qobject_cast<QQuickItem *>(
+        tile->findChild<QObject *>(QStringLiteral("roomQualitySelector")));
+    auto *qualityLabel = qobject_cast<QQuickItem *>(
+        tile->findChild<QObject *>(QStringLiteral("roomQualityLabel")));
+    QVERIFY(quality != nullptr);
+    QVERIFY(qualityLabel != nullptr);
+
+    const auto labelCenter = [qualityLabel]() {
+        return qualityLabel->mapToScene(QPointF(qualityLabel->width() / 2.0,
+                                                qualityLabel->height() / 2.0));
+    };
+    const QPointF initialCenter = labelCenter();
+
+    const QPoint bottomCenter = quality->mapToScene(
+        QPointF(quality->width() / 2.0, quality->height() - 1.0)).toPoint();
+    QTest::mouseMove(&hostWindow, bottomCenter);
+    QTest::qWait(50);
+
+    const QPointF hoveredCenter = labelCenter();
+    QVERIFY(qAbs(hoveredCenter.x() - initialCenter.x()) <= 0.1);
+    QVERIFY(qAbs(hoveredCenter.y() - initialCenter.y()) <= 0.1);
+}
+
+void QmlInteractionTest::rendersQualityPopupOptions()
+{
+    registerQmlTypes();
+    QQmlApplicationEngine engine;
+    QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qml/components/RoomTile.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+
+    QQuickWindow hostWindow;
+    hostWindow.resize(QSize(640, 480));
+    hostWindow.show();
+
+    FakeRoomController controller;
+    QVariantMap properties = roomTileProperties(QStringLiteral("connected"));
+    properties[QStringLiteral("controller")] = QVariant::fromValue(static_cast<QObject *>(&controller));
+    properties[QStringLiteral("parent")] = QVariant::fromValue(hostWindow.contentItem());
+    properties[QStringLiteral("width")] = 640;
+    properties[QStringLiteral("height")] = 360;
+    std::unique_ptr<QObject> tile(component.createWithInitialProperties(properties));
+    QVERIFY2(tile != nullptr, qPrintable(component.errorString()));
+
+    QObject *quality = tile->findChild<QObject *>(QStringLiteral("roomQualitySelector"));
+    QVERIFY(quality != nullptr);
+    QObject *popup = quality->property("popup").value<QObject *>();
+    QVERIFY(popup != nullptr);
+    QVERIFY(QMetaObject::invokeMethod(popup, "open"));
+    QTRY_VERIFY_WITH_TIMEOUT(popup->property("visible").toBool(), 1000);
+    auto *popupContent = qobject_cast<QQuickItem *>(popup->property("contentItem").value<QObject *>());
+    QVERIFY(popupContent != nullptr);
+    QTRY_COMPARE_WITH_TIMEOUT(popupContent->property("count").toInt(), 2, 1000);
+
+    QQuickItem *automaticOption = nullptr;
+    QVERIFY(QMetaObject::invokeMethod(popupContent,
+                                      "itemAtIndex",
+                                      Q_RETURN_ARG(QQuickItem *, automaticOption),
+                                      Q_ARG(int, 0)));
+    QQuickItem *highDefinitionOption = nullptr;
+    QVERIFY(QMetaObject::invokeMethod(popupContent,
+                                      "itemAtIndex",
+                                      Q_RETURN_ARG(QQuickItem *, highDefinitionOption),
+                                      Q_ARG(int, 1)));
+    QVERIFY(automaticOption != nullptr);
+    QVERIFY(highDefinitionOption != nullptr);
+
+    QQuickItem *automaticLabel =
+        quickItemByObjectName(automaticOption, QStringLiteral("roomQualityOptionLabel"));
+    QQuickItem *highDefinitionLabel =
+        quickItemByObjectName(highDefinitionOption, QStringLiteral("roomQualityOptionLabel"));
+    QVERIFY(automaticLabel != nullptr);
+    QVERIFY(highDefinitionLabel != nullptr);
+    QCOMPARE(automaticLabel->property("text").toString(), QStringLiteral("自动"));
+    QCOMPARE(highDefinitionLabel->property("text").toString(), QStringLiteral("高清"));
+
+    const auto labelCenter = [](QQuickItem *label) {
+        return label->mapToScene(QPointF(label->width() / 2.0, label->height() / 2.0));
+    };
+    const QPointF initialCenter = labelCenter(automaticLabel);
+    const qreal initialWidth = automaticLabel->width();
+    const QPoint bottomCenter = automaticOption->mapToScene(
+        QPointF(automaticOption->width() / 2.0, automaticOption->height() - 1.0)).toPoint();
+    QTest::mouseMove(&hostWindow, bottomCenter);
+    QTest::qWait(50);
+
+    const QPointF hoveredCenter = labelCenter(automaticLabel);
+    QVERIFY(qAbs(hoveredCenter.x() - initialCenter.x()) <= 0.1);
+    QVERIFY(qAbs(hoveredCenter.y() - initialCenter.y()) <= 0.1);
+    QVERIFY(qAbs(automaticLabel->width() - initialWidth) <= 0.1);
 }
 
 void QmlInteractionTest::rendersAvailableQualitiesFromModelRole()
@@ -1455,8 +1583,11 @@ void QmlInteractionTest::rendersFallbackMetadataAndUnknownStatus()
     QObject *anchor = tile->findChild<QObject *>(QStringLiteral("roomAnchorName"));
     QObject *title = tile->findChild<QObject *>(QStringLiteral("roomTitle"));
     QObject *status = tile->findChild<QObject *>(QStringLiteral("roomStatusLabel"));
+    QObject *viewer = tile->findChild<QObject *>(QStringLiteral("roomViewerLabel"));
     QVERIFY(anchor != nullptr);
     QVERIFY(title != nullptr);
+    QVERIFY(viewer != nullptr);
+    QCOMPARE(viewer->property("text").toString(), QStringLiteral("热度 --"));
     QVERIFY(status != nullptr);
     QCOMPARE(anchor->property("text").toString(), QStringLiteral("63136"));
     QCOMPARE(title->property("text").toString(), QStringLiteral("斗鱼直播间"));

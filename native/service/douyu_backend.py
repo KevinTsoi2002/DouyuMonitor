@@ -11,7 +11,8 @@ from native.service.protocol import ErrorCode, QUALITY_VALUES, ROOM_ID_RE
 
 
 ROOM_API_BASE_URL = "https://open.douyucdn.cn/api/RoomApi/room/"
-SEARCH_API_URL = "https://www.douyu.com/japi/search/api/searchShow"
+SEARCH_API_URL = "https://www.douyu.com/wgapi/livenc/search/overallSearchV8"
+LEGACY_SEARCH_API_URL = "https://www.douyu.com/japi/search/api/searchShow"
 ALLOWED_HOST_SUFFIXES = (".douyucdn.cn", ".douyucdn2.cn", ".edgesrv.com")
 
 
@@ -63,6 +64,31 @@ def _viewer_label(value: Any) -> str:
         value = f"{viewers / 10_000:.1f}".rstrip("0").rstrip(".")
         return f"{value} 万"
     return f"{round(viewers):,}"
+
+
+def _search_candidate(item: Any) -> dict[str, Any] | None:
+    if not isinstance(item, dict):
+        return None
+    room = item.get("anchorInfo")
+    if not isinstance(room, dict):
+        return None
+    room_id = _scalar_string(room.get("rid"))
+    anchor_name = _scalar_string(room.get("nickName"))
+    if not room_id or not anchor_name:
+        return None
+    title = _scalar_string(room.get("description"))
+    candidate = {
+        "roomId": room_id,
+        "anchorName": anchor_name,
+        "title": title or f"{anchor_name}的直播间",
+        "category": _scalar_string(room.get("cateName")) or "未分类",
+        "online": _scalar_string(room.get("isLive")) == "1",
+        "viewerLabel": "0",
+    }
+    avatar_url = _safe_http_url(room.get("avatar"))
+    if avatar_url:
+        candidate["avatarUrl"] = avatar_url
+    return candidate
 
 
 def _quality_rate_for(quality: str) -> str:
@@ -144,18 +170,38 @@ class DouyuBackend:
     def search(self, query: str) -> list[dict[str, Any]]:
         value = query.strip()
         if ROOM_ID_RE.fullmatch(value):
-            return [self._fetch_room(value)]
+            try:
+                return [self._fetch_room(value)]
+            except BackendError:
+                pass
 
-        url = f"{SEARCH_API_URL}?{urlencode({'kw': value, 'page': 1, 'pageSize': 20})}"
+        url = f"{SEARCH_API_URL}?{urlencode({'kw': value, 'pageOff': 0, 'pageSize': 20})}"
         payload = self._fetch_json(url, self._timeout)
         if not isinstance(payload, dict) or payload.get("error") != 0:
             raise BackendError(ErrorCode.INVALID_RESPONSE)
         data = payload.get("data")
-        if not isinstance(data, dict) or not isinstance(data.get("relateShow"), list):
+        if not isinstance(data, dict):
+            raise BackendError(ErrorCode.INVALID_RESPONSE)
+        relate_user = data.get("relateUser")
+        if not isinstance(relate_user, dict) or not isinstance(relate_user.get("list"), list):
             raise BackendError(ErrorCode.INVALID_RESPONSE)
 
         candidates: dict[str, dict[str, Any]] = {}
-        for item in data["relateShow"]:
+        for item in relate_user["list"]:
+            candidate = _search_candidate(item)
+            if candidate is not None:
+                candidates.setdefault(candidate["roomId"], candidate)
+        if candidates:
+            return list(candidates.values())
+
+        legacy_url = f"{LEGACY_SEARCH_API_URL}?{urlencode({'kw': value, 'page': 1, 'pageSize': 20})}"
+        legacy_payload = self._fetch_json(legacy_url, self._timeout)
+        if not isinstance(legacy_payload, dict) or legacy_payload.get("error") != 0:
+            raise BackendError(ErrorCode.INVALID_RESPONSE)
+        legacy_data = legacy_payload.get("data")
+        if not isinstance(legacy_data, dict) or not isinstance(legacy_data.get("relateShow"), list):
+            raise BackendError(ErrorCode.INVALID_RESPONSE)
+        for item in legacy_data["relateShow"]:
             if not isinstance(item, dict):
                 continue
             room_id = _scalar_string(item.get("rid"))

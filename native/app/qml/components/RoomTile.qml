@@ -245,6 +245,7 @@ FocusScope {
                 }
                 Text {
                     id: viewerLabel
+                    objectName: "roomViewerLabel"
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
                     width: 74
@@ -252,7 +253,7 @@ FocusScope {
                     elide: Text.ElideRight
                     font.pixelSize: 9
                     horizontalAlignment: Text.AlignRight
-                    text: root.displayViewerLabel + " 人观看"
+                    text: "热度 " + root.displayViewerLabel
                 }
             }
 
@@ -498,7 +499,7 @@ FocusScope {
                 ComboBox {
                     id: qualityBox
                     objectName: "roomQualitySelector"
-                    width: 52
+                    width: Math.max(82, Math.min(112, implicitContentWidth + 34))
                     height: 27
                     model: root.qualityOptions
                     textRole: "label"
@@ -512,7 +513,67 @@ FocusScope {
                                                    root.qualityEnum(option.quality),
                                                    Number.isFinite(optionRate) ? optionRate : -1)
                     }
-                    contentItem: Text { leftPadding: 6; rightPadding: 4; color: "#d7dee5"; text: qualityBox.displayText; verticalAlignment: Text.AlignVCenter; font.pixelSize: 9 }
+                    contentItem: Item {
+                        Text {
+                            objectName: "roomQualityLabel"
+                            anchors.fill: parent
+                            leftPadding: 7
+                            rightPadding: 6
+                            color: "#d7dee5"
+                            text: qualityBox.displayText
+                            verticalAlignment: Text.AlignVCenter
+                            font.pixelSize: 9
+                            elide: Text.ElideNone
+                        }
+                    }
+                    popup: Popup {
+                        objectName: "roomQualityPopup"
+                        y: qualityBox.height + 2
+                        width: Math.max(qualityBox.width, Math.min(150, qualityBox.implicitContentWidth + 30))
+                        implicitHeight: contentItem.implicitHeight
+                        padding: 1
+                        background: Rectangle {
+                            radius: 5
+                            color: "#141a21"
+                            border.color: root.borderColor
+                        }
+                        contentItem: ListView {
+                            objectName: "roomQualityPopupList"
+                            clip: true
+                            implicitHeight: contentHeight
+                            model: qualityBox.delegateModel
+                            currentIndex: qualityBox.highlightedIndex
+                            interactive: false
+                            boundsBehavior: Flickable.StopAtBounds
+                            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AlwaysOff }
+                        }
+                    }
+                    delegate: ItemDelegate {
+                        id: qualityOptionDelegate
+                        required property var model
+                        required property int index
+
+                        width: ListView.view.width
+                        height: 27
+                        contentItem: Item {
+                            Text {
+                                objectName: "roomQualityOptionLabel"
+                                anchors.fill: parent
+                                leftPadding: 7
+                                rightPadding: 7
+                                text: model[qualityBox.textRole] !== undefined
+                                      ? model[qualityBox.textRole] : qualityBox.textAt(index)
+                                color: qualityOptionDelegate.highlighted ? Theme.text : "#d7dee5"
+                                font.pixelSize: 9
+                                elide: Text.ElideNone
+                                verticalAlignment: Text.AlignVCenter
+                            }
+                        }
+                        background: Rectangle {
+                            radius: 4
+                            color: parent.highlighted ? "#2a211c" : "transparent"
+                        }
+                    }
                     background: Rectangle { radius: 4; border.color: root.borderColor; color: "#10151b" }
                 }
             }

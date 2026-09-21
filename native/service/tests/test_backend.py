@@ -91,20 +91,116 @@ class BackendTests(unittest.TestCase):
             return {
                 "error": 0,
                 "data": {
-                    "relateShow": [
-                        {"rid": "1", "nickName": "A", "roomName": "One", "cateName": "Game", "isLive": "1", "hot": 100},
-                        {"rid": 1, "nickName": "A", "roomName": "Duplicate", "cateName": "Game", "isLive": "1", "hot": 1},
-                        {"rid": "2", "nickName": "B", "roomName": "Two", "cateName": "Music", "isLive": "0", "hot": 0},
-                    ]
+                    "relateUser": {
+                        "list": [
+                            {
+                                "anchorInfo": {
+                                    "rid": "1",
+                                    "nickName": "A",
+                                    "description": "One",
+                                    "cateName": "Game",
+                                    "isLive": 1,
+                                    "avatar": "https://example.com/a.jpg",
+                                }
+                            },
+                            {
+                                "anchorInfo": {
+                                    "rid": 1,
+                                    "nickName": "A",
+                                    "description": "Duplicate",
+                                    "cateName": "Game",
+                                    "isLive": 1,
+                                }
+                            },
+                            {
+                                "anchorInfo": {
+                                    "rid": "2",
+                                    "nickName": "B",
+                                    "description": "Two",
+                                    "cateName": "Music",
+                                    "isLive": 0,
+                                }
+                            },
+                        ]
+                    }
                 },
             }
 
         backend = DouyuBackend(fetch_json=fetch_json)
         results = backend.search("anchor")
         self.assertEqual([item["roomId"] for item in results], ["1", "2"])
-        self.assertEqual(results[0]["viewerLabel"], "100")
+        self.assertEqual(results[0]["title"], "One")
+        self.assertEqual(results[0]["avatarUrl"], "https://example.com/a.jpg")
         self.assertFalse(results[1]["online"])
 
+    def test_searches_numeric_vip_id_and_maps_real_room_id(self):
+        def fetch_json(url, _timeout):
+            if url.startswith("https://www.douyu.com/wgapi/livenc/search/overallSearchV8"):
+                return {
+                    "error": 0,
+                    "data": {
+                        "relateUser": {
+                            "list": [
+                                {
+                                    "anchorInfo": {
+                                        "rid": "12767534",
+                                        "vipId": "55588",
+                                        "nickName": "可可or",
+                                        "description": "【CSTG】出发！",
+                                        "cateName": "户外",
+                                        "isLive": 1,
+                                        "avatar": "https://example.com/avatar.jpg",
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                }
+            raise BackendError(ErrorCode.INVALID_RESPONSE)
+
+        backend = DouyuBackend(fetch_json=fetch_json)
+        self.assertEqual(
+            backend.search("55588"),
+            [
+                {
+                    "roomId": "12767534",
+                    "anchorName": "可可or",
+                    "avatarUrl": "https://example.com/avatar.jpg",
+                    "title": "【CSTG】出发！",
+                    "category": "户外",
+                    "online": True,
+                    "viewerLabel": "0",
+                }
+            ],
+        )
+
+    def test_falls_back_to_legacy_search_when_current_search_is_empty(self):
+        calls = []
+
+        def fetch_json(url, _timeout):
+            calls.append(url)
+            if url.startswith("https://www.douyu.com/wgapi/livenc/search/overallSearchV8"):
+                return {"error": 0, "data": {"relateUser": {"list": []}}}
+            return {
+                "error": 0,
+                "data": {
+                    "relateShow": [
+                        {
+                            "rid": "63136",
+                            "nickName": "Anchor",
+                            "roomName": "Legacy",
+                            "cateName": "Game",
+                            "isLive": "1",
+                            "hot": 1,
+                        }
+                    ]
+                },
+            }
+
+        backend = DouyuBackend(fetch_json=fetch_json)
+        results = backend.search("legacy")
+        self.assertEqual([item["roomId"] for item in results], ["63136"])
+        self.assertEqual(len(calls), 2)
     def test_maps_malformed_http_payload_to_fixed_error(self):
         backend = DouyuBackend(fetch_json=lambda _url, _timeout: {"unexpected": True})
         with self.assertRaises(BackendError) as context:
