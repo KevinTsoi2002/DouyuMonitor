@@ -76,6 +76,8 @@ private slots:
     void removesDuplicateTeamMembershipWhenLoading();
     void normalizesTeamFieldsAndLimits();
     void defaultsMissingTeamsAndNavigationVisibility();
+    void roundTripsGuildRoomCacheWithoutSensitiveFields();
+    void normalizesDuplicateAndInvalidGuildRoomCacheEntries();
 };
 
 void NativeWorkspaceStoreTest::roundTripsSafeWorkspaceState()
@@ -431,6 +433,73 @@ void NativeWorkspaceStoreTest::defaultsMissingTeamsAndNavigationVisibility()
     QCOMPARE(loaded.version, 6);
     QVERIFY(loaded.teams.isEmpty());
     QVERIFY(!loaded.navigationVisible);
+}
+
+void NativeWorkspaceStoreTest::roundTripsGuildRoomCacheWithoutSensitiveFields()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSettings settings(directory.filePath(QStringLiteral("workspace.ini")), QSettings::IniFormat);
+    NativeWorkspaceStore store(&settings);
+    NativeWorkspaceSnapshot snapshot = fixtureWorkspace();
+    snapshot.guildRoomCache = {
+        {QStringLiteral("hamster-001"),
+         QStringLiteral("71415"),
+         QStringLiteral("寅子"),
+         1'700'000'000'000},
+        {QStringLiteral("hamster-002"),
+         QStringLiteral("84452"),
+         QStringLiteral("主播阿飞"),
+         1'700'000'000'001},
+    };
+
+    QVERIFY(store.save(snapshot));
+    const NativeWorkspaceSnapshot loaded = store.load();
+    QCOMPARE(loaded.guildRoomCache, snapshot.guildRoomCache);
+    const QByteArray saved = settings.value(QStringLiteral("DouyuMonitor/nativeWorkspaceV1"))
+                                 .toByteArray();
+    for (const QByteArray &key : {QByteArrayLiteral("token"), QByteArrayLiteral("cookie"),
+                                  QByteArrayLiteral("playbackUrl"),
+                                  QByteArrayLiteral("requestHeaders"),
+                                  QByteArrayLiteral("signature"),
+                                  QByteArrayLiteral("endpoint"),
+                                  QByteArrayLiteral("raw")}) {
+        QVERIFY2(!saved.contains(key), key.constData());
+    }
+}
+
+void NativeWorkspaceStoreTest::normalizesDuplicateAndInvalidGuildRoomCacheEntries()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSettings settings(directory.filePath(QStringLiteral("workspace.ini")), QSettings::IniFormat);
+    NativeWorkspaceStore store(&settings);
+    NativeWorkspaceSnapshot snapshot;
+    snapshot.guildRoomCache = {
+        {QStringLiteral("unknown-member"),
+         QStringLiteral("12345"),
+         QStringLiteral("未知主播"),
+         1},
+        {QStringLiteral("hamster-001"),
+         QStringLiteral("abc"),
+         QStringLiteral("寅子"),
+         2},
+        {QStringLiteral("hamster-001"),
+         QStringLiteral("71415"),
+         QStringLiteral("寅子"),
+         3},
+        {QStringLiteral("hamster-001"),
+         QStringLiteral("71416"),
+         QStringLiteral("寅子"),
+         4},
+    };
+
+    QVERIFY(store.save(snapshot));
+    const NativeWorkspaceSnapshot loaded = store.load();
+    QCOMPARE(loaded.guildRoomCache.size(), 1);
+    QCOMPARE(loaded.guildRoomCache.first().memberId, QStringLiteral("hamster-001"));
+    QCOMPARE(loaded.guildRoomCache.first().roomId, QStringLiteral("71415"));
+    QCOMPARE(loaded.guildRoomCache.first().anchorName, QStringLiteral("寅子"));
 }
 QTEST_MAIN(NativeWorkspaceStoreTest)
 

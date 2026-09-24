@@ -22,6 +22,7 @@
 class MultiRoomCoordinator;
 class FavoriteMonitor;
 class StreamgetProcessClient;
+class GuildRoomResolver;
 class SystemNotificationSink;
 class WindowsNotificationService;
 class WindowsTrayService;
@@ -35,7 +36,7 @@ class AppController final : public QObject {
     Q_PROPERTY(MonitoringModel *monitoring READ monitoring CONSTANT)
     Q_PROPERTY(DanmakuController *danmaku READ danmaku CONSTANT)
     Q_PROPERTY(QVariantList libraryRooms READ libraryRooms NOTIFY libraryRoomsChanged)
-    Q_PROPERTY(QVariantList guildRoster READ guildRoster CONSTANT)
+    Q_PROPERTY(QVariantList guildRoster READ guildRoster NOTIFY guildRosterChanged)
     Q_PROPERTY(QVariantMap notificationPreferences READ notificationPreferences
                NOTIFY notificationPreferencesChanged)
     Q_PROPERTY(bool backgroundHosted READ backgroundHosted NOTIFY backgroundHostedChanged)
@@ -119,6 +120,9 @@ public:
                                                 const QString &teamId);
     Q_INVOKABLE QString removeGuildMemberFromTeam(const QString &teamId,
                                                   const QString &memberId);
+    Q_INVOKABLE QString setGuildMemberRoomId(const QString &memberId,
+                                             const QString &roomId);
+    Q_INVOKABLE QString addGuildMemberRoom(const QString &memberId);
     Q_INVOKABLE QString setNavigationVisible(bool visible);
     Q_INVOKABLE bool setLayout(const QString &layoutId);
     Q_INVOKABLE bool setPrimaryRoomRatio(double ratio);
@@ -159,6 +163,7 @@ public:
 
 signals:
     void libraryRoomsChanged();
+    void guildRosterChanged();
     void notificationPreferencesChanged();
     void searchResultsChanged();
     void searchStateChanged();
@@ -194,6 +199,7 @@ private:
     std::unique_ptr<FavoriteMonitor> favoriteMonitor_;
     NativeWorkspaceStore workspaceStore_;
     NotificationPolicy notificationPolicy_;
+    GuildRoomResolver *guildRoomResolver_ = nullptr;
     std::unique_ptr<WindowsNotificationService> notificationService_;
     std::unique_ptr<WindowsTrayService> trayService_;
     std::unique_ptr<RoomListModel> rooms_;

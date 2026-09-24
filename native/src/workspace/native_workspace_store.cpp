@@ -283,6 +283,24 @@ NativeWorkspaceSnapshot normalize(NativeWorkspaceSnapshot snapshot)
     }
     snapshot.teams = std::move(teams);
 
+    QVector<GuildRoomCacheEntry> guildRoomCache;
+    QSet<QString> cachedMemberIds;
+    for (GuildRoomCacheEntry entry : snapshot.guildRoomCache) {
+        entry.memberId = entry.memberId.trimmed();
+        entry.roomId = entry.roomId.trimmed();
+        entry.anchorName = entry.anchorName.trimmed();
+        const GuildMember *member = GuildRoster::findById(entry.memberId);
+        if (member == nullptr || cachedMemberIds.contains(entry.memberId)
+            || !isValidRoomId(entry.roomId) || entry.anchorName.isEmpty()
+            || entry.verifiedAtMs <= 0) {
+            continue;
+        }
+        entry.anchorName = member->anchorName;
+        cachedMemberIds.insert(entry.memberId);
+        guildRoomCache.push_back(std::move(entry));
+    }
+    snapshot.guildRoomCache = std::move(guildRoomCache);
+
     QVector<NativeWorkspacePreset> presets;
     QSet<QString> presetIds;
     for (NativeWorkspacePreset preset : snapshot.presets) {
@@ -378,6 +396,16 @@ QJsonObject toJson(const NativeTeam &team)
     };
 }
 
+QJsonObject toJson(const GuildRoomCacheEntry &entry)
+{
+    return {
+        {QStringLiteral("memberId"), entry.memberId},
+        {QStringLiteral("roomId"), entry.roomId},
+        {QStringLiteral("anchorName"), entry.anchorName},
+        {QStringLiteral("verifiedAtMs"), entry.verifiedAtMs},
+    };
+}
+
 QJsonObject toJson(const DanmakuDisplaySettings &settings)
 {
     return {
@@ -466,6 +494,10 @@ QJsonObject toJson(const NativeWorkspaceSnapshot &snapshot)
     for (const NativeRoomGroup &group : snapshot.groups) groups.append(toJson(group));
     QJsonArray teams;
     for (const NativeTeam &team : snapshot.teams) teams.append(toJson(team));
+    QJsonArray guildRoomCache;
+    for (const GuildRoomCacheEntry &entry : snapshot.guildRoomCache) {
+        guildRoomCache.append(toJson(entry));
+    }
     QJsonArray presets;
     for (const NativeWorkspacePreset &preset : snapshot.presets) presets.append(toJson(preset));
     QJsonArray activeRoomIds;
@@ -475,6 +507,7 @@ QJsonObject toJson(const NativeWorkspaceSnapshot &snapshot)
         {QStringLiteral("library"), library},
         {QStringLiteral("groups"), groups},
         {QStringLiteral("teams"), teams},
+        {QStringLiteral("guildRoomCache"), guildRoomCache},
         {QStringLiteral("presets"), presets},
         {QStringLiteral("danmaku"), toJson(snapshot.danmaku)},
         {QStringLiteral("activeRoomIds"), activeRoomIds},
@@ -730,6 +763,24 @@ std::optional<NativeTeam> teamFromJson(const QJsonObject &object)
     return team;
 }
 
+std::optional<GuildRoomCacheEntry> guildRoomCacheEntryFromJson(const QJsonObject &object)
+{
+    if (containsSensitiveKey(object)
+        || !object.value(QStringLiteral("memberId")).isString()
+        || !object.value(QStringLiteral("roomId")).isString()
+        || !object.value(QStringLiteral("anchorName")).isString()
+        || !object.value(QStringLiteral("verifiedAtMs")).isDouble()) {
+        return std::nullopt;
+    }
+
+    GuildRoomCacheEntry entry;
+    entry.memberId = object.value(QStringLiteral("memberId")).toString();
+    entry.roomId = object.value(QStringLiteral("roomId")).toString();
+    entry.anchorName = object.value(QStringLiteral("anchorName")).toString();
+    entry.verifiedAtMs = object.value(QStringLiteral("verifiedAtMs")).toInteger();
+    return entry;
+}
+
 std::optional<NativeWorkspacePreset> presetFromJson(const QJsonObject &object, int version)
 {
     const QJsonValue roomIds = object.value(QStringLiteral("roomIds"));
@@ -803,6 +854,13 @@ NativeWorkspaceSnapshot fromJson(const QJsonObject &object)
             if (!value.isObject()) continue;
             const auto team = teamFromJson(value.toObject());
             if (team.has_value()) snapshot.teams.push_back(*team);
+        }
+    }
+    if (object.value(QStringLiteral("guildRoomCache")).isArray()) {
+        for (const QJsonValue &value : object.value(QStringLiteral("guildRoomCache")).toArray()) {
+            if (!value.isObject()) continue;
+            const auto entry = guildRoomCacheEntryFromJson(value.toObject());
+            if (entry.has_value()) snapshot.guildRoomCache.push_back(*entry);
         }
     }
     if (version >= 2) {

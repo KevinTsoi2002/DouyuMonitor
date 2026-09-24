@@ -118,6 +118,9 @@ private slots:
     void managesTeamOrderWithoutChangingGroupsOrRooms();
     void enforcesTeamLimitsAndRosterMembership();
     void persistsIndependentTeamsAndNavigationVisibility();
+    void addsResolvedGuildMemberWithoutUsingOrdinarySearchState();
+    void rejectsGuildQuickAddWithoutRoomOrCapacity();
+    void enforcesGuildQuickAddLayoutCapacity();
 };
 
 void AppControllerTest::preservesPlaybackAndDanmakuStateWhenHostedInBackground()
@@ -854,8 +857,10 @@ void AppControllerTest::projectsRefreshedRoomMetadataAndStatus()
         3000);
 
     const QModelIndex room = controller.rooms()->index(0, 0);
-    QCOMPARE(controller.rooms()->data(room, RoomListModel::AnchorNameRole).toString(),
-             QStringLiteral("Fake Anchor"));
+    QTRY_COMPARE_WITH_TIMEOUT(
+        controller.rooms()->data(room, RoomListModel::AnchorNameRole).toString(),
+        QStringLiteral("Fake Anchor"),
+        3000);
     QCOMPARE(controller.rooms()->data(room, RoomListModel::TitleRole).toString(),
              QStringLiteral("Fake Room"));
     QCOMPARE(controller.rooms()->data(room, RoomListModel::ViewerLabelRole).toString(),
@@ -1037,6 +1042,79 @@ void AppControllerTest::persistsIndependentTeamsAndNavigationVisibility()
     QCOMPARE(restored.workspace()->teams().first().memberIds,
              QStringList({QStringLiteral("hamster-001")}));
     QVERIFY(restored.workspace()->navigationVisible());
+}
+
+void AppControllerTest::addsResolvedGuildMemberWithoutUsingOrdinarySearchState()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSettings settings(directory.filePath(QStringLiteral("workspace.ini")), QSettings::IniFormat);
+    FakeNotificationSink sink;
+    AppController controller(fakeServicePath(), &settings, &sink);
+
+    QSignalSpy rosterChanged(&controller, &AppController::guildRosterChanged);
+    QCOMPARE(controller.setGuildMemberRoomId(QStringLiteral("hamster-002"),
+                                             QStringLiteral("84452")),
+             QString());
+    rosterChanged.clear();
+    QCOMPARE(controller.addGuildMemberRoom(QStringLiteral("hamster-002")), QString());
+    QCOMPARE(controller.rooms()->rowCount(), 1);
+    QCOMPARE(controller.rooms()
+                 ->data(controller.rooms()->index(0, 0), RoomListModel::RoomIdRole)
+                 .toString(),
+             QStringLiteral("84452"));
+    QCOMPARE(controller.rooms()
+                 ->data(controller.rooms()->index(0, 0), RoomListModel::AnchorNameRole)
+                 .toString(),
+             QStringLiteral("主播阿飞"));
+    QTRY_VERIFY_WITH_TIMEOUT(rosterChanged.count() > 0, 3000);
+    bool active = false;
+    for (const QVariant &value : controller.guildRoster()) {
+        const QVariantMap entry = value.toMap();
+        if (entry.value(QStringLiteral("id")).toString() == QStringLiteral("hamster-002")) {
+            active = entry.value(QStringLiteral("active")).toBool();
+        }
+    }
+    QVERIFY(active);
+}
+
+void AppControllerTest::rejectsGuildQuickAddWithoutRoomOrCapacity()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSettings settings(directory.filePath(QStringLiteral("workspace.ini")), QSettings::IniFormat);
+    FakeNotificationSink sink;
+    AppController controller(fakeServicePath(), &settings, &sink);
+
+    QCOMPARE(controller.addGuildMemberRoom(QStringLiteral("hamster-005")),
+             QStringLiteral("请先确认房间号"));
+    QCOMPARE(controller.setGuildMemberRoomId(QStringLiteral("hamster-002"),
+                                             QStringLiteral("84452")),
+             QString());
+    QCOMPARE(controller.addGuildMemberRoom(QStringLiteral("hamster-002")), QString());
+    QCOMPARE(controller.addGuildMemberRoom(QStringLiteral("hamster-002")),
+             QStringLiteral("该房间已在列表中"));
+}
+
+void AppControllerTest::enforcesGuildQuickAddLayoutCapacity()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSettings settings(directory.filePath(QStringLiteral("workspace.ini")), QSettings::IniFormat);
+    FakeNotificationSink sink;
+    AppController controller(fakeServicePath(), &settings, &sink);
+
+    for (int index = 0; index < 9; ++index) {
+        QCOMPARE(controller.addRoom(QString::number(63136 + index)), QString());
+    }
+    QCOMPARE(controller.addGuildMemberRoom(QStringLiteral("hamster-006")),
+             QStringLiteral("当前布局最多支持 9 个房间"));
+
+    QVERIFY(controller.setLayout(QStringLiteral("primary-two")));
+    QCOMPARE(controller.addGuildMemberRoom(QStringLiteral("hamster-006")), QString());
+    QCOMPARE(controller.addGuildMemberRoom(QStringLiteral("hamster-007")),
+             QStringLiteral("最多添加 10 个房间"));
+    QCOMPARE(controller.rooms()->rowCount(), 10);
 }
 QTEST_GUILESS_MAIN(AppControllerTest)
 

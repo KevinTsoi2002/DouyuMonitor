@@ -24,6 +24,7 @@
 #include "ui/room_list_model.h"
 #include "ui/workspace_model.h"
 #include "workspace/favorite_monitor.h"
+#include "workspace/guild_room_resolver.h"
 #include "workspace/guild_roster.h"
 #include "workspace/multi_room_coordinator.h"
 
@@ -32,6 +33,28 @@
 #endif
 
 namespace {
+
+class StreamgetSearchTransport final : public SearchTransport {
+public:
+    explicit StreamgetSearchTransport(StreamgetProcessClient *client, QObject *parent = nullptr)
+        : SearchTransport(parent)
+        , client_(client)
+    {
+    }
+
+    quint64 search(const QString &query) override
+    {
+        return client_ != nullptr ? client_->search(query) : 0;
+    }
+
+    void cancel(quint64 requestId) override
+    {
+        if (client_ != nullptr) client_->cancel(requestId);
+    }
+
+private:
+    StreamgetProcessClient *client_ = nullptr;
+};
 
 QString generatedId()
 {
@@ -88,6 +111,15 @@ AppController::AppController(QString serviceProgram,
         },
         RoomRefreshTiming{},
         this);
+    guildRoomResolver_ = new GuildRoomResolver(
+        new StreamgetSearchTransport(service_.get(), this), this);
+    connect(guildRoomResolver_, &GuildRoomResolver::cacheChanged, this, [this] {
+        snapshot_.guildRoomCache = guildRoomResolver_->cache();
+        if (!restoring_) persistWorkspace();
+        emit guildRosterChanged();
+    });
+    connect(guildRoomResolver_, &GuildRoomResolver::memberChanged, this,
+            [this](const QString &) { emit guildRosterChanged(); });
     notificationService_ = std::make_unique<WindowsNotificationService>(settings, notificationSink, this);
     trayService_ = std::make_unique<WindowsTrayService>(this);
     rooms_ = std::make_unique<RoomListModel>(this);
@@ -158,6 +190,7 @@ void AppController::shutdown()
     if (shuttingDown_) return;
     shuttingDown_ = true;
     if (trayService_ != nullptr) trayService_->stop();
+    if (guildRoomResolver_ != nullptr) guildRoomResolver_->stop();
 
     const quint64 pendingSearch = searchRequestId_;
     searchRequestId_ = 0;
@@ -247,10 +280,17 @@ QVariantList AppController::guildRoster() const
     const QVector<GuildMember> members = GuildRoster::bundled();
     projection.reserve(members.size());
     for (const GuildMember &member : members) {
+        const QString resolvedRoomId = guildRoomResolver_ != nullptr
+            ? guildRoomResolver_->roomIdFor(member.id)
+            : member.roomId;
         projection.push_back(QVariantMap{
             {QStringLiteral("id"), member.id},
             {QStringLiteral("anchorName"), member.anchorName},
-            {QStringLiteral("roomId"), member.roomId},
+            {QStringLiteral("roomId"), resolvedRoomId},
+            {QStringLiteral("status"), guildRoomResolver_ != nullptr
+                 ? guildRoomResolver_->statusFor(member.id)
+                 : QString()},
+            {QStringLiteral("active"), snapshot_.activeRoomIds.contains(resolvedRoomId)},
         });
     }
     return projection;
@@ -448,6 +488,55 @@ QString AppController::addRoomCandidate(const QString &roomId)
         record != nullptr ? record->requestedQuality : StreamQuality::Auto,
         record != nullptr ? record->requestedQualityRate : -1,
         candidate.value(),
+        record != nullptr && record->favorite,
+        record != nullptr ? record->volume : 100);
+    if (result == RoomCommandResult::Accepted) {
+        touchHistory(roomId);
+        persistWorkspace();
+    }
+    return commandMessage(result);
+}
+
+QString AppController::setGuildMemberRoomId(const QString &memberId, const QString &roomId)
+{
+    if (guildRoomResolver_ == nullptr) return QStringLiteral("当前操作不可用");
+    const QString message = guildRoomResolver_->setManualRoomId(memberId, roomId);
+    if (!message.isEmpty()) return message;
+    snapshot_.guildRoomCache = guildRoomResolver_->cache();
+    persistWorkspace();
+    emit guildRosterChanged();
+    return {};
+}
+
+QString AppController::addGuildMemberRoom(const QString &memberId)
+{
+    const GuildMember *member = GuildRoster::findById(memberId);
+    if (member == nullptr || guildRoomResolver_ == nullptr) {
+        return QStringLiteral("未找到该公会主播");
+    }
+    const QString roomId = guildRoomResolver_->roomIdFor(member->id);
+    if (roomId.isEmpty()) return QStringLiteral("请先确认房间号");
+    if (coordinator_ == nullptr) return QStringLiteral("当前操作不可用");
+    if (coordinator_->roomIds().contains(roomId)) {
+        return QStringLiteral("该房间已在列表中");
+    }
+    if (coordinator_->roomCount() >= 9
+        && coordinator_->layoutMode() != QStringLiteral("primary-two")) {
+        return QStringLiteral("当前布局最多支持 9 个房间");
+    }
+    if (coordinator_->roomCount() >= 10) {
+        return QStringLiteral("最多添加 10 个房间");
+    }
+
+    RoomMetadata metadata;
+    metadata.roomId = roomId;
+    metadata.anchorName = member->anchorName;
+    const NativeRoomRecord *record = libraryRecord(roomId);
+    const RoomCommandResult result = coordinator_->addRoomDetailed(
+        roomId,
+        record != nullptr ? record->requestedQuality : StreamQuality::Auto,
+        record != nullptr ? record->requestedQualityRate : -1,
+        metadata,
         record != nullptr && record->favorite,
         record != nullptr ? record->volume : 100);
     if (result == RoomCommandResult::Accepted) {
@@ -1281,6 +1370,11 @@ void AppController::restoreWorkspace()
 {
     restoring_ = true;
     snapshot_ = workspaceStore_.load();
+    if (guildRoomResolver_ != nullptr) {
+        guildRoomResolver_->setRoster(GuildRoster::bundled());
+        guildRoomResolver_->setCache(snapshot_.guildRoomCache);
+        guildRoomResolver_->start();
+    }
     danmaku_->setConfiguration(snapshot_.danmaku);
     const NativeRoomGroup *activeGroup = nullptr;
     if (!snapshot_.activeGroupId.isEmpty()) {
@@ -1336,6 +1430,7 @@ void AppController::restoreWorkspace()
 
 void AppController::onServiceResponse(const ServiceResponse &response)
 {
+    if (guildRoomResolver_ != nullptr && guildRoomResolver_->handleResponse(response)) return;
     if (favoriteMonitor_ != nullptr) favoriteMonitor_->onSearchResponse(response);
     if (searchRequestId_ == 0 || response.requestId != searchRequestId_) return;
     searchRequestId_ = 0;
@@ -1377,6 +1472,7 @@ void AppController::onServiceResponse(const ServiceResponse &response)
 
 void AppController::onServiceRequestFailed(quint64 requestId, const QString &)
 {
+    if (guildRoomResolver_ != nullptr && guildRoomResolver_->handleFailure(requestId, {})) return;
     if (favoriteMonitor_ != nullptr) favoriteMonitor_->onRequestFailed(requestId);
     if (searchRequestId_ == 0 || requestId != searchRequestId_) return;
     searchRequestId_ = 0;
@@ -1430,6 +1526,8 @@ void AppController::persistWorkspace()
 
 void AppController::onSnapshotsChanged(const RoomSnapshots &snapshots)
 {
+    const QSet<QString> previousActiveIds(snapshot_.activeRoomIds.cbegin(),
+                                          snapshot_.activeRoomIds.cend());
     snapshot_.activeRoomIds = coordinator_->roomIds();
     snapshot_.primaryRoomId = coordinator_->primaryRoomId();
     snapshot_.secondaryPrimaryRoomId = coordinator_->secondaryPrimaryRoomId();
@@ -1459,6 +1557,7 @@ void AppController::onSnapshotsChanged(const RoomSnapshots &snapshots)
     }
     const QSet<QString> activeIds = QSet<QString>(snapshot_.activeRoomIds.cbegin(),
                                                    snapshot_.activeRoomIds.cend());
+    if (activeIds != previousActiveIds) emit guildRosterChanged();
     for (auto it = lastLiveStatuses_.begin(); it != lastLiveStatuses_.end();) {
         if (activeIds.contains(it.key())) ++it;
         else it = lastLiveStatuses_.erase(it);

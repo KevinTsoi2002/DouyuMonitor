@@ -63,6 +63,15 @@ struct NativeTeam {
     bool operator==(const NativeTeam &) const = default;
 };
 
+struct GuildRoomCacheEntry {
+    QString memberId;
+    QString roomId;
+    QString anchorName;
+    qint64 verifiedAtMs = 0;
+
+    bool operator==(const GuildRoomCacheEntry &) const = default;
+};
+
 struct NativeDanmakuConfiguration {
     bool globalEnabled = true;
     DanmakuDisplaySettings display;
@@ -95,6 +104,7 @@ struct NativeWorkspaceSnapshot {
     QVector<NativeRoomRecord> library;
     QVector<NativeRoomGroup> groups;
     QVector<NativeTeam> teams;
+    QVector<GuildRoomCacheEntry> guildRoomCache;
     QVector<NativeWorkspacePreset> presets;
     NativeDanmakuConfiguration danmaku;
     QStringList activeRoomIds;

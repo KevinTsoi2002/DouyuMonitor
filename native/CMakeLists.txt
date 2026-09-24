@@ -94,6 +94,23 @@ set_property(TEST guild_roster_test PROPERTY ENVIRONMENT_MODIFICATION
     "QML2_IMPORT_PATH=set:${QT_ROOT}/qml"
 )
 
+add_executable(guild_room_resolver_test
+    tests/guild_room_resolver_test.cpp
+    src/workspace/guild_room_resolver.cpp
+)
+target_link_libraries(guild_room_resolver_test PRIVATE
+    Qt6::Core
+    Qt6::Test
+    douyu_guild
+)
+target_include_directories(guild_room_resolver_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+add_test(NAME guild_room_resolver_test COMMAND guild_room_resolver_test)
+set_property(TEST guild_room_resolver_test PROPERTY ENVIRONMENT_MODIFICATION
+    "PATH=path_list_prepend:${QT_ROOT}/bin"
+    "QT_PLUGIN_PATH=set:${QT_ROOT}/plugins"
+    "QML2_IMPORT_PATH=set:${QT_ROOT}/qml"
+)
+
 qt_add_library(douyu_qml STATIC)
 set_source_files_properties(app/qml/Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 qt_add_qml_module(douyu_qml
@@ -319,6 +336,7 @@ set_property(TEST qml_interaction_test PROPERTY ENVIRONMENT_MODIFICATION
 add_executable(qml_close_regression_test
     tests/qml_close_regression_test.cpp
     src/ui/app_controller.cpp
+    src/workspace/guild_room_resolver.cpp
     src/ui/room_list_model.cpp
     src/ui/workspace_model.cpp
     src/ui/monitoring_model.cpp
@@ -471,6 +489,7 @@ set_property(TEST update_checker_test PROPERTY ENVIRONMENT_MODIFICATION
 add_executable(app_controller_test
     tests/app_controller_test.cpp
     src/ui/app_controller.cpp
+    src/workspace/guild_room_resolver.cpp
     src/ui/room_list_model.cpp
     src/ui/workspace_model.cpp
     src/ui/monitoring_model.cpp
@@ -863,6 +882,7 @@ endif()
 
 add_executable(douyu_monitor_native
     app/main.cpp
+    src/workspace/guild_room_resolver.cpp
     src/app/application_logger.cpp
     src/media/media_source.cpp
     src/workspace/quality_policy.cpp
