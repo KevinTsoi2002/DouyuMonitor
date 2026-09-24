@@ -43,6 +43,14 @@ void GuildRosterTest::rejectsInvalidRoomIdsFromResource()
     const GuildMember *yinzi = GuildRoster::findByName(QStringLiteral("寅子"));
     QVERIFY(yinzi != nullptr);
     QCOMPARE(yinzi->roomId, QStringLiteral("71415"));
+
+    const GuildMember *xiaoCousin = GuildRoster::findByName(QStringLiteral("尐表哥"));
+    QVERIFY(xiaoCousin != nullptr);
+    QCOMPARE(xiaoCousin->roomId, QStringLiteral("217331"));
+
+    const GuildMember *eleven = GuildRoster::findByName(QStringLiteral("十一or"));
+    QVERIFY(eleven != nullptr);
+    QCOMPARE(eleven->roomId, QStringLiteral("12858969"));
 }
 
 void GuildRosterTest::rejectsMalformedRootAndUnsupportedVersion()

@@ -444,6 +444,38 @@ void QmlInteractionTest::groupsGuildNavigationByTeamsWithoutRoleLabels()
     QTRY_COMPARE(teamsList->property("count").toInt(), 3);
     QCOMPARE(panel->property("visibleMemberCount").toInt(), 2);
     QVERIFY(panel->findChild<QObject *>(QStringLiteral("guildMemberRole")) == nullptr);
+
+    QObject *visibleRows = panel->findChild<QObject *>(QStringLiteral("guildVisibleRows"));
+    QVERIFY(visibleRows != nullptr);
+    QCOMPARE(visibleRows->property("count").toInt(), 5);
+
+    QStringList renderedNames;
+    for (const int rowIndex : {1, 3}) {
+        QQuickItem *memberRow = nullptr;
+        QVERIFY(QMetaObject::invokeMethod(visibleRows,
+                                          "itemAt",
+                                          Q_RETURN_ARG(QQuickItem *, memberRow),
+                                          Q_ARG(int, rowIndex)));
+        QVERIFY2(memberRow != nullptr,
+                 qPrintable(QStringLiteral("navigation row %1 is null").arg(rowIndex)));
+        QObject *nameLabel = memberRow->findChild<QObject *>(QStringLiteral("guildMemberName"));
+        QVERIFY2(nameLabel != nullptr,
+                 qPrintable(QStringLiteral("navigation row %1 has no name label").arg(rowIndex)));
+        QVERIFY2(nameLabel->property("visible").toBool(),
+                 qPrintable(QStringLiteral("navigation row %1 name is hidden").arg(rowIndex)));
+        QVERIFY2(nameLabel->property("width").toDouble() > 0,
+                 qPrintable(QStringLiteral("navigation row %1 name width is zero").arg(rowIndex)));
+        QVERIFY2(nameLabel->property("height").toDouble() > 0,
+                 qPrintable(QStringLiteral("navigation row %1 name height is zero").arg(rowIndex)));
+
+        const QString name = nameLabel->property("text").toString();
+        QVERIFY2(!name.isEmpty(),
+                 qPrintable(QStringLiteral("navigation row %1 name text is empty").arg(rowIndex)));
+        renderedNames.append(name);
+    }
+    renderedNames.sort();
+    QCOMPARE(renderedNames,
+             QStringList({QStringLiteral("主播阿郎"), QStringLiteral("寅子")}));
 }
 
 void QmlInteractionTest::filtersGuildNavigationWithoutChangingTeamOrder()

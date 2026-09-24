@@ -6,7 +6,7 @@
     { "id": "hamster-002", "name": "主播阿飞", "roomId": "84452" },
     { "id": "hamster-003", "name": "午夜抹抹茶", "roomId": "80432" },
     { "id": "hamster-004", "name": "主播阿郎-团长", "roomId": "320155" },
-    { "id": "hamster-005", "name": "表哥-队长", "roomId": "" },
+    { "id": "hamster-005", "name": "尐表哥-队长", "roomId": "217331" },
     { "id": "hamster-006", "name": "主播帝王-队长", "roomId": "731252" },
     { "id": "hamster-007", "name": "归海念一刀-队长", "roomId": "2632018" },
     { "id": "hamster-008", "name": "老皮历险记-队长", "roomId": "2140934" },
@@ -48,6 +48,6 @@
     { "id": "hamster-044", "name": "涂鸦酱Q", "roomId": "" },
     { "id": "hamster-045", "name": "十三三三", "roomId": "" },
     { "id": "hamster-046", "name": "白小帅子", "roomId": "" },
-    { "id": "hamster-047", "name": "十一or", "roomId": "" }
+    { "id": "hamster-047", "name": "十一or", "roomId": "12858969" }
   ]
 }

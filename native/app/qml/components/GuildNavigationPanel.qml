@@ -253,14 +253,15 @@ Rectangle {
                             anchors.top: parent.top
                             height: visible ? (confirming ? 76 : 38) : 0
                             visible: rowType === "member"
-                            member: root.memberForRow(memberId, anchorName, roomId,
-                                                      roomStatus, memberActive)
-                            roomStatus: roomStatus
-                            active: memberActive
+                            member: root.memberForRow(model.memberId, model.anchorName,
+                                                      model.roomId, model.roomStatus,
+                                                      model.memberActive)
+                            roomStatus: model.roomStatus
+                            active: model.memberActive
                             canAdd: rowType === "member"
                                     && root.canAddMember(root.memberForRow(
-                                        memberId, anchorName, roomId,
-                                        roomStatus, memberActive))
+                                        model.memberId, model.anchorName, model.roomId,
+                                        model.roomStatus, model.memberActive))
                             onAddRequested: function(memberId) {
                                 root.quickAdd(memberId)
                             }
