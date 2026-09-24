@@ -2,6 +2,12 @@
 
 `native` 是 DouyuMonitor 当前唯一维护的桌面客户端：Qt Quick/QML 负责界面，C++20 负责应用逻辑，libmpv 负责播放，独立 `streamget_service.exe` 负责斗鱼资料与播放变体解析。
 
+## 仓鼠特工导航
+
+顶栏房间列表按钮右侧提供仓鼠特工导航入口。导航页读取应用内置的公会名单，并按“设置 -> 队伍管理”中维护的队伍顺序分组展示；没有分配队伍的成员进入“未分队”。队伍栏位独立于房间分组和工作区预设，支持空队伍、重命名、排序和删除，也不会混用旧分组语义。
+
+导航页只展示内置名单和主播名、房间号及加入状态，不显示团长、队长、队员或 OB 等角色标签。已确认房间号可直接加入当前工作区；无法自动确认的成员显示“待确认”，需要在成员行手工输入房间号。快捷加入仍受普通布局最多 9 路、双主直播间布局最多 10 路的限制，并会接受控制器返回的重复房间或容量错误。
+
 ## 目录职责
 
 | 目录 | 职责 |
@@ -94,10 +100,10 @@ native/out/build/windows-x64-release/douyu_monitor_native.exe
 输出文件：
 
 ```text
-native/out/installer/DouyuMonitor-Setup-V0.2.8.exe
+native/out/installer/DouyuMonitor-Setup-V0.2.9.exe
 ```
 
-安装器使用 Inno Setup 6。安装包文件名会自动包含项目版本，例如 `DouyuMonitor-Setup-V0.2.8.exe`。安装时可选择目标目录；选择 `D:\` 等磁盘根目录时会自动归一化到 `D:\DouyuMonitor`。安装完成后创建开始菜单和可选的桌面快捷方式，并登记到 Windows 设置的“已安装的应用”。安装目录中的 `unins000.exe` 是标准卸载入口。运行时载荷校验会拒绝测试程序、构建残留以及 Electron、Chromium、Node、Qt WebEngine 文件。
+安装器使用 Inno Setup 6。安装包文件名会自动包含项目版本，例如 `DouyuMonitor-Setup-V0.2.9.exe`。安装时可选择目标目录；选择 `D:\` 等磁盘根目录时会自动归一化到 `D:\DouyuMonitor`。安装完成后创建开始菜单和可选的桌面快捷方式，并登记到 Windows 设置的“已安装的应用”。安装目录中的 `unins000.exe` 是标准卸载入口。运行时载荷校验会拒绝测试程序、构建残留以及 Electron、Chromium、Node、Qt WebEngine 文件。
 
 安装器脚本回归检查：
 
