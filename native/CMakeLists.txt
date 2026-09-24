@@ -122,6 +122,7 @@ qt_add_qml_module(douyu_qml
         app/qml/dialogs/AddRoomDialog.qml
         app/qml/dialogs/NotificationSettingsDialog.qml
         app/qml/dialogs/CloseBehaviorDialog.qml
+        app/qml/dialogs/TeamManagerDialog.qml
     RESOURCES
         ${DOUYU_QML_ICON_ASSETS}
 )
@@ -175,6 +176,7 @@ qt_add_resources(qml_engine_smoke_test qml_engine_test_resources
         app/qml/dialogs/AddRoomDialog.qml
         app/qml/dialogs/NotificationSettingsDialog.qml
         app/qml/dialogs/CloseBehaviorDialog.qml
+        app/qml/dialogs/TeamManagerDialog.qml
         ${DOUYU_QML_ICON_ASSETS}
 )
 add_custom_command(TARGET qml_engine_smoke_test POST_BUILD
@@ -238,6 +240,7 @@ qt_add_resources(qml_visual_smoke_test qml_visual_smoke_test_resources
         app/qml/dialogs/AddRoomDialog.qml
         app/qml/dialogs/NotificationSettingsDialog.qml
         app/qml/dialogs/CloseBehaviorDialog.qml
+        app/qml/dialogs/TeamManagerDialog.qml
         ${DOUYU_QML_ICON_ASSETS}
 )
 add_custom_command(TARGET qml_visual_smoke_test POST_BUILD
@@ -296,6 +299,7 @@ qt_add_resources(qml_interaction_test qml_interaction_test_resources
         app/qml/dialogs/AddRoomDialog.qml
         app/qml/dialogs/NotificationSettingsDialog.qml
         app/qml/dialogs/CloseBehaviorDialog.qml
+        app/qml/dialogs/TeamManagerDialog.qml
         ${DOUYU_QML_ICON_ASSETS}
 )
 add_custom_command(TARGET qml_interaction_test POST_BUILD
@@ -376,6 +380,7 @@ qt_add_resources(qml_close_regression_test qml_close_regression_test_resources
         app/qml/dialogs/AddRoomDialog.qml
         app/qml/dialogs/NotificationSettingsDialog.qml
         app/qml/dialogs/CloseBehaviorDialog.qml
+        app/qml/dialogs/TeamManagerDialog.qml
         ${DOUYU_QML_ICON_ASSETS}
 )
 add_custom_command(TARGET qml_close_regression_test POST_BUILD

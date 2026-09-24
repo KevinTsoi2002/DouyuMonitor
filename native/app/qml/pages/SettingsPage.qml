@@ -8,6 +8,7 @@ Item {
     objectName: "settingsPage"
     property var controller: null
     signal backRequested()
+    signal teamManagerRequested()
 
     readonly property string closeBehavior: controller ? controller.closeBehavior : "ask"
     function chooseCloseBehavior(behavior) {
@@ -159,6 +160,43 @@ Item {
                                 color: option.hovered ? Theme.well : "transparent"
                             }
                         }
+                    }
+                }
+            }
+
+            Rectangle {
+                width: parent.width
+                height: teamManagementSection.height + 32
+                radius: Theme.radiusMedium
+                color: Theme.controlSurface
+                border.color: Theme.border
+
+                Column {
+                    id: teamManagementSection
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.margins: 16
+                    spacing: 10
+
+                    Text {
+                        text: "队伍管理"
+                        color: Theme.text
+                        font.bold: true
+                        font.pixelSize: 14
+                    }
+                    Text {
+                        text: "队伍是本导航页的主要分组，成员调整不影响现有直播间与旧分组。"
+                        color: Theme.mutedText
+                        font.pixelSize: 11
+                        wrapMode: Text.WordWrap
+                        width: parent.width
+                    }
+                    Button {
+                        objectName: "manageTeamsButton"
+                        text: "管理队伍"
+                        enabled: root.controller !== null
+                        onClicked: root.teamManagerRequested()
                     }
                 }
             }

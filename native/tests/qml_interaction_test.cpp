@@ -361,6 +361,7 @@ private slots:
     void keepsInputAndMenuControlsOnDarkTheme();
     void exposesFavoriteTitleNotificationPreference();
     void checksForUpdatesFromSettingsPage();
+    void managesTeamsOnlyFromSettings();
 };
 
 void QmlInteractionTest::keepsTransientDialogSurfacesDark()
@@ -431,6 +432,27 @@ void QmlInteractionTest::checksForUpdatesFromSettingsPage()
     QTRY_VERIFY_WITH_TIMEOUT(openButton->property("visible").toBool(), 1000);
     QVERIFY(QMetaObject::invokeMethod(openButton, "clicked"));
     QCOMPARE(controller.openCount, 1);
+}
+
+void QmlInteractionTest::managesTeamsOnlyFromSettings()
+{
+    registerQmlTypes();
+    QQmlApplicationEngine engine;
+    QQuickWindow *window = loadWindow(engine);
+    QVERIFY(window != nullptr);
+
+    QObject *settingsButton = window->findChild<QObject *>(QStringLiteral("settingsButton"));
+    QVERIFY(settingsButton != nullptr);
+    click(settingsButton);
+    QObject *manageTeams = window->findChild<QObject *>(QStringLiteral("manageTeamsButton"));
+    QVERIFY(manageTeams != nullptr);
+    click(manageTeams);
+
+    QObject *dialog = window->findChild<QObject *>(QStringLiteral("teamManagerDialog"));
+    QVERIFY(dialog != nullptr);
+    QTRY_VERIFY(dialog->property("visible").toBool());
+    QVERIFY(dialog->findChild<QObject *>(QStringLiteral("createTeamButton")) != nullptr);
+    QVERIFY(dialog->findChild<QObject *>(QStringLiteral("teamMemberAssignmentList")) != nullptr);
 }
 
 void QmlInteractionTest::keepsInputAndMenuControlsOnDarkTheme()

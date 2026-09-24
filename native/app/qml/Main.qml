@@ -91,6 +91,7 @@ ApplicationWindow {
             if (name === "roomSearchInput"
                     || name === "presetNameInput"
                     || name === "groupNameInput"
+                    || name === "teamNameInput"
                     || name === "notificationTitleInput") {
                 root.editableFocus = true
                 return
@@ -317,6 +318,7 @@ ApplicationWindow {
         z: 20
         controller: root.appController
         onBackRequested: root.currentView = "monitoring"
+        onTeamManagerRequested: teamManagerDialog.open()
     }
 
     ToastViewport {
@@ -365,6 +367,12 @@ ApplicationWindow {
     CloseBehaviorDialog {
         id: closeBehaviorDialog
         controller: root.appController
+    }
+
+    TeamManagerDialog {
+        id: teamManagerDialog
+        controller: root.appController
+        workspaceModel: root.workspaceModel
     }
 
     Shortcut {
