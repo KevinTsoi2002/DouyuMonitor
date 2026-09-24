@@ -116,6 +116,8 @@ private slots:
     void createsEmptyTeamsAndAssignsRosterMembers();
     void movesMemberBetweenTeamsAndLeavesEmptySlots();
     void managesTeamOrderWithoutChangingGroupsOrRooms();
+    void rejectsDuplicateTeamNames();
+    void persistsTeamDeletion();
     void enforcesTeamLimitsAndRosterMembership();
     void persistsIndependentTeamsAndNavigationVisibility();
     void addsResolvedGuildMemberWithoutUsingOrdinarySearchState();
@@ -981,6 +983,54 @@ void AppControllerTest::managesTeamOrderWithoutChangingGroupsOrRooms()
     QCOMPARE(controller.workspace()->primaryRoomId(), QStringLiteral("63136"));
 }
 
+void AppControllerTest::rejectsDuplicateTeamNames()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSettings settings(directory.filePath(QStringLiteral("workspace.ini")), QSettings::IniFormat);
+    FakeNotificationSink sink;
+    AppController controller(fakeServicePath(), &settings, &sink);
+
+    const QString first = controller.createTeam(QStringLiteral("一队"));
+    const QString second = controller.createTeam(QStringLiteral("二队"));
+    QVERIFY(!first.isEmpty());
+    QVERIFY(!second.isEmpty());
+
+    QCOMPARE(controller.createTeam(QStringLiteral(" 一队 ")),
+             QStringLiteral("已存在同名队伍"));
+    QCOMPARE(controller.workspace()->teams().size(), 2);
+    QCOMPARE(controller.renameTeam(second, QStringLiteral("一队")),
+             QStringLiteral("已存在同名队伍"));
+    QCOMPARE(controller.workspace()->teams().at(1).name, QStringLiteral("二队"));
+    QCOMPARE(controller.renameTeam(second, QStringLiteral(" 二队 ")), QString());
+    QCOMPARE(controller.workspace()->teams().at(1).name, QStringLiteral("二队"));
+}
+
+void AppControllerTest::persistsTeamDeletion()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString settingsPath = directory.filePath(QStringLiteral("workspace.ini"));
+    FakeNotificationSink sink;
+    QString retainedId;
+
+    {
+        QSettings settings(settingsPath, QSettings::IniFormat);
+        AppController controller(fakeServicePath(), &settings, &sink);
+        const QString removedId = controller.createTeam(QStringLiteral("待删除队伍"));
+        retainedId = controller.createTeam(QStringLiteral("保留队伍"));
+        QVERIFY(!removedId.isEmpty());
+        QVERIFY(!retainedId.isEmpty());
+
+        QCOMPARE(controller.deleteTeam(removedId), QString());
+        QCOMPARE(controller.workspace()->teams().size(), 1);
+    }
+
+    QSettings restoredSettings(settingsPath, QSettings::IniFormat);
+    AppController restored(fakeServicePath(), &restoredSettings, &sink);
+    QCOMPARE(restored.workspace()->teams().size(), 1);
+    QCOMPARE(restored.workspace()->teams().first().id, retainedId);
+}
 void AppControllerTest::enforcesTeamLimitsAndRosterMembership()
 {
     QTemporaryDir directory;
@@ -1086,8 +1136,9 @@ void AppControllerTest::rejectsGuildQuickAddWithoutRoomOrCapacity()
     FakeNotificationSink sink;
     AppController controller(fakeServicePath(), &settings, &sink);
 
-    QCOMPARE(controller.addGuildMemberRoom(QStringLiteral("hamster-005")),
-             QStringLiteral("请先确认房间号"));
+    QCOMPARE(controller.addGuildMemberRoom(QStringLiteral("hamster-005")), QString());
+    QCOMPARE(controller.rooms()->rowCount(), 1);
+    QCOMPARE(controller.removeRoom(QStringLiteral("217331")), QString());
     QCOMPARE(controller.setGuildMemberRoomId(QStringLiteral("hamster-002"),
                                              QStringLiteral("84452")),
              QString());

@@ -859,6 +859,12 @@ QString AppController::createTeam(const QString &name)
 {
     const QString trimmed = name.trimmed();
     if (!isValidName(trimmed)) return QStringLiteral("请输入 1 到 30 个字符的队伍名称");
+    const auto duplicate = std::find_if(snapshot_.teams.cbegin(), snapshot_.teams.cend(),
+                                        [&trimmed](const NativeTeam &team) {
+                                            return team.name.compare(trimmed,
+                                                                     Qt::CaseInsensitive) == 0;
+                                        });
+    if (duplicate != snapshot_.teams.cend()) return QStringLiteral("已存在同名队伍");
     if (snapshot_.teams.size() >= 20) return QStringLiteral("最多创建 20 个队伍");
     snapshot_.teams.push_back({generatedId(), trimmed, {}});
     refreshPresentation();
@@ -870,6 +876,13 @@ QString AppController::renameTeam(const QString &teamId, const QString &name)
 {
     const QString trimmed = name.trimmed();
     if (!isValidName(trimmed)) return QStringLiteral("请输入 1 到 30 个字符的队伍名称");
+    const auto duplicate = std::find_if(snapshot_.teams.cbegin(), snapshot_.teams.cend(),
+                                        [&teamId, &trimmed](const NativeTeam &team) {
+                                            return team.id != teamId
+                                                && team.name.compare(trimmed,
+                                                                     Qt::CaseInsensitive) == 0;
+                                        });
+    if (duplicate != snapshot_.teams.cend()) return QStringLiteral("已存在同名队伍");
     for (NativeTeam &team : snapshot_.teams) {
         if (team.id != teamId) continue;
         if (team.name == trimmed) return {};

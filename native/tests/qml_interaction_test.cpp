@@ -223,6 +223,42 @@ public:
     QString lastAddedMemberId;
 };
 
+class FakeTeamManagerController final : public QObject {
+    Q_OBJECT
+    Q_PROPERTY(QVariantList guildRoster READ guildRoster CONSTANT)
+
+public:
+    FakeTeamManagerController()
+        : workspaceModel(nullptr, this)
+    {
+    }
+
+    QVariantList guildRoster() const { return {}; }
+
+    void addTeam(const QString &id, const QString &name)
+    {
+        teams_.push_back({id, name, {}});
+        workspaceModel.setWorkspaceData(teams_, {}, {}, {});
+    }
+
+    Q_INVOKABLE QString deleteTeam(const QString &teamId)
+    {
+        deletedTeamId = teamId;
+        for (auto it = teams_.begin(); it != teams_.end(); ++it) {
+            if (it->id != teamId) continue;
+            teams_.erase(it);
+            workspaceModel.setWorkspaceData(teams_, {}, {}, {});
+            return {};
+        }
+        return QStringLiteral("未找到该队伍");
+    }
+
+    WorkspaceModel workspaceModel;
+    QString deletedTeamId;
+
+private:
+    QVector<NativeTeam> teams_;
+};
 class FakeUpdateController final : public QObject {
     Q_OBJECT
     Q_PROPERTY(QString updateState READ updateState NOTIFY updateStateChanged)
@@ -393,6 +429,7 @@ private slots:
     void exposesFavoriteTitleNotificationPreference();
     void checksForUpdatesFromSettingsPage();
     void managesTeamsOnlyFromSettings();
+    void deletesTeamFromManagerRow();
     void groupsGuildNavigationByTeamsWithoutRoleLabels();
     void filtersGuildNavigationWithoutChangingTeamOrder();
     void quickAddsResolvedGuildMember();
@@ -701,6 +738,49 @@ void QmlInteractionTest::managesTeamsOnlyFromSettings()
     QVERIFY(dialog->findChild<QObject *>(QStringLiteral("teamMemberAssignmentList")) != nullptr);
 }
 
+void QmlInteractionTest::deletesTeamFromManagerRow()
+{
+    registerQmlTypes();
+    FakeTeamManagerController controller;
+    controller.addTeam(QStringLiteral("team-a"), QStringLiteral("一队"));
+    controller.addTeam(QStringLiteral("team-b"), QStringLiteral("二队"));
+
+    QQmlApplicationEngine engine;
+    QQmlComponent component(&engine,
+                            QUrl(QStringLiteral("qrc:/qml/dialogs/TeamManagerDialog.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    QQuickWindow hostWindow;
+    hostWindow.resize(QSize(640, 720));
+    hostWindow.show();
+    std::unique_ptr<QObject> dialog(component.createWithInitialProperties({
+        {QStringLiteral("parent"), QVariant::fromValue(hostWindow.contentItem())},
+        {QStringLiteral("controller"),
+         QVariant::fromValue(static_cast<QObject *>(&controller))},
+        {QStringLiteral("workspaceModel"),
+         QVariant::fromValue(static_cast<QObject *>(&controller.workspaceModel))},
+    }));
+    QVERIFY2(dialog != nullptr, qPrintable(component.errorString()));
+    QVERIFY(QMetaObject::invokeMethod(dialog.get(), "open"));
+    QTRY_VERIFY(dialog->property("visible").toBool());
+
+    QObject *teamList = dialog->findChild<QObject *>(QStringLiteral("teamList"));
+    QVERIFY(teamList != nullptr);
+    QTRY_COMPARE(teamList->property("count").toInt(), 2);
+    QQuickItem *secondRow = nullptr;
+    QTRY_VERIFY_WITH_TIMEOUT(QMetaObject::invokeMethod(teamList,
+                                                       "itemAtIndex",
+                                                       Q_RETURN_ARG(QQuickItem *, secondRow),
+                                                       Q_ARG(int, 1))
+                                 && secondRow != nullptr,
+                             1000);
+    QObject *deleteButton =
+        secondRow->findChild<QObject *>(QStringLiteral("deleteTeamRowButton"));
+    QVERIFY(deleteButton != nullptr);
+    click(deleteButton);
+
+    QCOMPARE(controller.deletedTeamId, QStringLiteral("team-b"));
+    QTRY_COMPARE(teamList->property("count").toInt(), 1);
+}
 void QmlInteractionTest::keepsInputAndMenuControlsOnDarkTheme()
 {
     registerQmlTypes();

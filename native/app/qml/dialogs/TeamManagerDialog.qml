@@ -295,15 +295,47 @@ Dialog {
                 Text {
                     anchors.left: parent.left
                     anchors.leftMargin: 10
+                    anchors.right: deleteTeamRowButton.left
+                    anchors.rightMargin: 8
                     anchors.verticalCenter: parent.verticalCenter
-                    width: parent.width - 30
                     text: modelData.name + "  ·  " + modelData.memberCount + " 人"
                     color: Theme.text
                     elide: Text.ElideRight
                 }
 
+                ToolButton {
+                    id: deleteTeamRowButton
+                    objectName: "deleteTeamRowButton"
+                    anchors.right: parent.right
+                    anchors.rightMargin: 4
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 30
+                    height: 30
+                    Accessible.name: "删除队伍"
+                    ToolTip.visible: hovered
+                    ToolTip.text: Accessible.name
+                    onClicked: {
+                        root.selectedTeamId = modelData.id
+                        root.deleteTeam()
+                    }
+                    contentItem: Image {
+                        anchors.centerIn: parent
+                        width: 12
+                        height: 12
+                        source: Qt.resolvedUrl("../assets/icons/x.svg")
+                        opacity: parent.hovered ? 1 : 0.65
+                    }
+                    background: Rectangle {
+                        radius: Theme.radiusSmall
+                        color: parent.down ? Theme.danger : (parent.hovered ? Theme.well : "transparent")
+                    }
+                }
+
                 MouseArea {
-                    anchors.fill: parent
+                    anchors.left: parent.left
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    anchors.right: deleteTeamRowButton.left
                     onClicked: root.selectTeam(modelData)
                 }
             }
