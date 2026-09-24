@@ -113,6 +113,11 @@ private slots:
     void clearsUnrememberedCloseBehaviorPreference();
     void exposesUpdateCheckerState();
     void removesLastRoomWhenLeavingDualPrimaryLayoutAtCapacity();
+    void createsEmptyTeamsAndAssignsRosterMembers();
+    void movesMemberBetweenTeamsAndLeavesEmptySlots();
+    void managesTeamOrderWithoutChangingGroupsOrRooms();
+    void enforcesTeamLimitsAndRosterMembership();
+    void persistsIndependentTeamsAndNavigationVisibility();
 };
 
 void AppControllerTest::preservesPlaybackAndDanmakuStateWhenHostedInBackground()
@@ -896,6 +901,143 @@ void AppControllerTest::publishesCommandFailureToToast()
     QCOMPARE(controller.workspace()->lastMessage(), QStringLiteral("未找到该房间"));
 }
 
+void AppControllerTest::createsEmptyTeamsAndAssignsRosterMembers()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSettings settings(directory.filePath(QStringLiteral("workspace.ini")), QSettings::IniFormat);
+    FakeNotificationSink sink;
+    AppController controller(fakeServicePath(), &settings, &sink);
+
+    const QString first = controller.createTeam(QStringLiteral("一队"));
+    const QString second = controller.createTeam(QStringLiteral("二队"));
+    const QString third = controller.createTeam(QStringLiteral("三队"));
+    const QString fourth = controller.createTeam(QStringLiteral("四队"));
+    QVERIFY(!first.isEmpty());
+    QVERIFY(!second.isEmpty());
+    QVERIFY(!third.isEmpty());
+    QVERIFY(!fourth.isEmpty());
+
+    QCOMPARE(controller.assignGuildMemberToTeam(QStringLiteral("hamster-001"), first), QString());
+    QCOMPARE(controller.workspace()->teams().size(), 4);
+    QCOMPARE(controller.workspace()->teams().first().memberIds,
+             QStringList({QStringLiteral("hamster-001")}));
+    QCOMPARE(controller.workspace()->teams().at(1).memberIds, QStringList{});
+    QCOMPARE(controller.workspace()->teams().at(3).memberIds, QStringList{});
+}
+
+void AppControllerTest::movesMemberBetweenTeamsAndLeavesEmptySlots()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSettings settings(directory.filePath(QStringLiteral("workspace.ini")), QSettings::IniFormat);
+    FakeNotificationSink sink;
+    AppController controller(fakeServicePath(), &settings, &sink);
+
+    const QString first = controller.createTeam(QStringLiteral("一队"));
+    const QString second = controller.createTeam(QStringLiteral("二队"));
+    QCOMPARE(controller.assignGuildMemberToTeam(QStringLiteral("hamster-001"), first), QString());
+    QCOMPARE(controller.assignGuildMemberToTeam(QStringLiteral("hamster-001"), second), QString());
+
+    QCOMPARE(controller.workspace()->teams().at(0).memberIds, QStringList{});
+    QCOMPARE(controller.workspace()->teams().at(1).memberIds,
+             QStringList({QStringLiteral("hamster-001")}));
+}
+
+void AppControllerTest::managesTeamOrderWithoutChangingGroupsOrRooms()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSettings settings(directory.filePath(QStringLiteral("workspace.ini")), QSettings::IniFormat);
+    FakeNotificationSink sink;
+    AppController controller(fakeServicePath(), &settings, &sink);
+
+    QCOMPARE(controller.addRoom(QStringLiteral("63136")), QString());
+    const QString groupId = controller.createGroup(QStringLiteral("旧分组"));
+    const QString first = controller.createTeam(QStringLiteral("一队"));
+    const QString second = controller.createTeam(QStringLiteral("二队"));
+    QCOMPARE(controller.assignGuildMemberToTeam(QStringLiteral("hamster-001"), first), QString());
+    QCOMPARE(controller.assignGuildMemberToTeam(QStringLiteral("hamster-002"), first), QString());
+
+    QCOMPARE(controller.moveTeam(first, 1), QString());
+    QCOMPARE(controller.workspace()->teams().at(0).id, second);
+    QCOMPARE(controller.workspace()->teams().at(1).id, first);
+    QCOMPARE(controller.renameTeam(first, QStringLiteral("一队改名")), QString());
+    QCOMPARE(controller.workspace()->teams().at(1).name, QStringLiteral("一队改名"));
+    QCOMPARE(controller.removeGuildMemberFromTeam(first, QStringLiteral("hamster-002")), QString());
+    QCOMPARE(controller.workspace()->teams().at(1).memberIds,
+             QStringList({QStringLiteral("hamster-001")}));
+    QCOMPARE(controller.deleteTeam(second), QString());
+    QCOMPARE(controller.workspace()->teams().size(), 1);
+
+    QCOMPARE(controller.workspace()->groups().size(), 1);
+    QCOMPARE(controller.workspace()->groups().first().id, groupId);
+    QCOMPARE(controller.rooms()->rowCount(), 1);
+    QCOMPARE(controller.workspace()->primaryRoomId(), QStringLiteral("63136"));
+}
+
+void AppControllerTest::enforcesTeamLimitsAndRosterMembership()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSettings settings(directory.filePath(QStringLiteral("workspace.ini")), QSettings::IniFormat);
+    FakeNotificationSink sink;
+    AppController controller(fakeServicePath(), &settings, &sink);
+
+    QCOMPARE(controller.createTeam(QString(31, QLatin1Char('x'))),
+             QStringLiteral("请输入 1 到 30 个字符的队伍名称"));
+    QString first;
+    for (int index = 0; index < 20; ++index) {
+        const QString teamId = controller.createTeam(QStringLiteral("队伍 %1").arg(index));
+        QVERIFY(!teamId.isEmpty());
+        if (index == 0) first = teamId;
+    }
+    QCOMPARE(controller.createTeam(QStringLiteral("第二十一队")),
+             QStringLiteral("最多创建 20 个队伍"));
+    QCOMPARE(controller.assignGuildMemberToTeam(QStringLiteral("unknown-member"), first),
+             QStringLiteral("未找到该公会主播"));
+    QCOMPARE(controller.assignGuildMemberToTeam(QStringLiteral("hamster-001"),
+                                                QStringLiteral("unknown-team")),
+             QStringLiteral("未找到该队伍"));
+    QCOMPARE(controller.removeGuildMemberFromTeam(QStringLiteral("unknown-team"),
+                                                  QStringLiteral("hamster-001")),
+             QStringLiteral("未找到该队伍"));
+}
+
+void AppControllerTest::persistsIndependentTeamsAndNavigationVisibility()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString settingsPath = directory.filePath(QStringLiteral("workspace.ini"));
+    FakeNotificationSink sink;
+    QString teamId;
+    {
+        QSettings settings(settingsPath, QSettings::IniFormat);
+        AppController controller(fakeServicePath(), &settings, &sink);
+        QCOMPARE(controller.guildRoster().size(), 47);
+        const QVariantMap firstMember = controller.guildRoster().first().toMap();
+        QCOMPARE(firstMember.value(QStringLiteral("id")).toString(),
+                 QStringLiteral("hamster-001"));
+        QCOMPARE(firstMember.value(QStringLiteral("anchorName")).toString(),
+                 QStringLiteral("寅子"));
+        QCOMPARE(firstMember.value(QStringLiteral("roomId")).toString(),
+                 QStringLiteral("71415"));
+        QVERIFY(!firstMember.contains(QStringLiteral("role")));
+
+        teamId = controller.createTeam(QStringLiteral("持久化队伍"));
+        QCOMPARE(controller.assignGuildMemberToTeam(QStringLiteral("hamster-001"), teamId),
+                 QString());
+        QCOMPARE(controller.setNavigationVisible(true), QString());
+    }
+
+    QSettings restoredSettings(settingsPath, QSettings::IniFormat);
+    AppController restored(fakeServicePath(), &restoredSettings, &sink);
+    QCOMPARE(restored.workspace()->teams().size(), 1);
+    QCOMPARE(restored.workspace()->teams().first().id, teamId);
+    QCOMPARE(restored.workspace()->teams().first().memberIds,
+             QStringList({QStringLiteral("hamster-001")}));
+    QVERIFY(restored.workspace()->navigationVisible());
+}
 QTEST_GUILESS_MAIN(AppControllerTest)
 
 #include "app_controller_test.moc"

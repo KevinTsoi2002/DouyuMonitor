@@ -1,6 +1,7 @@
 #include "workspace/native_workspace_store.h"
 
 #include "danmaku/danmaku_governance.h"
+#include "workspace/guild_roster.h"
 
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -14,9 +15,10 @@
 namespace {
 
 constexpr auto kSettingsKey = "DouyuMonitor/nativeWorkspaceV1";
-constexpr int kCurrentVersion = 5;
+constexpr int kCurrentVersion = 6;
 constexpr int kMaxActiveRooms = 10;
 constexpr int kMaxGroupRooms = 10;
+constexpr int kMaxTeams = 20;
 const QRegularExpression kRoomIdPattern(QStringLiteral(R"(^[0-9]{1,20}$)"));
 
 bool isSupportedLayoutId(const QString &layoutId)
@@ -256,6 +258,31 @@ NativeWorkspaceSnapshot normalize(NativeWorkspaceSnapshot snapshot)
     }
     snapshot.groups = std::move(groups);
 
+    QVector<NativeTeam> teams;
+    QSet<QString> teamIds;
+    QSet<QString> assignedMemberIds;
+    for (NativeTeam team : snapshot.teams) {
+        team.id = team.id.trimmed();
+        team.name = team.name.trimmed();
+        if (team.id.isEmpty() || team.name.isEmpty() || team.name.size() > 30
+            || teamIds.contains(team.id)) {
+            continue;
+        }
+
+        QStringList memberIds;
+        for (const QString &rawMemberId : team.memberIds) {
+            const GuildMember *member = GuildRoster::findById(rawMemberId);
+            if (member == nullptr || assignedMemberIds.contains(member->id)) continue;
+            assignedMemberIds.insert(member->id);
+            memberIds.push_back(member->id);
+        }
+        team.memberIds = std::move(memberIds);
+        teamIds.insert(team.id);
+        teams.push_back(std::move(team));
+        if (teams.size() == kMaxTeams) break;
+    }
+    snapshot.teams = std::move(teams);
+
     QVector<NativeWorkspacePreset> presets;
     QSet<QString> presetIds;
     for (NativeWorkspacePreset preset : snapshot.presets) {
@@ -337,6 +364,17 @@ QJsonObject toJson(const NativeRoomGroup &group)
         {QStringLiteral("id"), group.id},
         {QStringLiteral("name"), group.name},
         {QStringLiteral("roomIds"), roomIds},
+    };
+}
+
+QJsonObject toJson(const NativeTeam &team)
+{
+    QJsonArray memberIds;
+    for (const QString &memberId : team.memberIds) memberIds.append(memberId);
+    return {
+        {QStringLiteral("id"), team.id},
+        {QStringLiteral("name"), team.name},
+        {QStringLiteral("memberIds"), memberIds},
     };
 }
 
@@ -426,6 +464,8 @@ QJsonObject toJson(const NativeWorkspaceSnapshot &snapshot)
     for (const NativeRoomRecord &record : snapshot.library) library.append(toJson(record));
     QJsonArray groups;
     for (const NativeRoomGroup &group : snapshot.groups) groups.append(toJson(group));
+    QJsonArray teams;
+    for (const NativeTeam &team : snapshot.teams) teams.append(toJson(team));
     QJsonArray presets;
     for (const NativeWorkspacePreset &preset : snapshot.presets) presets.append(toJson(preset));
     QJsonArray activeRoomIds;
@@ -434,6 +474,7 @@ QJsonObject toJson(const NativeWorkspaceSnapshot &snapshot)
         {QStringLiteral("version"), snapshot.version},
         {QStringLiteral("library"), library},
         {QStringLiteral("groups"), groups},
+        {QStringLiteral("teams"), teams},
         {QStringLiteral("presets"), presets},
         {QStringLiteral("danmaku"), toJson(snapshot.danmaku)},
         {QStringLiteral("activeRoomIds"), activeRoomIds},
@@ -444,6 +485,7 @@ QJsonObject toJson(const NativeWorkspaceSnapshot &snapshot)
         {QStringLiteral("layoutId"), snapshot.layoutId},
         {QStringLiteral("primaryRoomRatio"), snapshot.primaryRoomRatio},
         {QStringLiteral("sidebarVisible"), snapshot.sidebarVisible},
+        {QStringLiteral("navigationVisible"), snapshot.navigationVisible},
         {QStringLiteral("audioMode"), snapshot.audioMode},
         {QStringLiteral("globalMuted"), snapshot.globalMuted},
     };
@@ -673,6 +715,21 @@ std::optional<NativeRoomGroup> groupFromJson(const QJsonObject &object)
     return group;
 }
 
+std::optional<NativeTeam> teamFromJson(const QJsonObject &object)
+{
+    const QJsonValue memberIds = object.value(QStringLiteral("memberIds"));
+    if (containsSensitiveKey(object) || !memberIds.isArray()) return std::nullopt;
+
+    NativeTeam team;
+    team.id = object.value(QStringLiteral("id")).toString();
+    team.name = object.value(QStringLiteral("name")).toString();
+    for (const QJsonValue &value : memberIds.toArray()) {
+        if (!value.isString()) return std::nullopt;
+        team.memberIds.push_back(value.toString());
+    }
+    return team;
+}
+
 std::optional<NativeWorkspacePreset> presetFromJson(const QJsonObject &object, int version)
 {
     const QJsonValue roomIds = object.value(QStringLiteral("roomIds"));
@@ -741,6 +798,13 @@ NativeWorkspaceSnapshot fromJson(const QJsonObject &object)
         const auto group = groupFromJson(value.toObject());
         if (group.has_value()) snapshot.groups.push_back(*group);
     }
+    if (object.value(QStringLiteral("teams")).isArray()) {
+        for (const QJsonValue &value : object.value(QStringLiteral("teams")).toArray()) {
+            if (!value.isObject()) continue;
+            const auto team = teamFromJson(value.toObject());
+            if (team.has_value()) snapshot.teams.push_back(*team);
+        }
+    }
     if (version >= 2) {
         for (const QJsonValue &value : object.value(QStringLiteral("presets")).toArray()) {
             if (!value.isObject()) continue;
@@ -764,6 +828,9 @@ NativeWorkspaceSnapshot fromJson(const QJsonObject &object)
     }
     if (object.value(QStringLiteral("sidebarVisible")).isBool()) {
         snapshot.sidebarVisible = object.value(QStringLiteral("sidebarVisible")).toBool();
+    }
+    if (object.value(QStringLiteral("navigationVisible")).isBool()) {
+        snapshot.navigationVisible = object.value(QStringLiteral("navigationVisible")).toBool();
     }
     if (object.value(QStringLiteral("audioMode")).isString()) {
         snapshot.audioMode = object.value(QStringLiteral("audioMode")).toString();

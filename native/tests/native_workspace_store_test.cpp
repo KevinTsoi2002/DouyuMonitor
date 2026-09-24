@@ -72,6 +72,10 @@ private slots:
     void migratesVersionFourRecordsWithoutQualityRate();
     void migratesVersionThreeFavoritesWithoutLosingMembership();
     void normalizesPresetRoomIdsWithoutDuplicatingEntries();
+    void roundTripsIndependentTeamsAndOneTeamPerMember();
+    void removesDuplicateTeamMembershipWhenLoading();
+    void normalizesTeamFieldsAndLimits();
+    void defaultsMissingTeamsAndNavigationVisibility();
 };
 
 void NativeWorkspaceStoreTest::roundTripsSafeWorkspaceState()
@@ -223,7 +227,7 @@ void NativeWorkspaceStoreTest::roundTripsRequestedQualityRate()
 
     QVERIFY(store.save(snapshot));
     const NativeWorkspaceSnapshot loaded = store.load();
-    QCOMPARE(loaded.version, 5);
+    QCOMPARE(loaded.version, 6);
     QCOMPARE(loaded.library.front().requestedQualityRate, 8);
     QCOMPARE(loaded.library.back().requestedQualityRate, -1);
     QCOMPARE(loaded, snapshot);
@@ -240,7 +244,7 @@ void NativeWorkspaceStoreTest::migratesVersionFourRecordsWithoutQualityRate()
     NativeWorkspaceStore store(&settings);
 
     const NativeWorkspaceSnapshot loaded = store.load();
-    QCOMPARE(loaded.version, 5);
+    QCOMPARE(loaded.version, 6);
     QCOMPARE(loaded.library.size(), 1);
     QCOMPARE(loaded.library.front().requestedQuality, StreamQuality::High);
     QCOMPARE(loaded.library.front().requestedQualityRate, -1);
@@ -338,6 +342,96 @@ void NativeWorkspaceStoreTest::roundTripsVersionThreeDanmakuSettingsAndOverrides
     }
 }
 
+void NativeWorkspaceStoreTest::roundTripsIndependentTeamsAndOneTeamPerMember()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSettings settings(directory.filePath(QStringLiteral("workspace.ini")), QSettings::IniFormat);
+
+    NativeWorkspaceSnapshot snapshot;
+    snapshot.teams = {
+        {QStringLiteral("team-a"), QStringLiteral("一队"), {QStringLiteral("hamster-001")}},
+        {QStringLiteral("team-b"), QStringLiteral("二队"), {QStringLiteral("hamster-002")}},
+        {QStringLiteral("team-c"), QStringLiteral("三队"), {}},
+        {QStringLiteral("team-d"), QStringLiteral("四队"), {}},
+    };
+
+    NativeWorkspaceStore store(&settings);
+    QVERIFY(store.save(snapshot));
+    const NativeWorkspaceSnapshot loaded = store.load();
+    QCOMPARE(loaded.version, 6);
+    QCOMPARE(loaded.teams.size(), 4);
+    QCOMPARE(loaded.teams.at(2).memberIds, QStringList{});
+    QCOMPARE(loaded.teams.at(3).memberIds, QStringList{});
+}
+
+void NativeWorkspaceStoreTest::removesDuplicateTeamMembershipWhenLoading()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSettings settings(directory.filePath(QStringLiteral("workspace.ini")), QSettings::IniFormat);
+
+    NativeWorkspaceSnapshot snapshot;
+    snapshot.teams = {
+        {QStringLiteral("team-a"), QStringLiteral("一队"), {QStringLiteral("hamster-001")}},
+        {QStringLiteral("team-b"), QStringLiteral("二队"), {QStringLiteral("hamster-001")}},
+    };
+
+    NativeWorkspaceStore store(&settings);
+    QVERIFY(store.save(snapshot));
+    const NativeWorkspaceSnapshot loaded = store.load();
+    QCOMPARE(loaded.teams.at(0).memberIds, QStringList({QStringLiteral("hamster-001")}));
+    QCOMPARE(loaded.teams.at(1).memberIds, QStringList{});
+}
+
+void NativeWorkspaceStoreTest::normalizesTeamFieldsAndLimits()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSettings settings(directory.filePath(QStringLiteral("workspace.ini")), QSettings::IniFormat);
+
+    NativeWorkspaceSnapshot snapshot;
+    snapshot.teams = {
+        {QString(), QStringLiteral("无 ID"), {QStringLiteral("hamster-001")}},
+        {QStringLiteral("team-empty-name"), QStringLiteral("   "), {}},
+        {QStringLiteral("team-long-name"), QString(31, QLatin1Char('x')), {}},
+        {QStringLiteral("team-valid"), QStringLiteral("有效队伍"),
+         {QStringLiteral("hamster-001"), QStringLiteral("hamster-001"),
+          QStringLiteral("not-a-member"), QStringLiteral("hamster-002")}},
+        {QStringLiteral("team-empty"), QStringLiteral("空队伍"), {}},
+    };
+    for (int index = 0; index < 19; ++index) {
+        snapshot.teams.push_back({QStringLiteral("team-%1").arg(index),
+                                  QStringLiteral("队伍 %1").arg(index),
+                                  {}});
+    }
+
+    NativeWorkspaceStore store(&settings);
+    QVERIFY(store.save(snapshot));
+    const NativeWorkspaceSnapshot loaded = store.load();
+    QCOMPARE(loaded.teams.size(), 20);
+    QCOMPARE(loaded.teams.at(0).id, QStringLiteral("team-valid"));
+    QCOMPARE(loaded.teams.at(0).memberIds,
+             QStringList({QStringLiteral("hamster-001"), QStringLiteral("hamster-002")}));
+    QCOMPARE(loaded.teams.at(1).id, QStringLiteral("team-empty"));
+    QCOMPARE(loaded.teams.at(1).memberIds, QStringList{});
+}
+
+void NativeWorkspaceStoreTest::defaultsMissingTeamsAndNavigationVisibility()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSettings settings(directory.filePath(QStringLiteral("workspace.ini")), QSettings::IniFormat);
+    settings.setValue(
+        QStringLiteral("DouyuMonitor/nativeWorkspaceV1"),
+        QByteArray(R"JSON({"version":5,"library":[],"groups":[],"activeRoomIds":[],"activeGroupId":"","primaryRoomId":"","audioRoomId":"","presets":[],"sidebarVisible":true})JSON"));
+    NativeWorkspaceStore store(&settings);
+
+    const NativeWorkspaceSnapshot loaded = store.load();
+    QCOMPARE(loaded.version, 6);
+    QVERIFY(loaded.teams.isEmpty());
+    QVERIFY(!loaded.navigationVisible);
+}
 QTEST_MAIN(NativeWorkspaceStoreTest)
 
 #include "native_workspace_store_test.moc"

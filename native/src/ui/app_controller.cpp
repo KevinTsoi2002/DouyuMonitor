@@ -23,8 +23,9 @@
 #include "ui/mpv_quick_item.h"
 #include "ui/room_list_model.h"
 #include "ui/workspace_model.h"
-#include "workspace/multi_room_coordinator.h"
 #include "workspace/favorite_monitor.h"
+#include "workspace/guild_roster.h"
+#include "workspace/multi_room_coordinator.h"
 
 #ifndef DOUYU_APP_VERSION
 #define DOUYU_APP_VERSION "dev"
@@ -235,6 +236,21 @@ QVariantList AppController::libraryRooms() const
             {QStringLiteral("online"), favoriteLiveStatuses_.value(record->roomId,
                                                                       RoomLiveStatus::Unknown)
                                              == RoomLiveStatus::Online},
+        });
+    }
+    return projection;
+}
+
+QVariantList AppController::guildRoster() const
+{
+    QVariantList projection;
+    const QVector<GuildMember> members = GuildRoster::bundled();
+    projection.reserve(members.size());
+    for (const GuildMember &member : members) {
+        projection.push_back(QVariantMap{
+            {QStringLiteral("id"), member.id},
+            {QStringLiteral("anchorName"), member.anchorName},
+            {QStringLiteral("roomId"), member.roomId},
         });
     }
     return projection;
@@ -750,6 +766,97 @@ QString AppController::moveRoomInGroup(const QString &groupId,
     return {};
 }
 
+QString AppController::createTeam(const QString &name)
+{
+    const QString trimmed = name.trimmed();
+    if (!isValidName(trimmed)) return QStringLiteral("请输入 1 到 30 个字符的队伍名称");
+    if (snapshot_.teams.size() >= 20) return QStringLiteral("最多创建 20 个队伍");
+    snapshot_.teams.push_back({generatedId(), trimmed, {}});
+    refreshPresentation();
+    persistWorkspace();
+    return snapshot_.teams.back().id;
+}
+
+QString AppController::renameTeam(const QString &teamId, const QString &name)
+{
+    const QString trimmed = name.trimmed();
+    if (!isValidName(trimmed)) return QStringLiteral("请输入 1 到 30 个字符的队伍名称");
+    for (NativeTeam &team : snapshot_.teams) {
+        if (team.id != teamId) continue;
+        if (team.name == trimmed) return {};
+        team.name = trimmed;
+        refreshPresentation();
+        persistWorkspace();
+        return {};
+    }
+    return QStringLiteral("未找到该队伍");
+}
+
+QString AppController::deleteTeam(const QString &teamId)
+{
+    const auto it = std::find_if(snapshot_.teams.cbegin(), snapshot_.teams.cend(),
+                                 [&teamId](const NativeTeam &team) {
+                                     return team.id == teamId;
+                                 });
+    if (it == snapshot_.teams.cend()) return QStringLiteral("未找到该队伍");
+    snapshot_.teams.erase(it);
+    refreshPresentation();
+    persistWorkspace();
+    return {};
+}
+
+QString AppController::moveTeam(const QString &teamId, int delta)
+{
+    if (delta == 0) return {};
+    const auto it = std::find_if(snapshot_.teams.cbegin(), snapshot_.teams.cend(),
+                                 [&teamId](const NativeTeam &team) {
+                                     return team.id == teamId;
+                                 });
+    if (it == snapshot_.teams.cend()) return QStringLiteral("未找到该队伍");
+    const int from = static_cast<int>(std::distance(snapshot_.teams.cbegin(), it));
+    const int to = qBound(0, from + delta, snapshot_.teams.size() - 1);
+    if (from == to) return {};
+    snapshot_.teams.move(from, to);
+    refreshPresentation();
+    persistWorkspace();
+    return {};
+}
+
+QString AppController::assignGuildMemberToTeam(const QString &memberId, const QString &teamId)
+{
+    const GuildMember *member = GuildRoster::findById(memberId);
+    if (member == nullptr) return QStringLiteral("未找到该公会主播");
+    const auto target = std::find_if(snapshot_.teams.begin(), snapshot_.teams.end(),
+                                     [&teamId](const NativeTeam &team) {
+                                         return team.id == teamId;
+                                     });
+    if (target == snapshot_.teams.end()) return QStringLiteral("未找到该队伍");
+
+    for (NativeTeam &team : snapshot_.teams) {
+        if (team.id == teamId) continue;
+        team.memberIds.removeAll(member->id);
+    }
+    if (!target->memberIds.contains(member->id)) target->memberIds.push_back(member->id);
+    refreshPresentation();
+    persistWorkspace();
+    return {};
+}
+
+QString AppController::removeGuildMemberFromTeam(const QString &teamId, const QString &memberId)
+{
+    const auto target = std::find_if(snapshot_.teams.begin(), snapshot_.teams.end(),
+                                     [&teamId](const NativeTeam &team) {
+                                         return team.id == teamId;
+                                     });
+    if (target == snapshot_.teams.end()) return QStringLiteral("未找到该队伍");
+    const GuildMember *member = GuildRoster::findById(memberId);
+    if (member == nullptr) return QStringLiteral("未找到该公会主播");
+    if (target->memberIds.removeAll(member->id) == 0) return {};
+    refreshPresentation();
+    persistWorkspace();
+    return {};
+}
+
 void AppController::setActiveGroup(const QString &groupId)
 {
     const NativeRoomGroup *group = nullptr;
@@ -823,6 +930,16 @@ bool AppController::setPrimaryRoomRatio(double ratio)
     refreshPresentation();
     persistWorkspace();
     return true;
+}
+
+QString AppController::setNavigationVisible(bool visible)
+{
+    if (workspace_ == nullptr) return QStringLiteral("当前操作不可用");
+    if (snapshot_.navigationVisible == visible && workspace_->navigationVisible() == visible) return {};
+    snapshot_.navigationVisible = visible;
+    workspace_->setNavigationVisible(visible);
+    persistWorkspace();
+    return {};
 }
 
 bool AppController::setSidebarVisible(bool visible)
@@ -1199,6 +1316,7 @@ void AppController::restoreWorkspace()
     coordinator_->setAudioMode(snapshot_.audioMode);
     coordinator_->setGlobalMuted(snapshot_.globalMuted);
     workspace_->setSidebarVisible(snapshot_.sidebarVisible);
+    workspace_->setNavigationVisible(snapshot_.navigationVisible);
     if (activeGroup != nullptr) {
         snapshot_.primaryRoomId = targetRooms.isEmpty() ? QString() : targetRooms.first().roomId;
         snapshot_.audioRoomId = snapshot_.primaryRoomId;
@@ -1404,7 +1522,8 @@ void AppController::refreshPresentation()
     workspace_->setAudioPolicy(coordinator_->audioMode(), coordinator_->globalMuted());
     workspace_->setLayoutPresentation(coordinator_->layoutMode(),
                                       coordinator_->primaryRoomRatio());
-    workspace_->setWorkspaceData(snapshot_.groups, snapshot_.presets, snapshot_.activeGroupId);
+    workspace_->setWorkspaceData(snapshot_.teams, snapshot_.groups, snapshot_.presets,
+                                 snapshot_.activeGroupId);
 }
 
 void AppController::synchronizeDanmaku()

@@ -35,6 +35,7 @@ class AppController final : public QObject {
     Q_PROPERTY(MonitoringModel *monitoring READ monitoring CONSTANT)
     Q_PROPERTY(DanmakuController *danmaku READ danmaku CONSTANT)
     Q_PROPERTY(QVariantList libraryRooms READ libraryRooms NOTIFY libraryRoomsChanged)
+    Q_PROPERTY(QVariantList guildRoster READ guildRoster CONSTANT)
     Q_PROPERTY(QVariantMap notificationPreferences READ notificationPreferences
                NOTIFY notificationPreferencesChanged)
     Q_PROPERTY(bool backgroundHosted READ backgroundHosted NOTIFY backgroundHostedChanged)
@@ -63,6 +64,7 @@ public:
     MonitoringModel *monitoring() noexcept;
     DanmakuController *danmaku() noexcept;
     QVariantList libraryRooms() const;
+    QVariantList guildRoster() const;
     QVariantMap notificationPreferences() const;
     QVariantList searchResults() const;
     QString searchStatus() const;
@@ -109,6 +111,15 @@ public:
                                         const QString &roomId,
                                         int delta);
     Q_INVOKABLE void setActiveGroup(const QString &groupId);
+    Q_INVOKABLE QString createTeam(const QString &name);
+    Q_INVOKABLE QString renameTeam(const QString &teamId, const QString &name);
+    Q_INVOKABLE QString deleteTeam(const QString &teamId);
+    Q_INVOKABLE QString moveTeam(const QString &teamId, int delta);
+    Q_INVOKABLE QString assignGuildMemberToTeam(const QString &memberId,
+                                                const QString &teamId);
+    Q_INVOKABLE QString removeGuildMemberFromTeam(const QString &teamId,
+                                                  const QString &memberId);
+    Q_INVOKABLE QString setNavigationVisible(bool visible);
     Q_INVOKABLE bool setLayout(const QString &layoutId);
     Q_INVOKABLE bool setPrimaryRoomRatio(double ratio);
     Q_INVOKABLE bool setSidebarVisible(bool visible);

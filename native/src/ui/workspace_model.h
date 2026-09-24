@@ -22,6 +22,8 @@ class WorkspaceModel final : public QObject {
     Q_PROPERTY(bool globalMuted READ globalMuted NOTIFY globalMutedChanged)
     Q_PROPERTY(bool danmakuEnabled READ danmakuEnabled NOTIFY danmakuEnabledChanged)
     Q_PROPERTY(int maxRooms READ maxRooms CONSTANT)
+    Q_PROPERTY(bool navigationVisible READ navigationVisible NOTIFY navigationVisibleChanged)
+    Q_PROPERTY(QVariantList teams READ teamItems NOTIFY workspaceDataChanged)
     Q_PROPERTY(QVariantList groups READ groupItems NOTIFY workspaceDataChanged)
     Q_PROPERTY(QVariantList presets READ presetItems NOTIFY workspaceDataChanged)
     Q_PROPERTY(QString lastMessage READ lastMessage NOTIFY lastMessageChanged)
@@ -42,6 +44,8 @@ public:
     bool globalMuted() const noexcept;
     bool danmakuEnabled() const noexcept;
     int maxRooms() const noexcept;
+    bool navigationVisible() const noexcept;
+    QVariantList teamItems() const;
     QVariantList groupItems() const;
     QVariantList presetItems() const;
     QString lastMessage() const;
@@ -51,19 +55,23 @@ public:
     QString commandMessage(RoomCommandResult result) const;
     void setAudioRoomId(QString roomId);
     void setSidebarVisible(bool visible);
+    void setNavigationVisible(bool visible);
     void setCoordinatorState(QString layoutId, QString primaryRoomId, QString secondaryPrimaryRoomId, QString audioRoomId);
     void setAudioPolicy(QString audioMode, bool globalMuted);
     void setLayoutPresentation(QString layoutMode, double primaryRoomRatio);
     Q_INVOKABLE void setLastMessage(QString message);
     Q_INVOKABLE void setLastMessage(QString message, QString level, int timeoutMs);
+    const QVector<NativeTeam> &teams() const noexcept;
     const QVector<NativeRoomGroup> &groups() const noexcept;
     const QVector<NativeWorkspacePreset> &presets() const noexcept;
-    void setWorkspaceData(QVector<NativeRoomGroup> groups,
+    void setWorkspaceData(QVector<NativeTeam> teams,
+                          QVector<NativeRoomGroup> groups,
                           QVector<NativeWorkspacePreset> presets,
                           QString activeGroupId);
 
 signals:
     void sidebarVisibleChanged();
+    void navigationVisibleChanged();
     void layoutIdChanged();
     void primaryRoomRatioChanged();
     void primaryRoomIdChanged();
@@ -80,6 +88,7 @@ signals:
 private:
     AppController *controller_ = nullptr;
     bool sidebarVisible_ = true;
+    bool navigationVisible_ = false;
     QString layoutId_ = QStringLiteral("auto");
     QString layoutMode_ = QStringLiteral("auto");
     double primaryRoomRatio_ = 0.6;
@@ -89,6 +98,7 @@ private:
     QString audioMode_ = QStringLiteral("single");
     bool globalMuted_ = false;
     bool danmakuEnabled_ = false;
+    QVector<NativeTeam> teams_;
     QVector<NativeRoomGroup> groups_;
     QVector<NativeWorkspacePreset> presets_;
     QString activeGroupId_;

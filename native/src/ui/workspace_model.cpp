@@ -63,6 +63,26 @@ int WorkspaceModel::maxRooms() const noexcept
     return 10;
 }
 
+bool WorkspaceModel::navigationVisible() const noexcept
+{
+    return navigationVisible_;
+}
+
+QVariantList WorkspaceModel::teamItems() const
+{
+    QVariantList items;
+    items.reserve(teams_.size());
+    for (const NativeTeam &team : teams_) {
+        items.append(QVariantMap{
+            {QStringLiteral("id"), team.id},
+            {QStringLiteral("name"), team.name},
+            {QStringLiteral("memberIds"), team.memberIds},
+            {QStringLiteral("memberCount"), team.memberIds.size()},
+        });
+    }
+    return items;
+}
+
 QVariantList WorkspaceModel::groupItems() const
 {
     QVariantList items;
@@ -112,6 +132,13 @@ void WorkspaceModel::setSidebarVisible(bool visible)
     if (sidebarVisible_ == visible) return;
     sidebarVisible_ = visible;
     emit sidebarVisibleChanged();
+}
+
+void WorkspaceModel::setNavigationVisible(bool visible)
+{
+    if (navigationVisible_ == visible) return;
+    navigationVisible_ = visible;
+    emit navigationVisibleChanged();
 }
 
 QString WorkspaceModel::commandMessage(RoomCommandResult result) const
@@ -214,6 +241,11 @@ void WorkspaceModel::setLastMessage(QString message, QString level, int timeoutM
     }
 }
 
+const QVector<NativeTeam> &WorkspaceModel::teams() const noexcept
+{
+    return teams_;
+}
+
 const QVector<NativeRoomGroup> &WorkspaceModel::groups() const noexcept
 {
     return groups_;
@@ -224,11 +256,16 @@ const QVector<NativeWorkspacePreset> &WorkspaceModel::presets() const noexcept
     return presets_;
 }
 
-void WorkspaceModel::setWorkspaceData(QVector<NativeRoomGroup> groups,
+void WorkspaceModel::setWorkspaceData(QVector<NativeTeam> teams,
+                                      QVector<NativeRoomGroup> groups,
                                       QVector<NativeWorkspacePreset> presets,
                                       QString activeGroupId)
 {
-    if (groups_ == groups && presets_ == presets && activeGroupId_ == activeGroupId) return;
+    if (teams_ == teams && groups_ == groups && presets_ == presets
+        && activeGroupId_ == activeGroupId) {
+        return;
+    }
+    teams_ = std::move(teams);
     groups_ = std::move(groups);
     presets_ = std::move(presets);
     activeGroupId_ = std::move(activeGroupId);

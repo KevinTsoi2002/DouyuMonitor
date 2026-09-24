@@ -55,6 +55,14 @@ struct NativeRoomGroup {
     bool operator==(const NativeRoomGroup &) const = default;
 };
 
+struct NativeTeam {
+    QString id;
+    QString name;
+    QStringList memberIds;
+
+    bool operator==(const NativeTeam &) const = default;
+};
+
 struct NativeDanmakuConfiguration {
     bool globalEnabled = true;
     DanmakuDisplaySettings display;
@@ -83,9 +91,10 @@ struct NativeWorkspacePreset {
 };
 
 struct NativeWorkspaceSnapshot {
-    int version = 5;
+    int version = 6;
     QVector<NativeRoomRecord> library;
     QVector<NativeRoomGroup> groups;
+    QVector<NativeTeam> teams;
     QVector<NativeWorkspacePreset> presets;
     NativeDanmakuConfiguration danmaku;
     QStringList activeRoomIds;
@@ -96,6 +105,7 @@ struct NativeWorkspaceSnapshot {
     QString layoutId = QStringLiteral("auto");
     double primaryRoomRatio = 0.6;
     bool sidebarVisible = true;
+    bool navigationVisible = false;
     QString audioMode = QStringLiteral("single");
     bool globalMuted = false;
 

@@ -340,6 +340,7 @@ target_link_libraries(qml_close_regression_test PRIVATE
     Qt6::OpenGL
     Qt6::Test
     douyu_danmaku
+    douyu_guild
     remote_playback
     mpv::mpv
 )
@@ -489,6 +490,7 @@ target_link_libraries(app_controller_test PRIVATE
     Qt6::Network
     Qt6::Test
     douyu_danmaku
+    douyu_guild
     remote_playback
     mpv::mpv
 )
@@ -669,7 +671,7 @@ add_executable(native_workspace_store_test
     src/workspace/native_workspace_types.cpp
     src/workspace/native_workspace_store.cpp
 )
-target_link_libraries(native_workspace_store_test PRIVATE douyu_danmaku Qt6::Core Qt6::Test)
+target_link_libraries(native_workspace_store_test PRIVATE douyu_danmaku douyu_guild Qt6::Core Qt6::Test)
 target_include_directories(native_workspace_store_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 add_test(NAME native_workspace_store_test COMMAND native_workspace_store_test)
 
@@ -902,6 +904,7 @@ target_link_libraries(douyu_monitor_native
         douyu_qml
         douyu_qmlplugin
         douyu_danmaku
+        douyu_guild
         remote_playback
         mpv::mpv
 )

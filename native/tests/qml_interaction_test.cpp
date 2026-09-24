@@ -833,6 +833,7 @@ void QmlInteractionTest::doesNotExposeGroupManagementControls()
     registerQmlTypes();
     WorkspaceModel workspace(nullptr);
     workspace.setWorkspaceData(
+        {},
         {{QStringLiteral("group-a"), QStringLiteral("赛事"), {QStringLiteral("63136")} },
          {QStringLiteral("group-b"), QStringLiteral("关注"), {QStringLiteral("63137")} }},
         {},
@@ -1755,7 +1756,7 @@ void QmlInteractionTest::deletesWorkspacePresetFromPanel()
     NativeWorkspacePreset preset;
     preset.id = QStringLiteral("preset-1");
     preset.name = QStringLiteral("默认布局");
-    workspace.setWorkspaceData({}, {preset}, {});
+    workspace.setWorkspaceData({}, {}, {preset}, {});
     FakePresetController controller;
     QQmlApplicationEngine engine;
     QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qml/panels/WorkspacePresetsPanel.qml")));
@@ -1793,7 +1794,7 @@ void QmlInteractionTest::defersWorkspacePresetApplyUntilPopupHandlerReturns()
     NativeWorkspacePreset preset;
     preset.id = QStringLiteral("preset-1");
     preset.name = QStringLiteral("默认布局");
-    workspace.setWorkspaceData({}, {preset}, {});
+    workspace.setWorkspaceData({}, {}, {preset}, {});
     FakePresetController controller;
     QQmlApplicationEngine engine;
     QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qml/panels/WorkspacePresetsPanel.qml")));

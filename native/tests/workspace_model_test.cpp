@@ -16,6 +16,7 @@ private slots:
     void exposesToastSeverityAndTimeout();
     void exposesToastDismissalToQml();
     void monitoringModelExposesOnlyFixedHealthLabels();
+    void projectsTeamsAndNavigationVisibility();
 };
 
 void WorkspaceModelTest::mapsRoomLimitToFixedChineseFeedback()
@@ -106,6 +107,36 @@ void WorkspaceModelTest::monitoringModelExposesOnlyFixedHealthLabels()
     QCOMPARE(model.errorCount(), 1);
     QCOMPARE(model.notificationStatus(), QStringLiteral("enabled"));
     QCOMPARE(model.recoveryStatus(), QStringLiteral("recovering"));
+}
+
+void WorkspaceModelTest::projectsTeamsAndNavigationVisibility()
+{
+    WorkspaceModel model(nullptr);
+    const NativeTeam team{
+        QStringLiteral("team-a"),
+        QStringLiteral("一队"),
+        {QStringLiteral("hamster-001"), QStringLiteral("hamster-002")},
+    };
+
+    model.setWorkspaceData({team}, {}, {}, {});
+
+    QCOMPARE(model.teams().size(), 1);
+    const QVariantList items = model.teamItems();
+    QCOMPARE(items.size(), 1);
+    const QVariantMap item = items.first().toMap();
+    QCOMPARE(item.value(QStringLiteral("id")).toString(), QStringLiteral("team-a"));
+    QCOMPARE(item.value(QStringLiteral("name")).toString(), QStringLiteral("一队"));
+    QCOMPARE(item.value(QStringLiteral("memberIds")).toStringList(),
+             QStringList({QStringLiteral("hamster-001"), QStringLiteral("hamster-002")}));
+    QCOMPARE(item.value(QStringLiteral("memberCount")).toInt(), 2);
+
+    QSignalSpy navigationChanges(&model, &WorkspaceModel::navigationVisibleChanged);
+    QVERIFY(!model.navigationVisible());
+    model.setNavigationVisible(true);
+    QVERIFY(model.navigationVisible());
+    QCOMPARE(navigationChanges.count(), 1);
+    model.setNavigationVisible(true);
+    QCOMPARE(navigationChanges.count(), 1);
 }
 
 QTEST_GUILESS_MAIN(WorkspaceModelTest)
