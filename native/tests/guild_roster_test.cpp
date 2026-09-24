@@ -9,6 +9,9 @@ private slots:
     void loadsBundledRosterWithoutRoleLabels();
     void stripsRoleSuffixOnlyForSearch();
     void rejectsInvalidRoomIdsFromResource();
+    void rejectsMalformedRootAndUnsupportedVersion();
+    void rejectsInvalidMemberShapesAndIds();
+    void rejectsMalformedRoomIdsButAcceptsEmptyRoomId();
 };
 
 void GuildRosterTest::loadsBundledRosterWithoutRoleLabels()
@@ -40,6 +43,60 @@ void GuildRosterTest::rejectsInvalidRoomIdsFromResource()
     const GuildMember *yinzi = GuildRoster::findByName(QStringLiteral("寅子"));
     QVERIFY(yinzi != nullptr);
     QCOMPARE(yinzi->roomId, QStringLiteral("71415"));
+}
+
+void GuildRosterTest::rejectsMalformedRootAndUnsupportedVersion()
+{
+    QVERIFY(GuildRoster::parse(QByteArrayLiteral("{")).isEmpty());
+    QVERIFY(GuildRoster::parse(QByteArrayLiteral("[]")).isEmpty());
+    QVERIFY(GuildRoster::parse(
+                QByteArrayLiteral(R"({"version":2,"members":[]})"))
+                .isEmpty());
+    QVERIFY(GuildRoster::parse(
+                QByteArrayLiteral(R"({"version":1})"))
+                .isEmpty());
+    QVERIFY(GuildRoster::parse(
+                QByteArrayLiteral(R"({"version":1,"members":{}})"))
+                .isEmpty());
+}
+
+void GuildRosterTest::rejectsInvalidMemberShapesAndIds()
+{
+    const QVector<GuildMember> members = GuildRoster::parse(
+        QByteArrayLiteral(R"({
+            "version": 1,
+            "members": [
+                {},
+                { "id": "", "name": "空 ID" },
+                { "id": "   ", "name": "空白 ID" },
+                { "id": "hamster-001", "name": "有效成员" },
+                { "id": "hamster-001", "name": "重复 ID" },
+                { "id": "hamster-002", "name": "   " },
+                { "id": "hamster-003", "name": "另一位有效成员", "roomId": "12345" }
+            ]
+        })"));
+
+    QCOMPARE(members.size(), 2);
+    QCOMPARE(members.at(0).id, QStringLiteral("hamster-001"));
+    QCOMPARE(members.at(1).id, QStringLiteral("hamster-003"));
+}
+
+void GuildRosterTest::rejectsMalformedRoomIdsButAcceptsEmptyRoomId()
+{
+    const QVector<GuildMember> members = GuildRoster::parse(
+        QByteArrayLiteral(R"({
+            "version": 1,
+            "members": [
+                { "id": "hamster-001", "name": "空房间号", "roomId": "" },
+                { "id": "hamster-002", "name": "字母房间号", "roomId": "abc" },
+                { "id": "hamster-003", "name": "负数房间号", "roomId": "-1" },
+                { "id": "hamster-004", "name": "超长房间号", "roomId": "123456789012345678901" }
+            ]
+        })"));
+
+    QCOMPARE(members.size(), 1);
+    QCOMPARE(members.first().id, QStringLiteral("hamster-001"));
+    QVERIFY(members.first().roomId.isEmpty());
 }
 
 QTEST_GUILESS_MAIN(GuildRosterTest)
