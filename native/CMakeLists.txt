@@ -67,6 +67,33 @@ set(DOUYU_QML_ICON_ASSETS
     app/qml/assets/icons/window-close.svg
 )
 
+add_library(douyu_guild STATIC
+    src/workspace/guild_roster.cpp
+)
+target_link_libraries(douyu_guild PUBLIC Qt6::Core)
+target_include_directories(douyu_guild PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+qt_add_resources(douyu_guild guild_roster_resources
+    PREFIX "/guild"
+    BASE "${CMAKE_CURRENT_SOURCE_DIR}"
+    FILES
+        app/resources/hamster_agent_roster.json
+)
+
+add_executable(guild_roster_test
+    tests/guild_roster_test.cpp
+)
+target_link_libraries(guild_roster_test PRIVATE
+    Qt6::Core
+    Qt6::Test
+    douyu_guild
+)
+add_test(NAME guild_roster_test COMMAND guild_roster_test)
+set_property(TEST guild_roster_test PROPERTY ENVIRONMENT_MODIFICATION
+    "PATH=path_list_prepend:${QT_ROOT}/bin"
+    "QT_PLUGIN_PATH=set:${QT_ROOT}/plugins"
+    "QML2_IMPORT_PATH=set:${QT_ROOT}/qml"
+)
+
 qt_add_library(douyu_qml STATIC)
 set_source_files_properties(app/qml/Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 qt_add_qml_module(douyu_qml
