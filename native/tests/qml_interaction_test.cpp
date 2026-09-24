@@ -194,6 +194,35 @@ public:
     QString deletedPresetId;
 };
 
+class FakeGuildNavigationController final : public QObject {
+    Q_OBJECT
+    Q_PROPERTY(QVariantList guildRoster READ guildRoster CONSTANT)
+    Q_PROPERTY(QVariantList teams READ teams CONSTANT)
+
+public:
+    QVariantList guildRoster() const { return roster; }
+    QVariantList teams() const { return teamItems; }
+
+    Q_INVOKABLE QString setGuildMemberRoomId(const QString &memberId, const QString &roomId)
+    {
+        lastConfirmedMemberId = memberId;
+        lastConfirmedRoomId = roomId;
+        return {};
+    }
+
+    Q_INVOKABLE QString addGuildMemberRoom(const QString &memberId)
+    {
+        lastAddedMemberId = memberId;
+        return {};
+    }
+
+    QVariantList roster;
+    QVariantList teamItems;
+    QString lastConfirmedMemberId;
+    QString lastConfirmedRoomId;
+    QString lastAddedMemberId;
+};
+
 class FakeUpdateController final : public QObject {
     Q_OBJECT
     Q_PROPERTY(QString updateState READ updateState NOTIFY updateStateChanged)
@@ -364,7 +393,190 @@ private slots:
     void exposesFavoriteTitleNotificationPreference();
     void checksForUpdatesFromSettingsPage();
     void managesTeamsOnlyFromSettings();
+    void groupsGuildNavigationByTeamsWithoutRoleLabels();
+    void filtersGuildNavigationWithoutChangingTeamOrder();
+    void quickAddsResolvedGuildMember();
+    void submitsManualGuildRoomId();
 };
+
+void QmlInteractionTest::groupsGuildNavigationByTeamsWithoutRoleLabels()
+{
+    FakeGuildNavigationController controller;
+    controller.roster = QVariantList{
+        QVariantMap{{QStringLiteral("id"), QStringLiteral("hamster-001")},
+                    {QStringLiteral("anchorName"), QStringLiteral("寅子")},
+                    {QStringLiteral("roomId"), QStringLiteral("71415")},
+                    {QStringLiteral("status"), QStringLiteral("resolved")},
+                    {QStringLiteral("active"), false}},
+        QVariantMap{{QStringLiteral("id"), QStringLiteral("hamster-004")},
+                    {QStringLiteral("anchorName"), QStringLiteral("主播阿郎")},
+                    {QStringLiteral("roomId"), QStringLiteral("320155")},
+                    {QStringLiteral("status"), QStringLiteral("resolved")},
+                    {QStringLiteral("active"), false}},
+    };
+    controller.teamItems = QVariantList{
+        QVariantMap{{QStringLiteral("id"), QStringLiteral("team-a")},
+                    {QStringLiteral("name"), QStringLiteral("一队")},
+                    {QStringLiteral("memberIds"), QStringList{QStringLiteral("hamster-004")}}},
+        QVariantMap{{QStringLiteral("id"), QStringLiteral("team-b")},
+                    {QStringLiteral("name"), QStringLiteral("二队")},
+                    {QStringLiteral("memberIds"), QStringList{QStringLiteral("hamster-001")}}},
+    };
+
+    QQmlApplicationEngine engine;
+    QQmlComponent component(&engine,
+                            QUrl(QStringLiteral("qrc:/qml/components/GuildNavigationPanel.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    QQuickWindow hostWindow;
+    hostWindow.resize(QSize(284, 720));
+    hostWindow.show();
+    std::unique_ptr<QObject> panel(component.createWithInitialProperties({
+        {QStringLiteral("parent"), QVariant::fromValue(hostWindow.contentItem())},
+        {QStringLiteral("width"), 284},
+        {QStringLiteral("height"), 720},
+        {QStringLiteral("controller"),
+         QVariant::fromValue(static_cast<QObject *>(&controller))},
+    }));
+    QVERIFY2(panel != nullptr, qPrintable(component.errorString()));
+
+    QObject *teamsList = panel->findChild<QObject *>(QStringLiteral("guildTeamSections"));
+    QVERIFY(teamsList != nullptr);
+    QTRY_COMPARE(teamsList->property("count").toInt(), 3);
+    QCOMPARE(panel->property("visibleMemberCount").toInt(), 2);
+    QVERIFY(panel->findChild<QObject *>(QStringLiteral("guildMemberRole")) == nullptr);
+}
+
+void QmlInteractionTest::filtersGuildNavigationWithoutChangingTeamOrder()
+{
+    FakeGuildNavigationController controller;
+    controller.roster = QVariantList{
+        QVariantMap{{QStringLiteral("id"), QStringLiteral("hamster-001")},
+                    {QStringLiteral("anchorName"), QStringLiteral("寅子")},
+                    {QStringLiteral("roomId"), QStringLiteral("71415")},
+                    {QStringLiteral("status"), QStringLiteral("resolved")},
+                    {QStringLiteral("active"), false}},
+        QVariantMap{{QStringLiteral("id"), QStringLiteral("hamster-002")},
+                    {QStringLiteral("anchorName"), QStringLiteral("主播阿飞")},
+                    {QStringLiteral("roomId"), QStringLiteral("84452")},
+                    {QStringLiteral("status"), QStringLiteral("resolved")},
+                    {QStringLiteral("active"), false}},
+    };
+    controller.teamItems = QVariantList{
+        QVariantMap{{QStringLiteral("id"), QStringLiteral("team-a")},
+                    {QStringLiteral("name"), QStringLiteral("一队")},
+                    {QStringLiteral("memberIds"), QStringList{QStringLiteral("hamster-001")}}},
+        QVariantMap{{QStringLiteral("id"), QStringLiteral("team-b")},
+                    {QStringLiteral("name"), QStringLiteral("二队")},
+                    {QStringLiteral("memberIds"), QStringList{}}},
+    };
+
+    QQmlApplicationEngine engine;
+    QQmlComponent component(&engine,
+                            QUrl(QStringLiteral("qrc:/qml/components/GuildNavigationPanel.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    QQuickWindow hostWindow;
+    hostWindow.resize(QSize(284, 720));
+    hostWindow.show();
+    std::unique_ptr<QObject> panel(component.createWithInitialProperties({
+        {QStringLiteral("parent"), QVariant::fromValue(hostWindow.contentItem())},
+        {QStringLiteral("width"), 284},
+        {QStringLiteral("height"), 720},
+        {QStringLiteral("controller"),
+         QVariant::fromValue(static_cast<QObject *>(&controller))},
+    }));
+    QVERIFY(panel != nullptr);
+
+    QObject *search = panel->findChild<QObject *>(QStringLiteral("guildNavigationSearch"));
+    QVERIFY(search != nullptr);
+    search->setProperty("text", QStringLiteral("阿飞"));
+    QTRY_COMPARE(panel->property("visibleMemberCount").toInt(), 1);
+    QCOMPARE(panel->property("visibleTeamCount").toInt(), 3);
+}
+
+void QmlInteractionTest::quickAddsResolvedGuildMember()
+{
+    QQmlApplicationEngine engine;
+    QQmlComponent component(&engine,
+                            QUrl(QStringLiteral("qrc:/qml/components/GuildMemberRow.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    std::unique_ptr<QObject> row(component.createWithInitialProperties({
+        {QStringLiteral("width"), 260},
+        {QStringLiteral("member"), QVariantMap{
+             {QStringLiteral("id"), QStringLiteral("hamster-001")},
+             {QStringLiteral("anchorName"), QStringLiteral("寅子")},
+             {QStringLiteral("roomId"), QStringLiteral("71415")},
+             {QStringLiteral("status"), QStringLiteral("resolved")},
+             {QStringLiteral("active"), false}}},
+        {QStringLiteral("canAdd"), true},
+    }));
+    QVERIFY2(row != nullptr, qPrintable(component.errorString()));
+
+    QSignalSpy added(row.get(), SIGNAL(addRequested(QString)));
+    QObject *addButton = row->findChild<QObject *>(QStringLiteral("guildQuickAddButton"));
+    QVERIFY(addButton != nullptr);
+    QVERIFY(addButton->property("enabled").toBool());
+    click(addButton);
+    QCOMPARE(added.count(), 1);
+    QCOMPARE(added.at(0).at(0).toString(), QStringLiteral("hamster-001"));
+
+    FakeGuildNavigationController panelController;
+    panelController.roster = QVariantList{
+        QVariantMap{{QStringLiteral("id"), QStringLiteral("hamster-001")},
+                    {QStringLiteral("anchorName"), QStringLiteral("寅子")},
+                    {QStringLiteral("roomId"), QStringLiteral("71415")},
+                    {QStringLiteral("status"), QStringLiteral("resolved")},
+                    {QStringLiteral("active"), false}},
+    };
+    QQmlApplicationEngine panelEngine;
+    QQmlComponent panelComponent(
+        &panelEngine, QUrl(QStringLiteral("qrc:/qml/components/GuildNavigationPanel.qml")));
+    QVERIFY2(panelComponent.isReady(), qPrintable(panelComponent.errorString()));
+    QQuickWindow panelHost;
+    panelHost.resize(QSize(284, 720));
+    panelHost.show();
+    std::unique_ptr<QObject> panel(panelComponent.createWithInitialProperties({
+        {QStringLiteral("parent"), QVariant::fromValue(panelHost.contentItem())},
+        {QStringLiteral("width"), 284},
+        {QStringLiteral("height"), 720},
+        {QStringLiteral("controller"),
+         QVariant::fromValue(static_cast<QObject *>(&panelController))},
+    }));
+    QVERIFY(panel != nullptr);
+    QCOMPARE(panel->property("visibleMemberCount").toInt(), 1);
+    QVERIFY(QMetaObject::invokeMethod(panel.get(), "quickAdd",
+                                      Q_ARG(QVariant, QStringLiteral("hamster-001"))));
+    QCOMPARE(panelController.lastAddedMemberId, QStringLiteral("hamster-001"));
+}
+void QmlInteractionTest::submitsManualGuildRoomId()
+{
+    QQmlApplicationEngine engine;
+    QQmlComponent component(&engine,
+                            QUrl(QStringLiteral("qrc:/qml/components/GuildMemberRow.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    std::unique_ptr<QObject> row(component.createWithInitialProperties({
+        {QStringLiteral("member"), QVariantMap{
+             {QStringLiteral("id"), QStringLiteral("hamster-001")},
+             {QStringLiteral("anchorName"), QStringLiteral("寅子")},
+             {QStringLiteral("roomId"), QString()},
+             {QStringLiteral("status"), QStringLiteral("unresolved")},
+             {QStringLiteral("active"), false}}},
+    }));
+    QVERIFY2(row != nullptr, qPrintable(component.errorString()));
+
+    QSignalSpy submitted(row.get(), SIGNAL(roomIdSubmitted(QString, QString)));
+    QObject *roomLabel = row->findChild<QObject *>(QStringLiteral("guildMemberRoomLabel"));
+    QVERIFY(roomLabel != nullptr);
+    click(roomLabel);
+
+    QObject *input = row->findChild<QObject *>(QStringLiteral("guildMemberRoomInput"));
+    QVERIFY(input != nullptr);
+    QTRY_VERIFY(input->property("visible").toBool());
+    input->setProperty("text", QStringLiteral("71415"));
+    QVERIFY(QMetaObject::invokeMethod(input, "accepted"));
+    QCOMPARE(submitted.count(), 1);
+    QCOMPARE(submitted.at(0).at(0).toString(), QStringLiteral("hamster-001"));
+    QCOMPARE(submitted.at(0).at(1).toString(), QStringLiteral("71415"));
+}
 
 void QmlInteractionTest::keepsTransientDialogSurfacesDark()
 {
