@@ -7,7 +7,9 @@ Rectangle {
 
     property var controller: null
     property bool sidebarVisible: true
+    property bool navigationVisible: false
     signal toggleSidebar()
+    signal toggleNavigation()
     signal openDanmaku()
     signal openMonitoring()
     signal openWorkspace()
@@ -45,6 +47,31 @@ Rectangle {
                 height: 16
                 source: Qt.resolvedUrl("../assets/icons/menu.svg")
                 opacity: parent.hovered ? 1 : 0.82
+            }
+            background: Rectangle {
+                radius: Theme.radiusSmall
+                color: parent.down ? Theme.well : (parent.hovered ? Theme.controlSurface : "transparent")
+            }
+        }
+
+        ToolButton {
+            objectName: "hamsterNavigationButton"
+            width: Theme.controlHeight
+            height: Theme.controlHeight
+            Accessible.name: root.navigationVisible ? "收起仓鼠特工导航" : "展开仓鼠特工导航"
+            ToolTip.visible: hovered
+            ToolTip.text: Accessible.name
+            onClicked: root.toggleNavigation()
+            contentItem: Image {
+                objectName: "hamsterNavigationIcon"
+                anchors.centerIn: parent
+                width: 18
+                height: 18
+                source: Qt.resolvedUrl("../assets/icons/hamster-agent.jfif")
+                sourceClipRect: Qt.rect(144, 144, 1152, 1152)
+                fillMode: Image.PreserveAspectCrop
+                smooth: true
+                opacity: parent.hovered ? 1 : 0.86
             }
             background: Rectangle {
                 radius: Theme.radiusSmall

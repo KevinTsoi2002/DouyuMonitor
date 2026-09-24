@@ -34,7 +34,14 @@ ApplicationWindow {
     property bool sidebarVisible: appController
                                   ? appController.workspace.sidebarVisible
                                   : true
-    readonly property int sidebarWidth: sidebarVisible ? 268 : 0
+    property bool navigationFallbackVisible: false
+    readonly property bool navigationVisible: workspaceModel
+                                             ? workspaceModel.navigationVisible
+                                             : navigationFallbackVisible
+    readonly property int roomSidebarWidth: sidebarVisible && !navigationVisible ? 268 : 0
+    readonly property int navigationWidth: navigationVisible ? 284 : 0
+    readonly property int leftPanelWidth: Math.max(roomSidebarWidth, navigationWidth)
+    readonly property int sidebarWidth: roomSidebarWidth
     readonly property var roomModel: appController
                                     ? appController.rooms
                                     : (showPreviewRooms ? previewRooms : emptyPreviewRooms)
@@ -43,10 +50,24 @@ ApplicationWindow {
     readonly property var monitoringModel: appController ? appController.monitoring : null
 
     function toggleSidebarVisibility() {
+        const nextVisible = !sidebarVisible
         if (appController) {
-            appController.setSidebarVisible(!sidebarVisible)
+            if (nextVisible) appController.setNavigationVisible(false)
+            appController.setSidebarVisible(nextVisible)
         } else {
-            sidebarVisible = !sidebarVisible
+            sidebarVisible = nextVisible
+            if (nextVisible) navigationFallbackVisible = false
+        }
+    }
+
+    function toggleNavigationVisibility() {
+        const nextVisible = !navigationVisible
+        if (appController) {
+            appController.setNavigationVisible(nextVisible)
+            if (nextVisible && sidebarVisible) appController.setSidebarVisible(false)
+        } else {
+            navigationFallbackVisible = nextVisible
+            if (nextVisible && sidebarVisible) sidebarVisible = false
         }
     }
 
@@ -232,7 +253,9 @@ ApplicationWindow {
         controller: root.appController
         onCloseRequested: closeBehaviorDialog.open()
         sidebarVisible: root.sidebarVisible
+        navigationVisible: root.navigationVisible
         onToggleSidebar: root.toggleSidebarVisibility()
+        onToggleNavigation: root.toggleNavigationVisibility()
         onOpenDanmaku: danmakuSettingsPanel.open()
         onOpenMonitoring: monitoringDrawer.open()
         onOpenWorkspace: workspacePresetsPanel.open()
@@ -247,7 +270,7 @@ ApplicationWindow {
         anchors.top: header.bottom
         anchors.left: parent.left
         anchors.bottom: parent.bottom
-        width: root.sidebarWidth
+        width: root.roomSidebarWidth
         visible: width > 0
         controller: root.appController
         roomModel: root.roomModel
@@ -262,11 +285,32 @@ ApplicationWindow {
         onSettingsRequested: root.currentView = "settings"
     }
 
+    GuildNavigationPanel {
+        id: guildNavigation
+        objectName: "guildNavigationPanel"
+        anchors.top: header.bottom
+        anchors.left: parent.left
+        anchors.bottom: parent.bottom
+        width: root.navigationWidth
+        visible: width > 0
+        controller: root.appController
+        workspaceModel: root.workspaceModel
+    }
+
+    Item {
+        id: leftPanelBoundary
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        anchors.left: parent.left
+        width: root.leftPanelWidth
+        visible: false
+    }
+
     WorkspaceGrid {
         id: grid
         objectName: "workspaceGrid"
         anchors.top: header.bottom
-        anchors.left: sidebar.right
+        anchors.left: leftPanelBoundary.right
         anchors.right: parent.right
         anchors.bottom: workspaceStatusBar.top
         anchors.bottomMargin: Theme.gap
@@ -286,7 +330,7 @@ ApplicationWindow {
 
     WorkspaceStatusBar {
         id: workspaceStatusBar
-        anchors.left: sidebar.right
+        anchors.left: leftPanelBoundary.right
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         anchors.leftMargin: Theme.gap
@@ -311,7 +355,7 @@ ApplicationWindow {
         id: settingsPage
         objectName: "settingsPage"
         anchors.top: header.bottom
-        anchors.left: sidebar.right
+        anchors.left: leftPanelBoundary.right
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         visible: root.currentView === "settings"

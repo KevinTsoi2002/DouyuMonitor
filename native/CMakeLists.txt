@@ -46,6 +46,7 @@ qt_policy(SET QTP0004 NEW)
 
 set(DOUYU_QML_ICON_ASSETS
     app/qml/assets/douyu_monitor.svg
+    app/qml/assets/icons/hamster-agent.jfif
     app/qml/assets/icons/activity.svg
     app/qml/assets/icons/chevron-down.svg
     app/qml/assets/icons/chevron-up.svg
@@ -123,6 +124,8 @@ qt_add_qml_module(douyu_qml
         app/qml/components/AppHeader.qml
         app/qml/components/WindowControls.qml
         app/qml/components/RoomSidebar.qml
+        app/qml/components/GuildNavigationPanel.qml
+        app/qml/components/GuildMemberRow.qml
         app/qml/components/RoomLibraryView.qml
         app/qml/components/WorkspaceGrid.qml
         app/qml/components/PrimaryRoomDivider.qml
@@ -177,6 +180,8 @@ qt_add_resources(qml_engine_smoke_test qml_engine_test_resources
         app/qml/components/AppHeader.qml
         app/qml/components/WindowControls.qml
         app/qml/components/RoomSidebar.qml
+        app/qml/components/GuildNavigationPanel.qml
+        app/qml/components/GuildMemberRow.qml
         app/qml/components/RoomLibraryView.qml
         app/qml/components/WorkspaceGrid.qml
         app/qml/components/PrimaryRoomDivider.qml
@@ -241,6 +246,8 @@ qt_add_resources(qml_visual_smoke_test qml_visual_smoke_test_resources
         app/qml/components/AppHeader.qml
         app/qml/components/WindowControls.qml
         app/qml/components/RoomSidebar.qml
+        app/qml/components/GuildNavigationPanel.qml
+        app/qml/components/GuildMemberRow.qml
         app/qml/components/RoomLibraryView.qml
         app/qml/components/WorkspaceGrid.qml
         app/qml/components/PrimaryRoomDivider.qml
@@ -300,6 +307,8 @@ qt_add_resources(qml_interaction_test qml_interaction_test_resources
         app/qml/components/AppHeader.qml
         app/qml/components/WindowControls.qml
         app/qml/components/RoomSidebar.qml
+        app/qml/components/GuildNavigationPanel.qml
+        app/qml/components/GuildMemberRow.qml
         app/qml/components/RoomLibraryView.qml
         app/qml/components/WorkspaceGrid.qml
         app/qml/components/PrimaryRoomDivider.qml
@@ -382,6 +391,8 @@ qt_add_resources(qml_close_regression_test qml_close_regression_test_resources
         app/qml/components/AppHeader.qml
         app/qml/components/WindowControls.qml
         app/qml/components/RoomSidebar.qml
+        app/qml/components/GuildNavigationPanel.qml
+        app/qml/components/GuildMemberRow.qml
         app/qml/components/RoomLibraryView.qml
         app/qml/components/WorkspaceGrid.qml
         app/qml/components/PrimaryRoomDivider.qml

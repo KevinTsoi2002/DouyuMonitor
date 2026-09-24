@@ -327,6 +327,8 @@ private slots:
     void showsDanmakuStatusOnRoomTile();
     void rendersRoomAvatarFromModelRole();
     void placesSidebarToggleBeforeBrandAndOpensHistory();
+    void placesNavigationEntryAfterSidebarToggleAndBeforeBrand();
+    void makesRoomListAndNavigationPanelsMutuallyExclusive();
     void closesToastFromQml();
     void autoDismissesToastBySeverity();
     void usesFramelessWindowWithTitleBarInteractions();
@@ -837,6 +839,44 @@ void QmlInteractionTest::placesSidebarToggleBeforeBrandAndOpensHistory()
     QObject *libraryView = window->findChild<QObject *>(QStringLiteral("roomLibraryView"));
     QVERIFY(libraryView != nullptr);
     QTRY_VERIFY(libraryView->property("visible").toBool());
+}
+
+void QmlInteractionTest::placesNavigationEntryAfterSidebarToggleAndBeforeBrand()
+{
+    QQmlApplicationEngine engine;
+    QQuickWindow *window = loadWindow(engine);
+    QVERIFY(window != nullptr);
+
+    QObject *sidebarToggle = window->findChild<QObject *>(QStringLiteral("sidebarToggleButton"));
+    QObject *navigationToggle =
+        window->findChild<QObject *>(QStringLiteral("hamsterNavigationButton"));
+    QObject *brandMark = window->findChild<QObject *>(QStringLiteral("brandMark"));
+    QVERIFY(sidebarToggle != nullptr);
+    QVERIFY(navigationToggle != nullptr);
+    QVERIFY(brandMark != nullptr);
+    QVERIFY(sidebarToggle->property("x").toDouble() < navigationToggle->property("x").toDouble());
+    QVERIFY(navigationToggle->property("x").toDouble() < brandMark->property("x").toDouble());
+}
+
+void QmlInteractionTest::makesRoomListAndNavigationPanelsMutuallyExclusive()
+{
+    QQmlApplicationEngine engine;
+    QQuickWindow *window = loadWindow(engine);
+    QVERIFY(window != nullptr);
+
+    QObject *roomSidebar = window->findChild<QObject *>(QStringLiteral("roomSidebar"));
+    QObject *navigationPanel =
+        window->findChild<QObject *>(QStringLiteral("guildNavigationPanel"));
+    QVERIFY(roomSidebar != nullptr);
+    QVERIFY(navigationPanel != nullptr);
+
+    click(window->findChild<QObject *>(QStringLiteral("hamsterNavigationButton")));
+    QTRY_VERIFY(navigationPanel->property("visible").toBool());
+    QVERIFY(!roomSidebar->property("visible").toBool());
+
+    click(window->findChild<QObject *>(QStringLiteral("sidebarToggleButton")));
+    QTRY_VERIFY(roomSidebar->property("visible").toBool());
+    QVERIFY(!navigationPanel->property("visible").toBool());
 }
 
 void QmlInteractionTest::usesFramelessWindowWithTitleBarInteractions()
