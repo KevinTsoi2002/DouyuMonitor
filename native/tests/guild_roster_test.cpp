@@ -17,7 +17,7 @@ private slots:
 void GuildRosterTest::loadsBundledRosterWithoutRoleLabels()
 {
     const QVector<GuildMember> members = GuildRoster::bundled();
-    QCOMPARE(members.size(), 47);
+    QCOMPARE(members.size(), 49);
     for (const GuildMember &member : members) {
         QVERIFY(!member.id.isEmpty());
         QVERIFY(!member.anchorName.isEmpty());
@@ -51,6 +51,14 @@ void GuildRosterTest::rejectsInvalidRoomIdsFromResource()
     const GuildMember *eleven = GuildRoster::findByName(QStringLiteral("十一or"));
     QVERIFY(eleven != nullptr);
     QCOMPARE(eleven->roomId, QStringLiteral("12858969"));
+
+    const GuildMember *misty = GuildRoster::findByName(QStringLiteral("雾蒙蒙y"));
+    QVERIFY(misty != nullptr);
+    QCOMPARE(misty->roomId, QStringLiteral("12874029"));
+
+    const GuildMember *xiaoliu = GuildRoster::findByName(QStringLiteral("小六HQ"));
+    QVERIFY(xiaoliu != nullptr);
+    QCOMPARE(xiaoliu->roomId, QStringLiteral("12900462"));
 }
 
 void GuildRosterTest::rejectsMalformedRootAndUnsupportedVersion()

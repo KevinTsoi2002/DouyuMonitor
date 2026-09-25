@@ -2,6 +2,7 @@ import asyncio
 import inspect
 import json
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode, urlparse
@@ -14,6 +15,7 @@ ROOM_API_BASE_URL = "https://open.douyucdn.cn/api/RoomApi/room/"
 SEARCH_API_URL = "https://www.douyu.com/wgapi/livenc/search/overallSearchV8"
 LEGACY_SEARCH_API_URL = "https://www.douyu.com/japi/search/api/searchShow"
 ALLOWED_HOST_SUFFIXES = (".douyucdn.cn", ".douyucdn2.cn", ".edgesrv.com")
+GUILD_ROSTER_PATH = Path(__file__).resolve().parent.parent / "app" / "resources" / "hamster_agent_roster.json"
 
 
 class BackendError(RuntimeError):
@@ -91,6 +93,31 @@ def _search_candidate(item: Any) -> dict[str, Any] | None:
     return candidate
 
 
+def _normalized_anchor_name(value: Any) -> str:
+    name = _scalar_string(value)
+    if name is None:
+        return ""
+    normalized = name.strip()
+    for suffix in ("-团长", "-队长", "-队员", "-OB"):
+        if normalized.endswith(suffix):
+            normalized = normalized[: -len(suffix)]
+            break
+    return normalized.strip().casefold()
+
+
+def _default_fetch_roster() -> list[dict[str, Any]]:
+    try:
+        payload = json.loads(GUILD_ROSTER_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    if not isinstance(payload, dict) or payload.get("version") != 1:
+        return []
+    members = payload.get("members")
+    if not isinstance(members, list):
+        return []
+    return [member for member in members if isinstance(member, dict)]
+
+
 def _quality_rate_for(quality: str) -> str:
     if quality == "original":
         return "0"
@@ -161,10 +188,12 @@ class DouyuBackend:
         self,
         fetch_json: Callable[[str, float], Any] | None = None,
         stream_factory: Callable[[], Any] | None = None,
+        roster_factory: Callable[[], list[dict[str, Any]]] | None = None,
         timeout: float = 10.0,
     ):
         self._fetch_json = fetch_json or _default_fetch_json
         self._stream_factory = stream_factory
+        self._roster_factory = roster_factory or _default_fetch_roster
         self._timeout = timeout
 
     def search(self, query: str) -> list[dict[str, Any]]:
@@ -175,27 +204,32 @@ class DouyuBackend:
             except BackendError:
                 pass
 
-        url = f"{SEARCH_API_URL}?{urlencode({'kw': value, 'pageOff': 0, 'pageSize': 20})}"
-        payload = self._fetch_json(url, self._timeout)
-        if not isinstance(payload, dict) or payload.get("error") != 0:
-            raise BackendError(ErrorCode.INVALID_RESPONSE)
-        data = payload.get("data")
-        if not isinstance(data, dict):
-            raise BackendError(ErrorCode.INVALID_RESPONSE)
-        relate_user = data.get("relateUser")
-        if not isinstance(relate_user, dict) or not isinstance(relate_user.get("list"), list):
-            raise BackendError(ErrorCode.INVALID_RESPONSE)
+        roster_matches = self._search_roster(value)
+        if roster_matches:
+            return roster_matches
 
+        url = f"{SEARCH_API_URL}?{urlencode({'kw': value, 'pageOff': 0, 'pageSize': 20})}"
         candidates: dict[str, dict[str, Any]] = {}
-        for item in relate_user["list"]:
-            candidate = _search_candidate(item)
-            if candidate is not None:
-                candidates.setdefault(candidate["roomId"], candidate)
-        if candidates:
-            return list(candidates.values())
+        try:
+            payload = self._fetch_json(url, self._timeout)
+            if isinstance(payload, dict) and payload.get("error") == 0:
+                data = payload.get("data")
+                relate_user = data.get("relateUser") if isinstance(data, dict) else None
+                if isinstance(relate_user, dict) and isinstance(relate_user.get("list"), list):
+                    for item in relate_user["list"]:
+                        candidate = _search_candidate(item)
+                        if candidate is not None:
+                            candidates.setdefault(candidate["roomId"], candidate)
+            if candidates:
+                return list(candidates.values())
+        except BackendError:
+            pass
 
         legacy_url = f"{LEGACY_SEARCH_API_URL}?{urlencode({'kw': value, 'page': 1, 'pageSize': 20})}"
-        legacy_payload = self._fetch_json(legacy_url, self._timeout)
+        try:
+            legacy_payload = self._fetch_json(legacy_url, self._timeout)
+        except BackendError as error:
+            raise BackendError(ErrorCode.INVALID_RESPONSE) from error
         if not isinstance(legacy_payload, dict) or legacy_payload.get("error") != 0:
             raise BackendError(ErrorCode.INVALID_RESPONSE)
         legacy_data = legacy_payload.get("data")
@@ -222,6 +256,36 @@ class DouyuBackend:
                 candidate["avatarUrl"] = avatar_url
             candidates.setdefault(room_id, candidate)
         return list(candidates.values())
+
+    def _search_roster(self, query: str) -> list[dict[str, Any]]:
+        normalized_query = _normalized_anchor_name(query)
+        if not normalized_query:
+            return []
+        try:
+            members = self._roster_factory()
+        except Exception:
+            return []
+        matches: list[dict[str, Any]] = []
+        seen_room_ids: set[str] = set()
+        for member in members:
+            if not isinstance(member, dict):
+                continue
+            room_id = _scalar_string(member.get("roomId"))
+            anchor_name = _scalar_string(member.get("name"))
+            if not room_id or not anchor_name or not ROOM_ID_RE.fullmatch(room_id):
+                continue
+            if room_id in seen_room_ids or normalized_query not in _normalized_anchor_name(anchor_name):
+                continue
+            seen_room_ids.add(room_id)
+            matches.append({
+                "roomId": room_id,
+                "anchorName": anchor_name,
+                "title": f"{anchor_name}的直播间",
+                "category": "未分类",
+                "online": False,
+                "viewerLabel": "0",
+            })
+        return matches
 
     def _fetch_room(self, room_id: str) -> dict[str, Any]:
         payload = self._fetch_json(f"{ROOM_API_BASE_URL}{quote(room_id)}", self._timeout)

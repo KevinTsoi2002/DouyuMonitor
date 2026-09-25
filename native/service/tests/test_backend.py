@@ -201,6 +201,81 @@ class BackendTests(unittest.TestCase):
         results = backend.search("legacy")
         self.assertEqual([item["roomId"] for item in results], ["63136"])
         self.assertEqual(len(calls), 2)
+
+    def test_falls_back_to_legacy_search_when_current_search_rejects_request(self):
+        calls = []
+
+        def fetch_json(url, _timeout):
+            calls.append(url)
+            if url.startswith("https://www.douyu.com/wgapi/livenc/search/overallSearchV8"):
+                return {"error": 9, "msg": "搜索行为异常", "data": {}}
+            return {
+                "error": 0,
+                "data": {
+                    "relateShow": [
+                        {
+                            "rid": "63136",
+                            "nickName": "Anchor",
+                            "roomName": "Legacy",
+                            "cateName": "Game",
+                            "isLive": "1",
+                            "hot": 1,
+                        }
+                    ]
+                },
+            }
+
+        backend = DouyuBackend(fetch_json=fetch_json, roster_factory=lambda: [])
+        results = backend.search("legacy")
+        self.assertEqual([item["roomId"] for item in results], ["63136"])
+        self.assertEqual(len(calls), 2)
+
+    def test_reports_search_failure_when_both_remote_searches_are_rejected(self):
+        def fetch_json(_url, _timeout):
+            return {"error": 8, "msg": "您的行为可能存在风险", "data": {}}
+
+        backend = DouyuBackend(fetch_json=fetch_json, roster_factory=lambda: [])
+        with self.assertRaises(BackendError) as context:
+            backend.search("unknown anchor")
+        self.assertEqual(context.exception.code, ErrorCode.INVALID_RESPONSE)
+    def test_searches_verified_guild_roster_without_remote_request(self):
+        calls = []
+
+        def fetch_json(url, _timeout):
+            calls.append(url)
+            raise AssertionError("remote search should not be used for a verified roster member")
+
+        backend = DouyuBackend(
+            fetch_json=fetch_json,
+            roster_factory=lambda: [
+                {"id": "hamster-002", "name": "主播阿飞", "roomId": "84452"},
+                {"id": "hamster-048", "name": "雾蒙蒙y", "roomId": "12874029"},
+            ],
+        )
+        self.assertEqual(
+            [item["roomId"] for item in backend.search("阿飞")],
+            ["84452"],
+        )
+        self.assertEqual(calls, [])
+
+    def test_loads_bundled_roster_for_verified_members(self):
+        def fetch_json(_url, _timeout):
+            raise AssertionError("bundled roster should avoid a remote search")
+
+        backend = DouyuBackend(fetch_json=fetch_json)
+        self.assertEqual(
+            [item["roomId"] for item in backend.search("雾蒙蒙y")],
+            ["12874029"],
+        )
+        self.assertEqual(
+            [item["roomId"] for item in backend.search("小六HQ")],
+            ["12900462"],
+        )
+        self.assertEqual(
+            [item["roomId"] for item in backend.search("阿飞")],
+            ["84452"],
+        )
+
     def test_maps_malformed_http_payload_to_fixed_error(self):
         backend = DouyuBackend(fetch_json=lambda _url, _timeout: {"unexpected": True})
         with self.assertRaises(BackendError) as context:

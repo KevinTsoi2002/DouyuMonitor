@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(DouyuMonitorNative VERSION 0.2.10 LANGUAGES CXX)
+project(DouyuMonitorNative VERSION 0.2.11 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -277,6 +277,44 @@ set_property(TEST qml_visual_smoke_test PROPERTY ENVIRONMENT_MODIFICATION
     "PATH=path_list_prepend:${QT_ROOT}/bin"
     "QT_PLUGIN_PATH=set:${QT_ROOT}/plugins"
     "QML2_IMPORT_PATH=set:${QT_ROOT}/qml"
+    "QT_QUICK_CONTROLS_STYLE=set:Basic"
+)
+
+add_executable(qml_visual_regression_test
+    tests/qml_visual_regression_test.cpp
+    tests/visual_test_support.cpp
+    src/ui/mpv_quick_item.cpp
+)
+target_link_libraries(qml_visual_regression_test PRIVATE
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Qml
+    Qt6::Quick
+    Qt6::OpenGL
+    Qt6::Test
+    remote_playback
+    mpv::mpv
+)
+target_include_directories(qml_visual_regression_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests
+)
+target_compile_definitions(qml_visual_regression_test PRIVATE
+    QML_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/app/qml"
+    QML_VISUAL_OUTPUT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/out/verification/qml-regression"
+    QML_VISUAL_BASELINE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/visual/baselines"
+)
+add_custom_command(TARGET qml_visual_regression_test POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${MPV_RUNTIME_DLL}"
+        "$<TARGET_FILE_DIR:qml_visual_regression_test>/mpv.dll"
+)
+add_test(NAME qml_visual_regression_test COMMAND qml_visual_regression_test)
+set_property(TEST qml_visual_regression_test PROPERTY ENVIRONMENT_MODIFICATION
+    "PATH=path_list_prepend:${QT_ROOT}/bin"
+    "QT_PLUGIN_PATH=set:${QT_ROOT}/plugins"
+    "QML2_IMPORT_PATH=set:${QT_ROOT}/qml"
+    "QT_QPA_PLATFORM=set:offscreen"
     "QT_QUICK_CONTROLS_STYLE=set:Basic"
 )
 

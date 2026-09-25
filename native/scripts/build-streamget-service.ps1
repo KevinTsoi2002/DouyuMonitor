@@ -16,7 +16,9 @@ New-Item -ItemType Directory -Force -Path $distPath, $workPath | Out-Null
 $previousErrorActionPreference = $ErrorActionPreference
 $ErrorActionPreference = 'Continue'
 & $pythonExe -m PyInstaller --noconfirm --clean --onedir --log-level WARN --name streamget_service `
-    --paths $repoRoot --distpath $distPath --workpath $workPath --specpath $workPath $serviceScript 2>&1 | Out-Null
+    --paths $repoRoot --distpath $distPath --workpath $workPath --specpath $workPath `
+    --add-data "$nativeRoot\app\resources\hamster_agent_roster.json;native/app/resources" `
+    $serviceScript 2>&1 | Out-Null
 $pyInstallerExitCode = $LASTEXITCODE
 $ErrorActionPreference = $previousErrorActionPreference
 if ($pyInstallerExitCode -ne 0 -or -not (Test-Path $outputExe)) {
