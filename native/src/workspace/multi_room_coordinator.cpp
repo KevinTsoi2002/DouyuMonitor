@@ -105,7 +105,9 @@ RoomCommandResult MultiRoomCoordinator::addRoomDetailed(const QString &roomId,
 {
     if (!isValidRoomId(roomId)) return RoomCommandResult::InvalidRoomId;
     if (sessions_.contains(roomId)) return RoomCommandResult::DuplicateRoomId;
-    if (order_.size() >= kMaxRooms) return RoomCommandResult::RoomLimitReached;
+    if (order_.size() >= RoomCapacity::currentLimits().maxLayoutRooms) {
+        return RoomCommandResult::RoomLimitReached;
+    }
     if (client_ == nullptr) return RoomCommandResult::Unavailable;
 
     RoomSession *session = new RoomSession(client_, roomId, requestedQuality, this,
@@ -339,7 +341,9 @@ RoomCommandResult MultiRoomCoordinator::setVolume(const QString &roomId, int vol
 
 RoomCommandResult MultiRoomCoordinator::replaceRooms(const QVector<CoordinatorRoomSpec> &rooms)
 {
-    if (rooms.size() > kMaxRooms) return RoomCommandResult::RoomLimitReached;
+    if (rooms.size() > RoomCapacity::currentLimits().maxLayoutRooms) {
+        return RoomCommandResult::RoomLimitReached;
+    }
     if (client_ == nullptr && !rooms.isEmpty()) return RoomCommandResult::Unavailable;
 
     QSet<QString> seen;
@@ -475,19 +479,24 @@ RoomSnapshots MultiRoomCoordinator::roomSnapshots() const
 {
     RoomSnapshots snapshots;
     snapshots.reserve(order_.size());
+    const QSet<QString> renderEnabledIds = renderEnabledRoomIds();
+    const QSet<QString> multiAudioIds = audioMode_ == QStringLiteral("multi")
+        ? multiAudioRoomIds()
+        : QSet<QString>{};
     for (const QString &roomId : order_) {
         const RoomSession *session = sessions_.value(roomId, nullptr);
         if (session == nullptr) continue;
         const MpvQuickItem *quickPlayer = session->player();
+        const bool multiAudioEligible = audioMode_ == QStringLiteral("multi")
+            && multiAudioIds.contains(roomId);
         const bool roomMuted = audioMode_ == QStringLiteral("multi")
             && mutedRooms_.contains(roomId);
         const bool audible = !globalMuted_
             && !roomMuted
-            && (audioMode_ == QStringLiteral("multi")
+            && (multiAudioEligible
                 || (!audioRoomId_.isEmpty() && roomId == audioRoomId_));
-        const bool muted = (audioMode_ == QStringLiteral("multi")
-                            && mutedRooms_.contains(roomId))
-            || (quickPlayer != nullptr ? quickPlayer->isMuted() : !audible);
+        const bool muted = !audible
+            || (quickPlayer != nullptr && quickPlayer->isMuted());
         snapshots.push_back({roomId,
                              roomId == primaryRoomId_,
                              roomId == secondaryPrimaryRoomId_,
@@ -503,7 +512,8 @@ RoomSnapshots MultiRoomCoordinator::roomSnapshots() const
                              session->isAudioFocused(),
                              muted,
                              session->volume(),
-                             session->availableQualities()});
+                             session->availableQualities(),
+                             renderEnabledIds.contains(roomId)});
     }
     return snapshots;
 }
@@ -528,7 +538,10 @@ RoomSession *MultiRoomCoordinator::sessionForRoom(const QString &roomId) const n
 bool MultiRoomCoordinator::attachPlayer(const QString &roomId, MpvQuickItem *player)
 {
     RoomSession *session = sessionForRoom(roomId);
-    if (session == nullptr || !session->attachPlayer(player)) return false;
+    if (session == nullptr || !renderEnabledRoomIds().contains(roomId)
+        || !session->attachPlayer(player)) {
+        return false;
+    }
     publishSnapshots();
     return true;
 }
@@ -589,18 +602,23 @@ void MultiRoomCoordinator::recomputeQuality()
 
 void MultiRoomCoordinator::applyAudioFocus()
 {
+    const QSet<QString> multiAudioIds = audioMode_ == QStringLiteral("multi")
+        ? multiAudioRoomIds()
+        : QSet<QString>{};
     for (const QString &roomId : order_) {
         RoomSession *session = sessions_.value(roomId, nullptr);
         if (session == nullptr) continue;
+        const bool multiAudioEligible = audioMode_ == QStringLiteral("multi")
+            && multiAudioIds.contains(roomId);
         const bool roomMuted = audioMode_ == QStringLiteral("multi")
             && mutedRooms_.contains(roomId);
         const bool audible = !globalMuted_
             && !roomMuted
-            && (audioMode_ == QStringLiteral("multi")
+            && (multiAudioEligible
                 || (!audioRoomId_.isEmpty() && roomId == audioRoomId_));
         if (session->player() != nullptr) session->player()->setMuted(!audible);
         const bool focused = !roomMuted
-            && (audioMode_ == QStringLiteral("multi")
+            && (multiAudioEligible
                 || (!audioRoomId_.isEmpty() && roomId == audioRoomId_));
         session->setAudioFocused(focused);
     }
@@ -609,6 +627,50 @@ void MultiRoomCoordinator::applyAudioFocus()
 void MultiRoomCoordinator::publishSnapshots()
 {
     emit roomSnapshotsChanged(roomSnapshots());
+}
+
+QSet<QString> MultiRoomCoordinator::renderEnabledRoomIds() const
+{
+    const RoomCapacity::Limits limits = RoomCapacity::currentLimits();
+    const int budget = qBound(0, limits.defaultDecodedRooms, order_.size());
+    QSet<QString> selected;
+    selected.reserve(budget);
+    if (budget <= 0) return selected;
+
+    const auto select = [&selected, budget](const QString &roomId) {
+        if (roomId.isEmpty() || selected.contains(roomId) || selected.size() >= budget) return;
+        selected.insert(roomId);
+    };
+    select(primaryRoomId_);
+    select(secondaryPrimaryRoomId_);
+    select(audioRoomId_);
+    for (const QString &roomId : order_) {
+        if (selected.size() >= budget) break;
+        select(roomId);
+    }
+    return selected;
+}
+
+QSet<QString> MultiRoomCoordinator::multiAudioRoomIds() const
+{
+    const RoomCapacity::Limits limits = RoomCapacity::currentLimits();
+    const int budget = qBound(0, limits.defaultMultiAudioRooms, order_.size());
+    QSet<QString> selected;
+    selected.reserve(budget);
+    if (budget <= 0) return selected;
+
+    const auto select = [&selected, budget](const QString &roomId) {
+        if (roomId.isEmpty() || selected.contains(roomId) || selected.size() >= budget) return;
+        selected.insert(roomId);
+    };
+    select(primaryRoomId_);
+    select(secondaryPrimaryRoomId_);
+    select(audioRoomId_);
+    for (const QString &roomId : order_) {
+        if (selected.size() >= budget) break;
+        select(roomId);
+    }
+    return selected;
 }
 
 void MultiRoomCoordinator::onResponse(ServiceResponse response)

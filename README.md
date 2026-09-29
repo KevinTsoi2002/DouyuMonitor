@@ -1,19 +1,20 @@
 # DouyuMonitor
 
-DouyuMonitor 是基于 Qt Quick/QML、C++ 和 libmpv 的 Windows x64 斗鱼多直播间监看工具。当前 `main` 只维护原生 Qt 实现，最多支持 9 路直播；旧 Electron/TypeScript 实现已从 `main` 移除，并保存在 `legacy-framework` 分支供历史追溯。
+DouyuMonitor 是基于 Qt Quick/QML、C++ 和 libmpv 的 Windows x64 斗鱼多直播间监看工具。当前 `main` 只维护原生 Qt 实现，正式版布局最多支持 16 路并全部解码，24 路全解码测试版通过独立构建开关生成；旧 Electron/TypeScript 实现已从 `main` 移除，并保存在 `legacy-framework` 分支供历史追溯。
 
 ## 当前版本
 
-- 发布版本：`V0.2.11`
-- GitHub Release：[DouyuMonitor V0.2.11](https://github.com/KevinTsoi2002/DouyuMonitor/releases/tag/V0.2.11)
-- Windows 安装包：Release 中的 `DouyuMonitor-Setup-V0.2.11.exe`
+- 开发版本：`V0.2.13`
+- 24 路全解码测试版：`V0.2.13-beta.24`
+- Windows 测试版安装包：`DouyuMonitor-Setup-V0.2.13-beta.24.exe`
 - 未提供代码签名；下载后请以 Release 页面中的 SHA-256 值校验安装包
 
 ## 功能
 
 - 按房间号或主播名搜索并添加斗鱼直播间
 - 自动布局、主直播间布局和双主直播间布局
-- 普通布局最多 9 路，双主直播间布局最多 10 路；双主布局要求至少 4 路，两个主画面均享有高画质优先级
+- 正式版自动布局、主直播间布局和双主直播间布局最多 16 路并全部解码；双主布局要求至少 4 路，两个主画面均享有高画质优先级
+- 24 路全解码测试版支持三种布局最多 24 路，并同时创建 24 路播放器
 - 每个房间独立弹幕、弹幕过滤、重复抑制和峰值治理
 - 房间资料、主播头像、标题、观众数和开播状态定时刷新
 - 历史记录、收藏、自定义分组和工作区预设
@@ -78,9 +79,9 @@ ctest --preset windows-x64-release
 .\scripts\build-windows-installer.ps1
 ```
 
-安装包输出到 `native/out/installer/DouyuMonitor-Setup-V0.2.11.exe`。后续版本会自动将版本号加入安装包文件名。运行安装包时可选择安装目录；如果选择 `D:\` 这样的磁盘根目录，安装器会自动使用 `D:\DouyuMonitor`，不会把程序文件直接写入根目录。安装完成后会创建开始菜单和可选的桌面快捷方式，并可直接启动程序。卸载入口由 Inno Setup 生成的 `unins000.exe` 提供，同时登记到 Windows 设置的“已安装的应用”。
+安装包输出到 `native/out/installer/DouyuMonitor-Setup-V0.2.13.exe`。后续版本会自动将版本号加入安装包文件名。构建 24 路全解码测试版时执行 `.\scripts\build-windows-installer.ps1 -ReleaseDir .\out\build\windows-x64-beta24 -Version 0.2.13-beta.24`。运行安装包时可选择安装目录；如果选择 `D:\` 这样的磁盘根目录，安装器会自动使用 `D:\DouyuMonitor`，不会把程序文件直接写入根目录。安装完成后会创建开始菜单和可选的桌面快捷方式，并可直接启动程序。卸载入口由 Inno Setup 生成的 `unins000.exe` 提供，同时登记到 Windows 设置的“已安装的应用”。
 
-仓鼠特工导航只展示应用内置的公会名单，不根据直播资料动态扩张名单，也不显示团长、队长、队员或 OB 等角色标签。已确认房间号可以直接加入当前工作区；无法自动确认的成员需要在行内手工输入房间号。快捷加入仍受普通布局最多 9 路、双主直播间布局最多 10 路的容量限制。
+仓鼠特工导航只展示应用内置的公会名单，不根据直播资料动态扩张名单，也不显示团长、队长、队员或 OB 等角色标签。已确认房间号可以直接加入当前工作区；无法自动确认的成员需要在行内手工输入房间号。快捷加入受当前构建的布局容量限制。
 
 ## StreamGet 服务
 
@@ -113,4 +114,4 @@ ctest --preset windows-x64-release
 
 ## 验证
 
-发布前至少执行 Release 全量 CTest、安装包 stage 的 `--self-test` 和载荷扫描。真实斗鱼 1/4/6/9/10 路长时间播放、弹幕稳定性及用户机器上的 CPU/GPU/内存验收仍需在目标环境完成。
+发布前至少执行 Release 全量 CTest、安装包 stage 的 `--self-test` 和载荷扫描。真实斗鱼 1/4/9/12/16/24 路长时间播放、弹幕稳定性及用户机器上的 CPU/GPU/内存验收仍需在目标环境完成。

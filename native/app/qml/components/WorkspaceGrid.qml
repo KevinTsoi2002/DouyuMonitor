@@ -17,37 +17,38 @@ Item {
     property color textColor: Theme.text
     property color mutedTextColor: Theme.mutedText
     readonly property int roomCount: roomRepeater.count
-    function autoRowCounts(count) {
-        const rows = [[], [1], [2], [3], [2, 2], [3, 2], [3, 3], [4, 3], [4, 4], [3, 3, 3]]
-        return rows[Math.max(0, Math.min(9, count))]
-    }
 
-    function primarySecondaryRowCounts(count) {
-        const rows = [[], [], [1], [1, 1], [1, 1, 1], [2, 2], [3, 2], [3, 3], [4, 3], [4, 4]]
-        return rows[Math.max(0, Math.min(9, count))]
-    }
-
-    function primaryWidthFor(count) {
+    function columnsFor(count) {
         if (count <= 1) return 1
-        if (count <= 4) return 2 / 3
-        return count >= 8 ? 3 / 5 : 1 / 2
+        if (count === 2) return 2
+        if (count === 3) return 3
+        if (count === 4) return 2
+        if (count <= 6) return 3
+        if (count <= 9) return 3
+        if (count <= 12) return 4
+        if (count <= 16) return 4
+        if (count <= 20) return 5
+        return 6
     }
 
-    function primaryZoneWidths(count) {
-        if (count <= 4) return { left: 0, center: primaryWidthFor(count), right: 1 - primaryWidthFor(count) }
-        const side = count >= 8 ? 1 : 1
-        const center = count >= 8 ? 3 : 2
-        const total = side * 2 + center
-        return { left: side / total, center: center / total, right: side / total }
+    function bottomColumnsForDual(count) {
+        if (count <= 4) return 2
+        if (count <= 12) return 4
+        if (count <= 16) return 5
+        return 6
     }
 
-    function primarySideCounts(count) {
-        if (count <= 4) return { left: 0, right: Math.max(0, count - 1) }
-        if (count === 5) return { left: 2, right: 2 }
-        if (count === 6) return { left: 2, right: 3 }
-        if (count === 7) return { left: 3, right: 3 }
-        if (count === 8) return { left: 3, right: 4 }
-        return { left: 4, right: 4 }
+    function rowCountsFor(count, targetColumns) {
+        if (count <= 0) return []
+        const safeColumns = Math.max(1, targetColumns)
+        const rowCount = Math.max(1, Math.ceil(count / safeColumns))
+        const base = Math.floor(count / rowCount)
+        const widerRows = count % rowCount
+        const rows = []
+        for (let row = 0; row < rowCount; ++row) {
+            rows.push(base + (row < widerRows ? 1 : 0))
+        }
+        return rows
     }
 
     function primaryIndex() {
@@ -59,6 +60,21 @@ Item {
         return 0
     }
 
+    function secondaryPrimaryIndex(firstIndex) {
+        if (secondaryPrimaryRoomId.length > 0) {
+            for (var i = 0; i < roomRepeater.count; ++i) {
+                var tile = roomRepeater.itemAt(i)
+                if (tile && tile.roomId === secondaryPrimaryRoomId && i !== firstIndex) {
+                    return i
+                }
+            }
+        }
+        for (var candidate = 0; candidate < roomRepeater.count; ++candidate) {
+            if (candidate !== firstIndex) return candidate
+        }
+        return -1
+    }
+
     function rowAndColumnFor(itemIndex, rows) {
         var remaining = itemIndex
         for (var row = 0; row < rows.length; ++row) {
@@ -68,111 +84,112 @@ Item {
         return { row: 0, column: 0 }
     }
 
-    function geometryFor(index, roomId) {
-        const gap = 8
+    function geometryFor(index) {
         const width = Math.max(0, layoutSurface.width)
         const height = Math.max(0, layoutSurface.height)
-        const count = Math.min(10, roomRepeater.count)
+        const count = roomRepeater.count
         if (count === 0) return { x: 0, y: 0, width: 0, height: 0 }
 
         if (layoutMode === "primary-two") {
             const first = primaryIndex()
-            let second = -1
-            for (var s = 0; s < roomRepeater.count; ++s) {
-                var secondTile = roomRepeater.itemAt(s)
-                if (secondTile && secondTile.roomId === secondaryPrimaryRoomId) { second = s; break }
+            const second = secondaryPrimaryIndex(first)
+            if (index === first || index === second) {
+                return {
+                    x: index === second ? width / 2 : 0,
+                    y: 0,
+                    width: width / 2,
+                    height: height * 0.58,
+                }
             }
-            if (second < 0 || second === first) second = first === 0 ? 1 : 0
-            const isTop = index === first || index === second
-            if (isTop) {
-                const topHeight = Math.max(0, (height - gap) * 0.62)
-                const tileWidth = Math.max(0, (width - gap) / 2)
-                return { x: (index === second ? tileWidth + gap : 0), y: 0, width: tileWidth, height: topHeight }
+
+            let bottomPosition = 0
+            for (let candidate = 0; candidate < count; ++candidate) {
+                if (candidate === first || candidate === second) continue
+                if (candidate === index) break
+                ++bottomPosition
             }
-            var remaining = index
-            if (index > first) remaining -= 1
-            if (index > second) remaining -= 1
-            const bottomCount = Math.max(1, count - 2)
-            const columns = Math.min(4, bottomCount)
-            const rows = Math.ceil(bottomCount / columns)
-            const row = Math.floor(remaining / columns)
-            const col = remaining % columns
-            const bottomY = Math.max(0, (height - gap) * 0.62) + gap
-            const tileWidth = Math.max(0, (width - gap * (columns - 1)) / columns)
-            const tileHeight = Math.max(0, (height - bottomY - gap * (rows - 1)) / rows)
-            return { x: col * (tileWidth + gap), y: bottomY + row * (tileHeight + gap), width: tileWidth, height: tileHeight }
+            const bottomCount = Math.max(0, count - 2)
+            const rowCounts = rowCountsFor(bottomCount, bottomColumnsForDual(count))
+            const position = rowAndColumnFor(bottomPosition, rowCounts)
+            const topHeight = height * 0.58
+            const bottomHeight = height - topHeight
+            const rowHeight = rowCounts.length > 0 ? bottomHeight / rowCounts.length : 0
+            const columns = rowCounts.length > 0 ? rowCounts[position.row] : 1
+            const tileWidth = columns > 0 ? width / columns : 0
+            return {
+                x: position.column * tileWidth,
+                y: topHeight + position.row * rowHeight,
+                width: tileWidth,
+                height: rowHeight,
+            }
         }
 
         if (layoutMode === "primary") {
             const activePrimaryIndex = primaryIndex()
-            const zones = primaryZoneWidths(count)
             if (index === activePrimaryIndex) {
+                if (count <= 1) return { x: 0, y: 0, width: width, height: height }
                 if (count <= 4) {
-                    const primaryWidth = count === 1
-                        ? width
-                        : Math.max(0, width - gap) * primaryWidthFor(count)
-                    return { x: 0, y: 0, width: primaryWidth, height: height }
+                    return { x: 0, y: 0, width: width * 2 / 3, height: height }
                 }
-                const availableWidth = Math.max(0, width - gap * 2)
-                const leftWidth = availableWidth * zones.left
-                return {
-                    x: leftWidth + gap,
-                    y: 0,
-                    width: availableWidth * zones.center,
-                    height: height,
+                if (count <= 8) {
+                    const sideWidth = width / 3.35
+                    return { x: sideWidth, y: 0, width: width - sideWidth * 2, height: height }
                 }
+                return { x: 0, y: 0, width: width * 0.44, height: height }
             }
 
             const secondaryIndex = index < activePrimaryIndex ? index : index - 1
             if (count <= 4) {
-                const rows = primarySecondaryRowCounts(count)
-                const position = rowAndColumnFor(secondaryIndex, rows)
-                const rowHeight = Math.max(0, (height - gap * (rows.length - 1)) / rows.length)
-                const columns = rows[position.row]
-                const primaryWidth = Math.max(0, width - gap) * primaryWidthFor(count)
-                const secondaryX = primaryWidth + gap
-                const secondaryWidth = Math.max(0, width - secondaryX)
-                const tileWidth = Math.max(0, (secondaryWidth - gap * (columns - 1)) / columns)
+                const rowCounts = rowCountsFor(count - 1, 1)
+                const position = rowAndColumnFor(secondaryIndex, rowCounts)
+                const rowHeight = rowCounts.length > 0 ? height / rowCounts.length : 0
+                const secondaryX = width * 2 / 3
                 return {
-                    x: secondaryX + position.column * (tileWidth + gap),
-                    y: position.row * (rowHeight + gap),
-                    width: tileWidth,
+                    x: secondaryX,
+                    y: position.row * rowHeight,
+                    width: width - secondaryX,
                     height: rowHeight,
                 }
             }
 
-            const sides = primarySideCounts(count)
-            const layoutZones = primaryZoneWidths(count)
-            const availableWidth = Math.max(0, width - gap * 2)
-            const leftWidth = availableWidth * layoutZones.left
-            const centerWidth = availableWidth * layoutZones.center
-            const rightWidth = availableWidth * layoutZones.right
-            const leftX = 0
-            const centerX = leftWidth + gap
-            const rightX = centerX + centerWidth + gap
-            const leftCount = sides.left
-            const rightIndex = secondaryIndex - leftCount
-            const side = secondaryIndex < leftCount ? "left" : "right"
-            const sideCount = side === "left" ? sides.left : sides.right
-            const sideIndex = side === "left" ? secondaryIndex : rightIndex
-            const totalUnits = side === "left" ? sides.left : sides.right
-            const unitHeight = Math.max(0, (height - gap * (totalUnits - 1)) / totalUnits)
+            if (count <= 8) {
+                const leftCount = Math.floor((count - 1) / 2)
+                const side = secondaryIndex < leftCount ? "left" : "right"
+                const sideIndex = side === "left" ? secondaryIndex : secondaryIndex - leftCount
+                const sideCount = side === "left" ? leftCount : count - 1 - leftCount
+                const sideWidth = width / 3.35
+                const rowHeight = sideCount > 0 ? height / sideCount : 0
+                return {
+                    x: side === "left" ? 0 : width - sideWidth,
+                    y: sideIndex * rowHeight,
+                    width: sideWidth,
+                    height: rowHeight,
+                }
+            }
+
+            const secondaryX = width * 0.44
+            const secondaryWidth = width - secondaryX
+            const rowCounts = rowCountsFor(count - 1, 4)
+            const position = rowAndColumnFor(secondaryIndex, rowCounts)
+            const rowHeight = rowCounts.length > 0 ? height / rowCounts.length : 0
+            const columns = rowCounts.length > 0 ? rowCounts[position.row] : 1
+            const tileWidth = columns > 0 ? secondaryWidth / columns : 0
             return {
-                x: side === "left" ? leftX : rightX,
-                y: sideIndex * (unitHeight + gap),
-                width: side === "left" ? leftWidth : rightWidth,
-                height: unitHeight,
+                x: secondaryX + position.column * tileWidth,
+                y: position.row * rowHeight,
+                width: tileWidth,
+                height: rowHeight,
             }
         }
 
-        const rows = autoRowCounts(count)
-        const position = rowAndColumnFor(index, rows)
-        const rowHeight = Math.max(0, (height - gap * (rows.length - 1)) / rows.length)
-        const columns = rows[position.row]
-        const tileWidth = Math.max(0, (width - gap * (columns - 1)) / columns)
+        const rowCounts = rowCountsFor(count, columnsFor(count))
+        const position = rowAndColumnFor(index, rowCounts)
+        const rowHeight = rowCounts.length > 0 ? height / rowCounts.length : 0
+        const columns = rowCounts.length > 0 ? rowCounts[position.row] : 1
+        const tileWidth = columns > 0 ? width / columns : 0
         return {
-            x: position.column * (tileWidth + gap),
-            y: position.row * (rowHeight + gap),
+            x: position.column * tileWidth,
+            y: position.row * rowHeight,
             width: tileWidth,
             height: rowHeight,
         }
@@ -192,7 +209,7 @@ Item {
             model: root.roomModel
 
             delegate: RoomTile {
-                readonly property var tileGeometry: root.geometryFor(index, roomId)
+                readonly property var tileGeometry: root.geometryFor(index)
                 x: tileGeometry.x
                 y: tileGeometry.y
                 width: tileGeometry.width
@@ -205,7 +222,6 @@ Item {
                 mutedTextColor: root.mutedTextColor
             }
         }
-
     }
 
     Column {
@@ -226,6 +242,18 @@ Item {
             Image { anchors.centerIn: parent; width: 26; height: 26; source: Qt.resolvedUrl("../assets/icons/plus.svg") }
         }
         Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; color: root.textColor; text: "把直播间放进同一张画布"; font.bold: true; font.pixelSize: 16 }
-        Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; color: root.mutedTextColor; text: "输入房间号后即可添加。工作区最多容纳 10 路。"; font.pixelSize: 11; lineHeight: 1.4 }
+        Text {
+            width: parent.width
+            horizontalAlignment: Text.AlignHCenter
+            wrapMode: Text.Wrap
+            color: root.mutedTextColor
+            text: "输入房间号后即可添加。工作区最多容纳 "
+                  + (root.controller && root.controller.workspace
+                     && root.controller.workspace.maxRooms
+                     ? root.controller.workspace.maxRooms : 16)
+                  + " 路。"
+            font.pixelSize: 11
+            lineHeight: 1.4
+        }
     }
 }

@@ -1,4 +1,5 @@
 #include <QSignalSpy>
+#include <QSet>
 #include "ui/mpv_quick_item.h"
 #include <QtTest/QtTest>
 
@@ -28,8 +29,9 @@ class MultiRoomCoordinatorTest final : public QObject {
     Q_OBJECT
 
 private slots:
-    void acceptsTenRoomsAndRejectsTheEleventh();
-    void addsTenRoomsWithoutAWidgetParent();
+    void acceptsConfiguredRoomLimitAndRejectsOverflow();
+    void addsRoomsWithoutAWidgetParent();
+    void defaultDecodeBudgetPrioritizesPrimaryAudioAndOrder();
     void movesAndRetriesOnlyTheRequestedRoom();
     void rejectsDuplicateRoomIds();
     void appliesUserQualityAtFourRooms();
@@ -61,20 +63,24 @@ private slots:
     void replacesRemovedSecondaryPrimaryRoom();
 };
 
-void MultiRoomCoordinatorTest::acceptsTenRoomsAndRejectsTheEleventh()
+void MultiRoomCoordinatorTest::acceptsConfiguredRoomLimitAndRejectsOverflow()
 {
     StreamgetProcessClient client(fakeServicePath());
     MultiRoomCoordinator coordinator(&client);
+    const int maxRooms = RoomCapacity::currentLimits().maxLayoutRooms;
+    QCOMPARE(MultiRoomCoordinator::kMaxRooms, maxRooms);
 
-    for (int index = 0; index < 10; ++index) QVERIFY(coordinator.addRoom(roomId(index)));
-    QCOMPARE(coordinator.roomCount(), 10);
+    for (int index = 0; index < maxRooms; ++index) {
+        QVERIFY(coordinator.addRoom(roomId(index)));
+    }
+    QCOMPARE(coordinator.roomCount(), maxRooms);
     QCOMPARE(coordinator.layoutId(), QStringLiteral("auto"));
     QVERIFY(!coordinator.addRoom(QStringLiteral("999999")));
-    QCOMPARE(coordinator.roomCount(), 10);
+    QCOMPARE(coordinator.roomCount(), maxRooms);
     client.shutdown();
 }
 
-void MultiRoomCoordinatorTest::addsTenRoomsWithoutAWidgetParent()
+void MultiRoomCoordinatorTest::addsRoomsWithoutAWidgetParent()
 {
     StreamgetProcessClient client(fakeServicePath());
     MultiRoomCoordinator coordinator(&client);
@@ -84,6 +90,40 @@ void MultiRoomCoordinatorTest::addsTenRoomsWithoutAWidgetParent()
     }
     QCOMPARE(coordinator.addRoomDetailed(QStringLiteral("999999")),
              RoomCommandResult::RoomLimitReached);
+    client.shutdown();
+}
+
+void MultiRoomCoordinatorTest::defaultDecodeBudgetPrioritizesPrimaryAudioAndOrder()
+{
+    StreamgetProcessClient client(fakeServicePath());
+    MultiRoomCoordinator coordinator(&client);
+    const int maxRooms = RoomCapacity::currentLimits().maxLayoutRooms;
+    const int expectedDecodedRooms = RoomCapacity::currentLimits().defaultDecodedRooms;
+    for (int index = 0; index < maxRooms; ++index) {
+        QCOMPARE(coordinator.addRoomDetailed(roomId(index)), RoomCommandResult::Accepted);
+    }
+    QVERIFY(coordinator.setPrimaryRoom(roomId(maxRooms - 6)));
+    QVERIFY(coordinator.setSecondaryPrimaryRoom(roomId(maxRooms - 5)));
+    QVERIFY(coordinator.setAudioFocus(roomId(maxRooms - 4)));
+
+    const RoomSnapshots snapshots = coordinator.roomSnapshots();
+    int renderEnabledCount = 0;
+    QSet<QString> renderEnabledIds;
+    for (const RoomSnapshot &snapshot : snapshots) {
+        if (!snapshot.renderEnabled) continue;
+        ++renderEnabledCount;
+        renderEnabledIds.insert(snapshot.roomId);
+    }
+    QCOMPARE(renderEnabledCount, expectedDecodedRooms);
+    QVERIFY(renderEnabledIds.contains(roomId(maxRooms - 6)));
+    QVERIFY(renderEnabledIds.contains(roomId(maxRooms - 5)));
+    QVERIFY(renderEnabledIds.contains(roomId(maxRooms - 4)));
+    for (int index = 0; index < expectedDecodedRooms; ++index) {
+        QVERIFY(renderEnabledIds.contains(roomId(index)));
+    }
+    for (int index = expectedDecodedRooms; index < maxRooms; ++index) {
+        QVERIFY(!renderEnabledIds.contains(roomId(index)));
+    }
     client.shutdown();
 }
 
@@ -421,13 +461,18 @@ void MultiRoomCoordinatorTest::marksEveryRoomFocusedInMultiAudioMode()
     StreamgetProcessClient client(fakeServicePath());
     MultiRoomCoordinator coordinator(&client);
 
-    QVERIFY(coordinator.addRoom(QStringLiteral("63136")));
-    QVERIFY(coordinator.addRoom(QStringLiteral("63137")));
+    for (int index = 0; index < 6; ++index) QVERIFY(coordinator.addRoom(roomId(index)));
     QVERIFY(coordinator.setAudioMode(QStringLiteral("multi")));
 
     const RoomSnapshots snapshots = coordinator.roomSnapshots();
-    QVERIFY(snapshots.at(0).audioFocused);
-    QVERIFY(snapshots.at(1).audioFocused);
+    for (int index = 0; index < 4; ++index) {
+        QVERIFY(snapshots.at(index).audioFocused);
+        QVERIFY(!snapshots.at(index).muted);
+    }
+    QVERIFY(!snapshots.at(4).audioFocused);
+    QVERIFY(snapshots.at(4).muted);
+    QVERIFY(!snapshots.at(5).audioFocused);
+    QVERIFY(snapshots.at(5).muted);
     client.shutdown();
 }
 
@@ -438,6 +483,9 @@ void MultiRoomCoordinatorTest::mutesOnlyTheSelectedRoomInMultiAudioMode()
 
     QVERIFY(coordinator.addRoom(QStringLiteral("63136")));
     QVERIFY(coordinator.addRoom(QStringLiteral("63137")));
+    QVERIFY(coordinator.addRoom(QStringLiteral("63138")));
+    QVERIFY(coordinator.addRoom(QStringLiteral("63139")));
+    QVERIFY(coordinator.addRoom(QStringLiteral("63140")));
     QVERIFY(coordinator.setAudioMode(QStringLiteral("multi")));
     QVERIFY(coordinator.setRoomMuted(QStringLiteral("63136"), true));
 
@@ -446,6 +494,12 @@ void MultiRoomCoordinatorTest::mutesOnlyTheSelectedRoomInMultiAudioMode()
     QVERIFY(snapshots.at(0).muted);
     QVERIFY(snapshots.at(1).audioFocused);
     QVERIFY(!snapshots.at(1).muted);
+    QVERIFY(snapshots.at(2).audioFocused);
+    QVERIFY(!snapshots.at(2).muted);
+    QVERIFY(snapshots.at(3).audioFocused);
+    QVERIFY(!snapshots.at(3).muted);
+    QVERIFY(!snapshots.at(4).audioFocused);
+    QVERIFY(snapshots.at(4).muted);
     client.shutdown();
 }
 

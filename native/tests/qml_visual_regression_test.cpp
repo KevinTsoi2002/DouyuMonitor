@@ -210,11 +210,20 @@ void QmlVisualRegressionTest::keepsLayoutMatrixContainedAndNonOverlapping()
         QSize size;
         QString name;
     } fixtures[] = {
+        {1, QStringLiteral("auto"), QSize(1280, 720), QStringLiteral("layout-auto-1-1280x720")},
         {4, QStringLiteral("auto"), QSize(1280, 720), QStringLiteral("layout-auto-4-1280x720")},
         {9, QStringLiteral("auto"), QSize(1920, 1080), QStringLiteral("layout-auto-9-1920x1080")},
+        {12, QStringLiteral("auto"), QSize(1920, 1080), QStringLiteral("layout-auto-12-1920x1080")},
+        {16, QStringLiteral("auto"), QSize(1920, 1080), QStringLiteral("layout-auto-16-1920x1080")},
         {9, QStringLiteral("primary"), QSize(1920, 1080), QStringLiteral("layout-primary-9-1920x1080")},
+        {12, QStringLiteral("primary"), QSize(1920, 1080), QStringLiteral("layout-primary-12-1920x1080")},
+        {16, QStringLiteral("primary"), QSize(1920, 1080), QStringLiteral("layout-primary-16-1920x1080")},
+        {24, QStringLiteral("auto"), QSize(1920, 1080), QStringLiteral("layout-auto-24-1920x1080")},
+        {24, QStringLiteral("primary"), QSize(1920, 1080), QStringLiteral("layout-primary-24-1920x1080")},
         {4, QStringLiteral("primary-two"), QSize(1280, 720), QStringLiteral("layout-primary-two-4-1280x720")},
         {10, QStringLiteral("primary-two"), QSize(1920, 1080), QStringLiteral("layout-primary-two-10-1920x1080")},
+        {16, QStringLiteral("primary-two"), QSize(1920, 1080), QStringLiteral("layout-primary-two-16-1920x1080")},
+        {24, QStringLiteral("primary-two"), QSize(1920, 1080), QStringLiteral("layout-primary-two-24-1920x1080")},
     };
 
     for (const Fixture &fixture : fixtures) {

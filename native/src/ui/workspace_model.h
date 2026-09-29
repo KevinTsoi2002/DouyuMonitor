@@ -21,7 +21,7 @@ class WorkspaceModel final : public QObject {
     Q_PROPERTY(QString audioMode READ audioMode NOTIFY audioModeChanged)
     Q_PROPERTY(bool globalMuted READ globalMuted NOTIFY globalMutedChanged)
     Q_PROPERTY(bool danmakuEnabled READ danmakuEnabled NOTIFY danmakuEnabledChanged)
-    Q_PROPERTY(int maxRooms READ maxRooms CONSTANT)
+    Q_PROPERTY(int maxRooms READ maxRooms NOTIFY maxRoomsChanged)
     Q_PROPERTY(bool navigationVisible READ navigationVisible NOTIFY navigationVisibleChanged)
     Q_PROPERTY(QVariantList teams READ teamItems NOTIFY workspaceDataChanged)
     Q_PROPERTY(QVariantList groups READ groupItems NOTIFY workspaceDataChanged)
@@ -80,6 +80,7 @@ signals:
     void audioModeChanged();
     void globalMutedChanged();
     void danmakuEnabledChanged();
+    void maxRoomsChanged();
     void workspaceDataChanged();
     void lastMessageChanged();
     void lastMessageLevelChanged();

@@ -1,5 +1,6 @@
 param(
-    [string]$ReleaseDir = ''
+    [string]$ReleaseDir = '',
+    [string]$Version = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -32,7 +33,15 @@ $versionMatch = [regex]::Match(
     'project\s*\(\s*DouyuMonitorNative\s+VERSION\s+([0-9]+\.[0-9]+\.[0-9]+)',
     [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
 if (-not $versionMatch.Success) { throw "Could not read the DouyuMonitor version from $cmakeListPath." }
-$projectVersion = $versionMatch.Groups[1].Value
+$sourceVersion = $versionMatch.Groups[1].Value
+$projectVersion = if ([string]::IsNullOrWhiteSpace($Version)) {
+    $sourceVersion
+} else {
+    $Version.Trim().TrimStart('v', 'V')
+}
+if ($projectVersion -notmatch '^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$') {
+    throw "Invalid installer version: $projectVersion"
+}
 
 $innoCandidates = @(
     $env:INNO_SETUP_COMPILER,

@@ -37,6 +37,7 @@ struct RoomSnapshot {
     bool muted = true;
     int volume = 100;
     QVariantList availableQualities;
+    bool renderEnabled = true;
 };
 
 using RoomSnapshots = QVector<RoomSnapshot>;

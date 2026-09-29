@@ -60,6 +60,7 @@ public:
         DanmakuRateLimitedRole,
         DanmakuQueueOverflowRole,
         DanmakuUpstreamDroppedRole,
+        RenderEnabledRole,
     };
     Q_ENUM(Role)
 

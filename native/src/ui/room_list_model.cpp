@@ -23,6 +23,7 @@ QVector<int> snapshotRoles()
         RoomListModel::EffectiveQualityRole,
         RoomListModel::MutedRole,
         RoomListModel::AvailableQualitiesRole,
+        RoomListModel::RenderEnabledRole,
     };
 }
 } // namespace
@@ -109,6 +110,8 @@ QVariant RoomListModel::data(const QModelIndex &index, int role) const
         return entry.settings.danmakuQueueOverflow;
     case DanmakuUpstreamDroppedRole:
         return entry.settings.danmakuUpstreamDropped;
+    case RenderEnabledRole:
+        return snapshot.renderEnabled;
     default:
         return {};
     }
@@ -147,6 +150,7 @@ QHash<int, QByteArray> RoomListModel::roleNames() const
         {DanmakuRateLimitedRole, "danmakuRateLimited"},
         {DanmakuQueueOverflowRole, "danmakuQueueOverflow"},
         {DanmakuUpstreamDroppedRole, "danmakuUpstreamDropped"},
+        {RenderEnabledRole, "renderEnabled"},
     };
 }
 
@@ -304,7 +308,8 @@ bool RoomListModel::snapshotsEqual(const RoomSnapshot &left, const RoomSnapshot 
         && left.audioFocused == right.audioFocused
         && left.muted == right.muted
         && left.volume == right.volume
-        && left.availableQualities == right.availableQualities;
+        && left.availableQualities == right.availableQualities
+        && left.renderEnabled == right.renderEnabled;
 }
 
 QString RoomListModel::liveState(const RoomSnapshot &snapshot)

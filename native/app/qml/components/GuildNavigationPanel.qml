@@ -145,8 +145,9 @@ Rectangle {
         const rooms = root.controller ? root.controller.rooms : null
         if (!rooms) return true
         const roomCount = Number(rooms.roomCount || 0)
-        const layoutMode = root.workspaceModel ? root.workspaceModel.layoutMode : "auto"
-        return (layoutMode === "primary-two" || roomCount < 9) && roomCount < 10
+        const maxRooms = Number(root.workspaceModel && root.workspaceModel.maxRooms
+                                ? root.workspaceModel.maxRooms : 16)
+        return roomCount < maxRooms
     }
 
     function quickAdd(memberId)

@@ -353,6 +353,7 @@ QVariantMap roomTileProperties(const QString &danmakuState)
         {QStringLiteral("danmakuEnabled"), true},
         {QStringLiteral("danmakuState"), danmakuState},
         {QStringLiteral("danmakuErrorCode"), QStringLiteral("NONE")},
+        {QStringLiteral("renderEnabled"), true},
         {QStringLiteral("index"), 0},
     };
 }
@@ -1126,6 +1127,13 @@ void QmlInteractionTest::showsDanmakuStatusOnRoomTile()
     QObject *retry = blocked->findChild<QObject *>(QStringLiteral("danmakuRetryAction"));
     QVERIFY(retry != nullptr);
     QVERIFY(retry->property("visible").toBool());
+
+    std::unique_ptr<QObject> waiting(
+        component.createWithInitialProperties(roomTileProperties(QStringLiteral("waiting"))));
+    QVERIFY2(waiting != nullptr, qPrintable(component.errorString()));
+    QObject *waitingLabel = waiting->findChild<QObject *>(QStringLiteral("danmakuWaitingLabel"));
+    QVERIFY(waitingLabel != nullptr);
+    QVERIFY(waitingLabel->property("visible").toBool());
 }
 
 
@@ -1877,6 +1885,7 @@ void QmlInteractionTest::rendersAvailableQualitiesFromModelRole()
             {QStringLiteral("danmakuEnabled"), false},
             {QStringLiteral("danmakuState"), QStringLiteral("idle")},
             {QStringLiteral("danmakuErrorCode"), QStringLiteral("NONE")},
+            {QStringLiteral("renderEnabled"), true},
         },
     };
 
@@ -2305,7 +2314,7 @@ void QmlInteractionTest::laysOutFiveAutomaticRoomsInThreeAndTwoRows()
     QVERIFY(tiles.at(3)->y() > tiles.at(0)->y());
     QCOMPARE(tiles.at(3)->y(), tiles.at(4)->y());
     QVERIFY(tiles.at(3)->width() > tiles.at(0)->width());
-    QVERIFY(qAbs((tiles.at(3)->x() + tiles.at(3)->width()) - (tiles.at(4)->x())) > 1.0);
+    QVERIFY(qAbs((tiles.at(3)->x() + tiles.at(3)->width()) - tiles.at(4)->x()) < 0.1);
     QVERIFY(tiles.at(4)->x() > tiles.at(3)->x());
     QVERIFY(tiles.at(4)->x() + tiles.at(4)->width() <= surface->width() + 0.1);
 }
@@ -2322,7 +2331,7 @@ void QmlInteractionTest::laysOutPrimaryRoomsAcrossFullHeight()
     hostWindow.resize(QSize(1280, 720));
     hostWindow.show();
 
-    for (const int count : {1, 2, 3, 4, 5, 6, 7, 8, 9}) {
+    for (const int count : {1, 2, 3, 4, 5, 6, 7, 8, 9, 12, 16, 24}) {
         QVariantList rooms;
         for (int i = 0; i < count; ++i) {
             QVariantMap room = roomTileProperties(QStringLiteral("idle"));
@@ -2363,33 +2372,35 @@ void QmlInteractionTest::laysOutPrimaryRoomsAcrossFullHeight()
 
         if (count <= 4) {
             QCOMPARE(primary->x(), 0.0);
-            QVERIFY(tiles.at(1)->x() > primary->x() + primary->width());
+            QVERIFY(tiles.at(1)->x() >= primary->x() + primary->width() - 0.1);
             QCOMPARE(tiles.at(1)->x(), tiles.at(count - 1)->x());
             if (count > 2) QVERIFY(tiles.at(count - 1)->y() > tiles.at(1)->y());
-        } else {
+        } else if (count <= 8) {
+            const qreal sideWidth = surface->width() / 3.35;
             QVERIFY(primary->x() > 0.0);
             QVERIFY(primary->x() + primary->width() < surface->width());
-            const int leftCount = count == 5 || count == 6 ? 2 : (count == 7 || count == 8 ? 3 : 4);
+            QVERIFY(qAbs(primary->x() - sideWidth) < 0.1);
+            QVERIFY(qAbs(primary->width() - (surface->width() - sideWidth * 2.0)) < 0.1);
+            const int leftCount = std::floor((count - 1) / 2.0);
             const int rightCount = count - 1 - leftCount;
-            for (int i = 0; i < leftCount; ++i) {
-                QVERIFY(tiles.at(i + 1)->x() < primary->x());
-                QVERIFY(tiles.at(i + 1)->y() >= 0.0);
-            }
-            for (int i = 0; i < rightCount; ++i) {
-                QVERIFY(tiles.at(leftCount + i + 1)->x() > primary->x() + primary->width());
-                QVERIFY(tiles.at(leftCount + i + 1)->y() >= 0.0);
-            }
-            if (count == 8) {
-                for (int i = 1; i < rightCount; ++i) {
-                    QVERIFY(tiles.at(leftCount + i + 1)->y() > tiles.at(leftCount + i)->y());
+            for (QQuickItem *tile : tiles) {
+                if (tile == primary) continue;
+                QVERIFY(tile->y() >= 0.0);
+                if (tile->x() < primary->x()) {
+                    QVERIFY(qAbs(tile->x()) < 0.1);
+                } else {
+                    QVERIFY(qAbs((tile->x() + tile->width()) - surface->width()) < 0.1);
                 }
-                QVERIFY(qAbs(primary->width() - (surface->width() - 2.0 * 8.0) * 3.0 / 5.0) < 0.1);
             }
-            if (count == 9) {
-                for (int i = 1; i < rightCount; ++i) {
-                    QVERIFY(tiles.at(leftCount + i + 1)->y() > tiles.at(leftCount + i)->y());
-                }
-                QVERIFY(qAbs(primary->width() - (surface->width() - 2.0 * 8.0) * 3.0 / 5.0) < 0.1);
+            QVERIFY(leftCount > 0);
+            QVERIFY(rightCount > 0);
+        } else {
+            QCOMPARE(primary->x(), 0.0);
+            QVERIFY(qAbs(primary->width() - surface->width() * 0.44) < 0.1);
+            for (QQuickItem *tile : tiles) {
+                if (tile == primary) continue;
+                QVERIFY(tile->x() >= primary->width() - 0.1);
+                QVERIFY(tile->x() + tile->width() <= surface->width() + 0.1);
             }
         }
     }

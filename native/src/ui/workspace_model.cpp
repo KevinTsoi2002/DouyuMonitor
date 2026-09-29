@@ -2,6 +2,8 @@
 
 #include <QVariantMap>
 
+#include "workspace/room_capacity.h"
+
 WorkspaceModel::WorkspaceModel(AppController *controller, QObject *parent)
     : QObject(parent)
     , controller_(controller)
@@ -60,7 +62,7 @@ bool WorkspaceModel::danmakuEnabled() const noexcept
 
 int WorkspaceModel::maxRooms() const noexcept
 {
-    return 10;
+    return RoomCapacity::currentLimits().maxLayoutRooms;
 }
 
 bool WorkspaceModel::navigationVisible() const noexcept
@@ -152,7 +154,7 @@ QString WorkspaceModel::commandMessage(RoomCommandResult result) const
     case RoomCommandResult::DuplicateRoomId:
         return QStringLiteral("该房间已在列表中");
     case RoomCommandResult::RoomLimitReached:
-        return QStringLiteral("最多添加 10 个房间");
+        return QStringLiteral("最多添加 %1 个房间").arg(maxRooms());
     case RoomCommandResult::RoomNotFound:
         return QStringLiteral("未找到该房间");
     case RoomCommandResult::AlreadyPrimary:

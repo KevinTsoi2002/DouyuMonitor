@@ -27,6 +27,7 @@
 #include "workspace/guild_room_resolver.h"
 #include "workspace/guild_roster.h"
 #include "workspace/multi_room_coordinator.h"
+#include "workspace/room_capacity.h"
 
 #ifndef DOUYU_APP_VERSION
 #define DOUYU_APP_VERSION "dev"
@@ -420,10 +421,6 @@ void AppController::setMainWindow(QWindow *window)
 
 QString AppController::addRoom(const QString &roomId)
 {
-    if (coordinator_ != nullptr && coordinator_->roomCount() >= 9
-        && coordinator_->layoutMode() != QStringLiteral("primary-two")) {
-        return QStringLiteral("当前布局最多支持 9 个房间");
-    }
     const NativeRoomRecord *record = libraryRecord(roomId);
     const RoomCommandResult result = coordinator_->addRoomDetailed(
         roomId,
@@ -477,10 +474,6 @@ QString AppController::addRoomCandidate(const QString &roomId)
 {
     const auto candidate = searchCandidates_.constFind(roomId);
     if (candidate == searchCandidates_.cend()) return addRoom(roomId);
-    if (coordinator_ != nullptr && coordinator_->roomCount() >= 9
-        && coordinator_->layoutMode() != QStringLiteral("primary-two")) {
-        return QStringLiteral("当前布局最多支持 9 个房间");
-    }
 
     const NativeRoomRecord *record = libraryRecord(roomId);
     const RoomCommandResult result = coordinator_->addRoomDetailed(
@@ -520,14 +513,6 @@ QString AppController::addGuildMemberRoom(const QString &memberId)
     if (coordinator_->roomIds().contains(roomId)) {
         return QStringLiteral("该房间已在列表中");
     }
-    if (coordinator_->roomCount() >= 9
-        && coordinator_->layoutMode() != QStringLiteral("primary-two")) {
-        return QStringLiteral("当前布局最多支持 9 个房间");
-    }
-    if (coordinator_->roomCount() >= 10) {
-        return QStringLiteral("最多添加 10 个房间");
-    }
-
     RoomMetadata metadata;
     metadata.roomId = roomId;
     metadata.anchorName = member->anchorName;
@@ -800,7 +785,10 @@ QString AppController::assignRoomToGroup(const QString &roomId, const QString &g
     if (target == snapshot_.groups.end()) return commandMessage(RoomCommandResult::RoomNotFound);
     const bool wasActive = snapshot_.activeGroupId == groupId;
     if (target->roomIds.contains(roomId)) return {};
-    if (target->roomIds.size() >= 9) return QStringLiteral("分组最多包含 9 个房间");
+    const int maxGroupRooms = RoomCapacity::currentLimits().maxLayoutRooms;
+    if (target->roomIds.size() >= maxGroupRooms) {
+        return QStringLiteral("分组最多包含 %1 个房间").arg(maxGroupRooms);
+    }
     target->roomIds.push_back(roomId);
     if (wasActive) {
         setActiveGroup(groupId);
@@ -1012,13 +1000,6 @@ bool AppController::setLayout(const QString &layoutId)
         return false;
     }
     if (coordinator_ == nullptr || !coordinator_->setLayout(layoutId)) return false;
-
-    const bool leftDualPrimaryAtCapacity = coordinator_->layoutMode() != QStringLiteral("primary-two")
-        && coordinator_->roomCount() == MultiRoomCoordinator::kMaxRooms;
-    if (leftDualPrimaryAtCapacity) {
-        const QStringList roomIds = coordinator_->roomIds();
-        if (!roomIds.isEmpty()) coordinator_->removeRoomDetailed(roomIds.constLast());
-    }
     snapshot_.layoutId = coordinator_->layoutMode();
     refreshPresentation();
     persistWorkspace();
@@ -1642,6 +1623,19 @@ void AppController::synchronizeDanmaku()
 {
     if (danmaku_ == nullptr || coordinator_ == nullptr) return;
     const RoomSnapshots snapshots = coordinator_->roomSnapshots();
+    QHash<QString, int> priorities;
+    int nextPriority = 0;
+    const auto assignPriority = [&priorities, &nextPriority](const QString &roomId) {
+        if (roomId.isEmpty() || priorities.contains(roomId)) return;
+        priorities.insert(roomId, nextPriority++);
+    };
+    assignPriority(coordinator_->primaryRoomId());
+    assignPriority(coordinator_->secondaryPrimaryRoomId());
+    assignPriority(coordinator_->audioRoomId());
+    for (const RoomSnapshot &room : snapshots) {
+        assignPriority(room.roomId);
+    }
+
     QVector<DanmakuRoomEligibility> eligibility;
     eligibility.reserve(snapshots.size());
     for (const RoomSnapshot &room : snapshots) {
@@ -1652,6 +1646,7 @@ void AppController::synchronizeDanmaku()
         state.roomEnabled = record != nullptr && record->danmakuEnabled;
         state.globalEnabled = snapshot_.danmaku.globalEnabled;
         state.live = room.liveStatus == RoomLiveStatus::Online;
+        state.priority = priorities.value(room.roomId, nextPriority++);
         state.governance = DanmakuGovernance::resolvedGovernance(
             snapshot_.danmaku.governance,
             snapshot_.danmaku.roomOverrides.value(room.roomId));

@@ -17,6 +17,7 @@ struct DanmakuRoomEligibility {
     bool roomEnabled = false;
     bool globalEnabled = false;
     bool live = false;
+    int priority = 0;
     DanmakuGovernanceSettings governance;
 };
 

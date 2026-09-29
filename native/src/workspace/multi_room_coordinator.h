@@ -7,6 +7,7 @@
 #include <QVector>
 
 #include "service/stream_service_protocol.h"
+#include "workspace/room_capacity.h"
 #include "workspace/room_status_scheduler.h"
 #include "workspace/room_workspace_types.h"
 
@@ -26,7 +27,7 @@ class MultiRoomCoordinator final : public QObject {
     Q_OBJECT
 
 public:
-    static constexpr int kMaxRooms = 10;
+    static constexpr int kMaxRooms = RoomCapacity::kLayoutRooms;
 
     explicit MultiRoomCoordinator(StreamgetProcessClient *client,
                                   QObject *parent = nullptr);
@@ -114,6 +115,8 @@ private:
     QString audioMode_ = QStringLiteral("single");
     bool globalMuted_ = false;
     QSet<QString> mutedRooms_;
+    QSet<QString> renderEnabledRoomIds() const;
+    QSet<QString> multiAudioRoomIds() const;
     QString layoutId_ = QStringLiteral("auto");
     QString layoutMode_ = QStringLiteral("auto");
     double primaryRoomRatio_ = 0.6;

@@ -1,5 +1,7 @@
 #include <QtTest/QtTest>
 
+#include <algorithm>
+
 #include "danmaku/danmaku_session_manager.h"
 
 class FakeDanmakuClient final : public DanmakuClient {
@@ -51,8 +53,10 @@ class DanmakuSessionManagerTest final : public QObject {
     Q_OBJECT
 
 private slots:
-    void startsAtMostNineEligibleRooms();
+    void startsDefaultBudgetByPriority();
+    void capsSessionsAtTheDefaultBudget();
     void stopsRoomsThatBecomeIneligible();
+    void reportsIneligibleRoomsAsIdle();
     void deduplicatesAndBoundsEachRoomQueue();
     void appliesGovernanceBeforeQueueing();
     void clearsQueuesAndStopsAllOnShutdown();
@@ -74,23 +78,54 @@ DanmakuRoomEligibility eligible(const QString &roomId)
 
 } // namespace
 
-void DanmakuSessionManagerTest::startsAtMostNineEligibleRooms()
+void DanmakuSessionManagerTest::startsDefaultBudgetByPriority()
 {
     QVector<FakeDanmakuClient *> fakes;
+    QVector<QString> startedRooms;
     DanmakuSessionManager manager(
         [&](const QString &roomId, QObject *) -> std::unique_ptr<DanmakuClient> {
             auto fake = std::make_unique<FakeDanmakuClient>(roomId);
             fakes.push_back(fake.get());
+            startedRooms.push_back(roomId);
             return fake;
         });
     QVector<DanmakuRoomEligibility> rooms;
-    for (int i = 0; i < 10; ++i) rooms.push_back(eligible(QString::number(i + 1)));
+    for (int i = 0; i < 16; ++i) {
+        auto room = eligible(QString::number(i + 1));
+        room.priority = i;
+        rooms.push_back(room);
+    }
+    std::swap(rooms[0].priority, rooms[15].priority);
 
     manager.synchronize(rooms);
-    QCOMPARE(manager.activeSessionCount(), 9);
-    QCOMPARE(fakes.size(), 9);
-    QCOMPARE(manager.statusForRoom(QStringLiteral("10")).state,
-             DanmakuConnectionState::Idle);
+    QCOMPARE(manager.activeSessionCount(), 12);
+    QCOMPARE(fakes.size(), 12);
+    QVERIFY(startedRooms.contains(QStringLiteral("16")));
+    QVERIFY(!startedRooms.contains(QStringLiteral("1")));
+    QCOMPARE(manager.statusForRoom(QStringLiteral("1")).state,
+             DanmakuConnectionState::WaitingForSession);
+}
+
+void DanmakuSessionManagerTest::capsSessionsAtTheDefaultBudget()
+{
+    QVector<QString> startedRooms;
+    DanmakuSessionManager manager(
+        [&](const QString &roomId, QObject *) -> std::unique_ptr<DanmakuClient> {
+            startedRooms.push_back(roomId);
+            return std::make_unique<FakeDanmakuClient>(roomId);
+        });
+    QVector<DanmakuRoomEligibility> rooms;
+    for (int i = 0; i < 17; ++i) {
+        auto room = eligible(QString::number(i + 1));
+        room.priority = i;
+        rooms.push_back(room);
+    }
+
+    manager.synchronize(rooms);
+    QCOMPARE(manager.activeSessionCount(), 12);
+    QCOMPARE(startedRooms.size(), 12);
+    QCOMPARE(manager.statusForRoom(QStringLiteral("17")).state,
+             DanmakuConnectionState::WaitingForSession);
 }
 
 void DanmakuSessionManagerTest::stopsRoomsThatBecomeIneligible()
@@ -109,6 +144,20 @@ void DanmakuSessionManagerTest::stopsRoomsThatBecomeIneligible()
     QCOMPARE(manager.activeSessionCount(), 0);
     QCOMPARE(stopCount, 1);
     QCOMPARE(manager.pendingCount(QStringLiteral("63136")), 0);
+}
+
+void DanmakuSessionManagerTest::reportsIneligibleRoomsAsIdle()
+{
+    DanmakuSessionManager manager(
+        [](const QString &roomId, QObject *parent) -> std::unique_ptr<DanmakuClient> {
+            return std::make_unique<FakeDanmakuClient>(roomId, parent);
+        });
+    auto room = eligible(QStringLiteral("63136"));
+    room.roomEnabled = false;
+    manager.synchronize({room});
+
+    QCOMPARE(manager.statusForRoom(QStringLiteral("63136")).state,
+             DanmakuConnectionState::Idle);
 }
 
 void DanmakuSessionManagerTest::deduplicatesAndBoundsEachRoomQueue()
