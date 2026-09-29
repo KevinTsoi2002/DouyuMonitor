@@ -4,9 +4,10 @@ DouyuMonitor 是基于 Qt Quick/QML、C++ 和 libmpv 的 Windows x64 斗鱼多�
 
 ## 当前版本
 
-- 开发版本：`V0.2.13`
+- 正式版：`V0.2.13`
+- Windows 正式版安装包：`DouyuMonitor-Setup-V0.2.13.exe`
 - 24 路全解码测试版：`V0.2.13-beta.24`
-- Windows 测试版安装包：`DouyuMonitor-Setup-V0.2.13-beta.24.exe`
+- Windows 24 路测试版安装包：`DouyuMonitor-Setup-V0.2.13-beta.24.exe`
 - 未提供代码签名；下载后请以 Release 页面中的 SHA-256 值校验安装包
 
 ## 功能
