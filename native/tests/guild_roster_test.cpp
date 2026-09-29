@@ -17,7 +17,7 @@ private slots:
 void GuildRosterTest::loadsBundledRosterWithoutRoleLabels()
 {
     const QVector<GuildMember> members = GuildRoster::bundled();
-    QCOMPARE(members.size(), 49);
+    QCOMPARE(members.size(), 58);
     for (const GuildMember &member : members) {
         QVERIFY(!member.id.isEmpty());
         QVERIFY(!member.anchorName.isEmpty());
@@ -59,6 +59,31 @@ void GuildRosterTest::rejectsInvalidRoomIdsFromResource()
     const GuildMember *xiaoliu = GuildRoster::findByName(QStringLiteral("小六HQ"));
     QVERIFY(xiaoliu != nullptr);
     QCOMPARE(xiaoliu->roomId, QStringLiteral("12900462"));
+
+    const GuildMember *guiHai = GuildRoster::findByName(QStringLiteral("归海念一刀"));
+    QVERIFY(guiHai != nullptr);
+    QCOMPARE(guiHai->roomId, QStringLiteral("2632018"));
+    QVERIFY(GuildRoster::findByName(QStringLiteral("阿海")) == nullptr);
+
+    const GuildMember *blindHorse = GuildRoster::findByName(QStringLiteral("你个瞎马"));
+    QVERIFY(blindHorse != nullptr);
+    QCOMPARE(blindHorse->roomId, QStringLiteral("7204164"));
+    QVERIFY(GuildRoster::findByName(QStringLiteral("踏马")) == nullptr);
+
+    for (const QString &name : {QStringLiteral("王大谋QoQ"),
+                                 QStringLiteral("罗一可o"),
+                                 QStringLiteral("福福yeee"),
+                                 QStringLiteral("芷芷QwQ"),
+                                 QStringLiteral("bulaQoQ"),
+                                 QStringLiteral("羊咩咩ee"),
+                                 QStringLiteral("筱青o"),
+                                 QStringLiteral("安然Aqr"),
+                                 QStringLiteral("火山同学呀")}) {
+        const GuildMember *member = GuildRoster::findByName(name);
+        QVERIFY2(member != nullptr, qPrintable(name));
+        QVERIFY2(member->roomId.isEmpty(), qPrintable(name));
+    }
+
 }
 
 void GuildRosterTest::rejectsMalformedRootAndUnsupportedVersion()

@@ -63,3 +63,18 @@
 - 安装器脚本回归检查输出 `installer script regression test passed`。
 - 安装包已生成：`native/out/installer/DouyuMonitor-Setup-V0.2.10.exe`，大小 `69085012` 字节，SHA-256 为 `CD8B49E976EE58DF3166F90AFB6D204F7AFC9C081C89C08B7F88B0BA6B8AAF57`。
 - 已在隔离目录执行静默安装、安装后自测和静默卸载，三者退出码均为 `0`；卸载后主程序文件已移除。
+
+## V0.2.12 构建与发布验证
+
+- 导航页更名为“CSTG狼团S1导航页”，入口图标改为适配小尺寸显示的矢量图标。
+- 导航页补充主播头像与开播状态，并在打开导航页时按已确认房间号刷新公开资料。
+- 根据名单核对结果新增王大谋QoQ、罗一可o、福福yeee、芷芷QwQ、bulaQoQ、羊咩咩ee、筱青o、安然Aqr、火山同学呀；归海念一刀、你个瞎马等名称及房间号同步校正。
+- 关闭窗口弹窗统一使用应用深色主题调色板，修复标题和按钮残留的浅色 Basic 样式。
+- 当前发布版本由 `0.2.11` 更新为 `0.2.12`，同步 `native/CMakeLists.txt`、`native/vcpkg.json`、根 `README.md`、`native/README.md` 与当前版本断言。
+- Release 全量 CTest 共 `35` 项，`34` 项通过；`qml_close_regression_test` 以 `0xc0000409` 失败，属于既有已知问题，不是本轮 UI 改动引入。
+- 安装器脚本回归检查通过；安装 stage 中主程序自测输出 `native self-test passed: Qt Quick renderer`，退出码为 `0`。
+- 安装包已生成：`native/out/installer/DouyuMonitor-Setup-V0.2.12.exe`，大小 `62134311` 字节，SHA-256 为 `F55A217D5751ED0F6FBC734E0824DA35AFBAF55E1857AA4D73D6987AF97E94E2`。
+- 安装 stage 共 `251` 个文件、`212911781` 字节，未发现同名同哈希重复文件。
+- StreamGet 服务的 Release 构建产物与发布目录产物大小均为 `4027867` 字节，SHA-256 均为 `4E777392DC201B97BB79AB4D5818C57C261FCB273A5AEAB5DBBC5328F320AF23`。
+- Notion 同步：已通过官方 Codex CLI 完成 Notion MCP OAuth 授权，并在现有“DouyuMonitor 知识库”下创建并回读 V0.2.12 脱敏日志页：https://app.notion.com/p/3e90f4bdec48811ab261e7d9c4b8df31 。
+- GitHub Release：已创建并上传 V0.2.12 安装包：https://github.com/KevinTsoi2002/DouyuMonitor/releases/tag/V0.2.12 ；远端资产 SHA-256 与本地一致，为 `F55A217D5751ED0F6FBC734E0824DA35AFBAF55E1857AA4D73D6987AF97E94E2`。

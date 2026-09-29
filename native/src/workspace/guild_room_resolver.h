@@ -39,8 +39,11 @@ public:
     QVector<GuildRoomCacheEntry> cache() const;
     void start();
     void stop();
+    void refreshMetadata();
 
     QString roomIdFor(const QString &memberId) const;
+    QString avatarUrlFor(const QString &memberId) const;
+    QString liveStateFor(const QString &memberId) const;
     QString statusFor(const QString &memberId) const;
     QString setManualRoomId(const QString &memberId, const QString &roomId);
     bool handleResponse(const ServiceResponse &response);
@@ -58,17 +61,25 @@ private:
     void completeWithoutRoom(const QString &memberId, const QString &status);
     void scheduleRetry(const QString &memberId);
     void removeQueuedMember(const QString &memberId);
+    void enqueueMetadataRefresh(const QString &memberId);
+    void applyMetadata(const QString &memberId, const RoomSearchResult &result);
+    bool isExactMatch(const GuildMember &member, const RoomSearchResult &result) const;
 
     SearchTransport *transport_ = nullptr;
     QTimer *scheduleTimer_ = nullptr;
     QHash<QString, GuildMember> members_;
     QHash<QString, QString> roomIds_;
     QHash<QString, QString> statuses_;
+    QHash<QString, QString> avatarUrls_;
+    QHash<QString, QString> liveStates_;
     QHash<QString, int> failures_;
     QVector<GuildRoomCacheEntry> cache_;
     QVector<QString> queue_;
     QSet<QString> queuedMembers_;
+    QVector<QString> metadataQueue_;
+    QSet<QString> queuedMetadataMembers_;
     QString activeMemberId_;
+    bool activeRequestIsMetadataRefresh_ = false;
     quint64 activeRequestId_ = 0;
     int nextRetryDelayMs_ = 3000;
     bool started_ = false;

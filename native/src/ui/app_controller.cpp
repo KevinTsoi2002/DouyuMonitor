@@ -290,6 +290,12 @@ QVariantList AppController::guildRoster() const
             {QStringLiteral("status"), guildRoomResolver_ != nullptr
                  ? guildRoomResolver_->statusFor(member.id)
                  : QString()},
+            {QStringLiteral("avatarUrl"), guildRoomResolver_ != nullptr
+                 ? guildRoomResolver_->avatarUrlFor(member.id)
+                 : QString()},
+            {QStringLiteral("liveState"), guildRoomResolver_ != nullptr
+                 ? guildRoomResolver_->liveStateFor(member.id)
+                 : QStringLiteral("unknown")},
             {QStringLiteral("active"), snapshot_.activeRoomIds.contains(resolvedRoomId)},
         });
     }
@@ -1040,6 +1046,7 @@ QString AppController::setNavigationVisible(bool visible)
     if (snapshot_.navigationVisible == visible && workspace_->navigationVisible() == visible) return {};
     snapshot_.navigationVisible = visible;
     workspace_->setNavigationVisible(visible);
+    if (visible && guildRoomResolver_ != nullptr) guildRoomResolver_->refreshMetadata();
     persistWorkspace();
     return {};
 }

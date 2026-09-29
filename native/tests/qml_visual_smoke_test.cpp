@@ -448,6 +448,7 @@ void QmlVisualSmokeTest::usesAssetBackedIcons()
     QVERIFY(QTest::qWaitForWindowExposed(window));
 
     for (const QString &objectName : {QStringLiteral("headerSidebarIcon"),
+                                      QStringLiteral("hamsterNavigationIcon"),
                                       QStringLiteral("brandIcon"),
                                       QStringLiteral("windowCloseIcon")}) {
         QObject *icon = window->findChild<QObject *>(objectName);
@@ -455,6 +456,14 @@ void QmlVisualSmokeTest::usesAssetBackedIcons()
         QVERIFY(!icon->property("source").toUrl().isEmpty());
         QTRY_COMPARE_WITH_TIMEOUT(icon->property("status").toInt(), 1, 1000);
     }
+
+    QObject *navigationIcon =
+        window->findChild<QObject *>(QStringLiteral("hamsterNavigationIcon"));
+    QVERIFY(navigationIcon != nullptr);
+    QCOMPARE(navigationIcon->property("width").toInt(), 20);
+    QCOMPARE(navigationIcon->property("height").toInt(), 20);
+    QVERIFY(navigationIcon->property("source").toUrl().toString().endsWith(
+        QStringLiteral("hamster-agent.svg")));
 
     QVERIFY(QFile::exists(QStringLiteral(":/qml/assets/icons/star.svg")));
 }

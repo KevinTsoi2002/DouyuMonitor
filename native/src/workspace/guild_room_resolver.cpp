@@ -49,10 +49,15 @@ void GuildRoomResolver::setRoster(QVector<GuildMember> roster)
     members_.clear();
     roomIds_.clear();
     statuses_.clear();
+    avatarUrls_.clear();
+    liveStates_.clear();
     failures_.clear();
     cache_.clear();
     queue_.clear();
     queuedMembers_.clear();
+    metadataQueue_.clear();
+    queuedMetadataMembers_.clear();
+    activeRequestIsMetadataRefresh_ = false;
 
     for (const GuildMember &member : roster) {
         if (member.id.isEmpty() || member.anchorName.isEmpty()) continue;
@@ -75,9 +80,14 @@ void GuildRoomResolver::setCache(QVector<GuildRoomCacheEntry> cache)
     cache_.clear();
     roomIds_.clear();
     statuses_.clear();
+    avatarUrls_.clear();
+    liveStates_.clear();
     failures_.clear();
     queue_.clear();
     queuedMembers_.clear();
+    metadataQueue_.clear();
+    queuedMetadataMembers_.clear();
+    activeRequestIsMetadataRefresh_ = false;
 
     for (const QString &memberId : members_.keys()) {
         const GuildMember &member = members_.value(memberId);
@@ -134,7 +144,18 @@ void GuildRoomResolver::start()
         queuedMembers_.insert(memberId);
         statuses_.insert(memberId, QStringLiteral("idle"));
     }
-    if (activeMemberId_.isEmpty() && !queue_.isEmpty()) sendNextRequest();
+    refreshMetadata();
+    if (activeMemberId_.isEmpty() && (!queue_.isEmpty() || !metadataQueue_.isEmpty())) {
+        sendNextRequest();
+    }
+}
+
+void GuildRoomResolver::refreshMetadata()
+{
+    if (!started_) return;
+    QStringList memberIds = roomIds_.keys();
+    std::sort(memberIds.begin(), memberIds.end());
+    for (const QString &memberId : memberIds) enqueueMetadataRefresh(memberId);
 }
 
 void GuildRoomResolver::stop()
@@ -144,12 +165,23 @@ void GuildRoomResolver::stop()
     const quint64 requestId = activeRequestId_;
     activeRequestId_ = 0;
     activeMemberId_.clear();
+    activeRequestIsMetadataRefresh_ = false;
     if (requestId != 0 && transport_ != nullptr) transport_->cancel(requestId);
 }
 
 QString GuildRoomResolver::roomIdFor(const QString &memberId) const
 {
     return roomIds_.value(memberId);
+}
+
+QString GuildRoomResolver::avatarUrlFor(const QString &memberId) const
+{
+    return avatarUrls_.value(memberId);
+}
+
+QString GuildRoomResolver::liveStateFor(const QString &memberId) const
+{
+    return liveStates_.value(memberId, QStringLiteral("unknown"));
 }
 
 QString GuildRoomResolver::statusFor(const QString &memberId) const
@@ -173,7 +205,10 @@ QString GuildRoomResolver::setManualRoomId(const QString &memberId, const QStrin
     }
     failures_.remove(memberId);
     roomIds_.insert(memberId, normalizedRoomId);
+    avatarUrls_.remove(memberId);
+    liveStates_.insert(memberId, QStringLiteral("unknown"));
     statuses_.insert(memberId, QStringLiteral("resolved"));
+    if (started_) enqueueMetadataRefresh(memberId);
     GuildRoomCacheEntry entry;
     entry.memberId = memberId;
     entry.roomId = normalizedRoomId;
@@ -188,10 +223,39 @@ QString GuildRoomResolver::setManualRoomId(const QString &memberId, const QStrin
     emit memberChanged(memberId);
     emit cacheChanged();
     if (started_ && activeMemberId_.isEmpty() && !scheduleTimer_->isActive()
-        && !queue_.isEmpty()) {
+        && (!queue_.isEmpty() || !metadataQueue_.isEmpty())) {
         scheduleNextRequest(kRequestSpacingMs);
     }
     return {};
+}
+
+bool GuildRoomResolver::isExactMatch(const GuildMember &member, const RoomSearchResult &result) const
+{
+    return sameName(member.anchorName, result.anchorName) && isValidRoomId(result.roomId);
+}
+
+void GuildRoomResolver::applyMetadata(const QString &memberId, const RoomSearchResult &result)
+{
+    if (result.avatarUrl.isValid() && !result.avatarUrl.isEmpty()) {
+        avatarUrls_.insert(memberId, result.avatarUrl.toString());
+    } else {
+        avatarUrls_.remove(memberId);
+    }
+    liveStates_.insert(memberId, result.online ? QStringLiteral("online")
+                                                : QStringLiteral("offline"));
+}
+
+void GuildRoomResolver::enqueueMetadataRefresh(const QString &memberId)
+{
+    if (!started_ || !members_.contains(memberId) || !roomIds_.contains(memberId)
+        || queuedMetadataMembers_.contains(memberId) || activeMemberId_ == memberId) {
+        return;
+    }
+    metadataQueue_.push_back(memberId);
+    queuedMetadataMembers_.insert(memberId);
+    if (activeMemberId_.isEmpty() && !scheduleTimer_->isActive()) {
+        scheduleNextRequest(0);
+    }
 }
 
 bool GuildRoomResolver::handleResponse(const ServiceResponse &response)
@@ -199,27 +263,46 @@ bool GuildRoomResolver::handleResponse(const ServiceResponse &response)
     if (activeRequestId_ == 0 || response.requestId != activeRequestId_) return false;
 
     const QString memberId = activeMemberId_;
+    const bool metadataRefresh = activeRequestIsMetadataRefresh_;
     activeRequestId_ = 0;
     activeMemberId_.clear();
+    activeRequestIsMetadataRefresh_ = false;
 
     const GuildMember member = members_.value(memberId);
     if (!response.ok || !response.search) {
+        if (metadataRefresh) {
+            scheduleNextRequest(kRequestSpacingMs);
+            return true;
+        }
         scheduleRetry(memberId);
         return true;
     }
 
-    QSet<QString> matches;
-    for (const RoomSearchResult &result : response.results) {
-        if (sameName(member.anchorName, result.anchorName)
-            && isValidRoomId(result.roomId)) {
-            matches.insert(result.roomId);
+    if (metadataRefresh) {
+        const QString expectedRoomId = roomIds_.value(memberId);
+        for (const RoomSearchResult &result : response.results) {
+            if (result.roomId != expectedRoomId) continue;
+            applyMetadata(memberId, result);
+            emit memberChanged(memberId);
+            break;
         }
+        scheduleNextRequest(kRequestSpacingMs);
+        return true;
     }
-    if (matches.size() == 1) {
+
+    QSet<QString> matches;
+    const RoomSearchResult *matchedResult = nullptr;
+    for (const RoomSearchResult &result : response.results) {
+        if (!isExactMatch(member, result)) continue;
+        matches.insert(result.roomId);
+        matchedResult = &result;
+    }
+    if (matches.size() == 1 && matchedResult != nullptr) {
         const QString roomId = *matches.cbegin();
         roomIds_.insert(memberId, roomId);
         statuses_.insert(memberId, QStringLiteral("resolved"));
         failures_.remove(memberId);
+        applyMetadata(memberId, *matchedResult);
         GuildRoomCacheEntry entry;
         entry.memberId = memberId;
         entry.roomId = roomId;
@@ -247,12 +330,17 @@ bool GuildRoomResolver::handleFailure(quint64 requestId, const QString &)
 {
     if (activeRequestId_ == 0 || requestId != activeRequestId_) return false;
     const QString memberId = activeMemberId_;
+    const bool metadataRefresh = activeRequestIsMetadataRefresh_;
     activeRequestId_ = 0;
     activeMemberId_.clear();
+    activeRequestIsMetadataRefresh_ = false;
+    if (metadataRefresh) {
+        scheduleNextRequest(kRequestSpacingMs);
+        return true;
+    }
     scheduleRetry(memberId);
     return true;
 }
-
 int GuildRoomResolver::nextRetryDelayMsForTest() const noexcept
 {
     return nextRetryDelayMs_;
@@ -265,18 +353,42 @@ bool GuildRoomResolver::isValidRoomId(const QString &roomId)
 
 void GuildRoomResolver::scheduleNextRequest(int delayMs)
 {
-    if (!started_ || transport_ == nullptr || queue_.isEmpty()) return;
+    if (!started_ || transport_ == nullptr
+        || (queue_.isEmpty() && metadataQueue_.isEmpty())) {
+        return;
+    }
     scheduleTimer_->start(qMax(0, delayMs));
 }
 
 void GuildRoomResolver::sendNextRequest()
 {
     if (!started_ || transport_ == nullptr || !activeMemberId_.isEmpty()) return;
+
+    if (!metadataQueue_.isEmpty()) {
+        const QString memberId = metadataQueue_.takeFirst();
+        queuedMetadataMembers_.remove(memberId);
+        const QString roomId = roomIds_.value(memberId);
+        if (!members_.contains(memberId) || roomId.isEmpty()) {
+            sendNextRequest();
+            return;
+        }
+        activeMemberId_ = memberId;
+        activeRequestIsMetadataRefresh_ = true;
+        activeRequestId_ = transport_->search(roomId);
+        if (activeRequestId_ == 0) {
+            activeMemberId_.clear();
+            activeRequestIsMetadataRefresh_ = false;
+            scheduleNextRequest(0);
+        }
+        return;
+    }
+
     while (!queue_.isEmpty()) {
         const QString memberId = queue_.takeFirst();
         queuedMembers_.remove(memberId);
         if (!members_.contains(memberId) || roomIds_.contains(memberId)) continue;
         activeMemberId_ = memberId;
+        activeRequestIsMetadataRefresh_ = false;
         statuses_.insert(memberId, QStringLiteral("resolving"));
         emit memberChanged(memberId);
         activeRequestId_ = transport_->search(members_.value(memberId).searchName);

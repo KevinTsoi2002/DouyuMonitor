@@ -141,21 +141,28 @@ public:
 
 QVariantList guildFixtures()
 {
+    const QString avatarUrl = QUrl::fromLocalFile(
+        QStringLiteral(QML_TEST_SOURCE_DIR)
+        + QStringLiteral("/assets/icons/hamster-agent.svg")).toString();
     return {
         QVariantMap{{QStringLiteral("id"), QStringLiteral("hamster-001")},
                     {QStringLiteral("anchorName"), QStringLiteral("寅子")},
                     {QStringLiteral("roomId"), QStringLiteral("71415")},
                     {QStringLiteral("status"), QStringLiteral("resolved")},
+                    {QStringLiteral("avatarUrl"), avatarUrl},
+                    {QStringLiteral("liveState"), QStringLiteral("online")},
                     {QStringLiteral("active"), false}},
         QVariantMap{{QStringLiteral("id"), QStringLiteral("hamster-002")},
                     {QStringLiteral("anchorName"), QStringLiteral("主播阿飞")},
                     {QStringLiteral("roomId"), QStringLiteral("84452")},
                     {QStringLiteral("status"), QStringLiteral("resolved")},
+                    {QStringLiteral("liveState"), QStringLiteral("offline")},
                     {QStringLiteral("active"), false}},
         QVariantMap{{QStringLiteral("id"), QStringLiteral("hamster-003")},
                     {QStringLiteral("anchorName"), QStringLiteral("待确认成员")},
                     {QStringLiteral("roomId"), QString()},
                     {QStringLiteral("status"), QStringLiteral("pending")},
+                    {QStringLiteral("liveState"), QStringLiteral("unknown")},
                     {QStringLiteral("active"), false}},
     };
 }

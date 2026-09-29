@@ -86,6 +86,8 @@ Rectangle {
                 anchorName: "",
                 roomId: "",
                 roomStatus: "",
+                avatarUrl: "",
+                liveState: "unknown",
                 memberActive: false
             })
             for (let memberIndex = 0; memberIndex < section.members.length; ++memberIndex) {
@@ -97,19 +99,23 @@ Rectangle {
                     anchorName: String(member.anchorName || ""),
                     roomId: String(member.roomId || ""),
                     roomStatus: String(member.status || ""),
+                    avatarUrl: String(member.avatarUrl || ""),
+                    liveState: String(member.liveState || "unknown"),
                     memberActive: !!member.active
                 })
             }
         }
     }
 
-    function memberForRow(memberId, anchorName, roomId, status, active)
+    function memberForRow(memberId, anchorName, roomId, status, avatarUrl, liveState, active)
     {
         return {
             id: memberId,
             anchorName: anchorName,
             roomId: roomId,
             status: status,
+            avatarUrl: avatarUrl,
+            liveState: liveState,
             active: active
         }
     }
@@ -180,10 +186,11 @@ Rectangle {
         spacing: 10
 
         Text {
+            objectName: "guildNavigationTitle"
             color: Theme.text
             font.bold: true
             font.pixelSize: 15
-            text: "仓鼠特工"
+            text: "CSTG狼团S1"
         }
 
         Item {
@@ -251,17 +258,19 @@ Rectangle {
                             anchors.left: parent.left
                             anchors.right: parent.right
                             anchors.top: parent.top
-                            height: visible ? (confirming ? 76 : 38) : 0
+                            height: visible ? (confirming ? 84 : 46) : 0
                             visible: rowType === "member"
                             member: root.memberForRow(model.memberId, model.anchorName,
                                                       model.roomId, model.roomStatus,
+                                                      model.avatarUrl, model.liveState,
                                                       model.memberActive)
                             roomStatus: model.roomStatus
                             active: model.memberActive
                             canAdd: rowType === "member"
                                     && root.canAddMember(root.memberForRow(
                                         model.memberId, model.anchorName, model.roomId,
-                                        model.roomStatus, model.memberActive))
+                                        model.roomStatus, model.avatarUrl,
+                                        model.liveState, model.memberActive))
                             onAddRequested: function(memberId) {
                                 root.quickAdd(memberId)
                             }

@@ -149,7 +149,7 @@ void AppControllerTest::exposesUpdateCheckerState()
     FakeNotificationSink sink;
     AppController controller(fakeServicePath(), &settings, &sink);
 
-    QCOMPARE(controller.currentVersion(), QStringLiteral("0.2.11"));
+    QCOMPARE(controller.currentVersion(), QStringLiteral("0.2.12"));
     QCOMPARE(controller.updateState(), QStringLiteral("idle"));
     QCOMPARE(controller.updateMessage(), QString());
     QCOMPARE(controller.latestVersion(), QString());
@@ -1069,7 +1069,7 @@ void AppControllerTest::persistsIndependentTeamsAndNavigationVisibility()
     {
         QSettings settings(settingsPath, QSettings::IniFormat);
         AppController controller(fakeServicePath(), &settings, &sink);
-        QCOMPARE(controller.guildRoster().size(), 49);
+        QCOMPARE(controller.guildRoster().size(), 58);
         const QVariantMap firstMember = controller.guildRoster().first().toMap();
         QCOMPARE(firstMember.value(QStringLiteral("id")).toString(),
                  QStringLiteral("hamster-001"));

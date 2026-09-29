@@ -58,20 +58,20 @@ Rectangle {
             objectName: "hamsterNavigationButton"
             width: Theme.controlHeight
             height: Theme.controlHeight
-            Accessible.name: root.navigationVisible ? "收起仓鼠特工导航" : "展开仓鼠特工导航"
+            text: "CSTG狼团S1导航页"
+            Accessible.name: text
             ToolTip.visible: hovered
             ToolTip.text: Accessible.name
             onClicked: root.toggleNavigation()
             contentItem: Image {
                 objectName: "hamsterNavigationIcon"
                 anchors.centerIn: parent
-                width: 18
-                height: 18
-                source: Qt.resolvedUrl("../assets/icons/hamster-agent.jfif")
-                sourceClipRect: Qt.rect(144, 144, 1152, 1152)
-                fillMode: Image.PreserveAspectCrop
+                width: 20
+                height: 20
+                source: Qt.resolvedUrl("../assets/icons/hamster-agent.svg")
+                fillMode: Image.PreserveAspectFit
                 smooth: true
-                opacity: parent.hovered ? 1 : 0.86
+                opacity: 1
             }
             background: Rectangle {
                 radius: Theme.radiusSmall

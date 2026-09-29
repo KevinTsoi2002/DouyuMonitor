@@ -434,6 +434,7 @@ private slots:
     void filtersGuildNavigationWithoutChangingTeamOrder();
     void quickAddsResolvedGuildMember();
     void submitsManualGuildRoomId();
+    void rendersGuildMemberAvatarAndLiveState();
 };
 
 void QmlInteractionTest::groupsGuildNavigationByTeamsWithoutRoleLabels()
@@ -1178,6 +1179,8 @@ void QmlInteractionTest::placesNavigationEntryAfterSidebarToggleAndBeforeBrand()
     QVERIFY(sidebarToggle != nullptr);
     QVERIFY(navigationToggle != nullptr);
     QVERIFY(brandMark != nullptr);
+    QCOMPARE(navigationToggle->property("text").toString(),
+             QStringLiteral("CSTG狼团S1导航页"));
     QVERIFY(sidebarToggle->property("x").toDouble() < navigationToggle->property("x").toDouble());
     QVERIFY(navigationToggle->property("x").toDouble() < brandMark->property("x").toDouble());
 }
@@ -1197,6 +1200,10 @@ void QmlInteractionTest::makesRoomListAndNavigationPanelsMutuallyExclusive()
     click(window->findChild<QObject *>(QStringLiteral("hamsterNavigationButton")));
     QTRY_VERIFY(navigationPanel->property("visible").toBool());
     QVERIFY(!roomSidebar->property("visible").toBool());
+    QObject *navigationTitle =
+        navigationPanel->findChild<QObject *>(QStringLiteral("guildNavigationTitle"));
+    QVERIFY(navigationTitle != nullptr);
+    QCOMPARE(navigationTitle->property("text").toString(), QStringLiteral("CSTG狼团S1"));
 
     click(window->findChild<QObject *>(QStringLiteral("sidebarToggleButton")));
     QTRY_VERIFY(roomSidebar->property("visible").toBool());
@@ -2392,6 +2399,80 @@ void QmlInteractionTest::laysOutPrimaryRoomsAcrossFullHeight()
                 QVERIFY(qAbs(primary->width() - (surface->width() - 2.0 * 8.0) * 3.0 / 5.0) < 0.1);
             }
         }
+    }
+}
+
+void QmlInteractionTest::rendersGuildMemberAvatarAndLiveState()
+{
+    FakeGuildNavigationController controller;
+    controller.roster = QVariantList{
+        QVariantMap{{QStringLiteral("id"), QStringLiteral("hamster-online")},
+                    {QStringLiteral("anchorName"), QStringLiteral("在线主播")},
+                    {QStringLiteral("roomId"), QStringLiteral("71415")},
+                    {QStringLiteral("status"), QStringLiteral("resolved")},
+                    {QStringLiteral("avatarUrl"), QStringLiteral("https://example.invalid/online.jpg")},
+                    {QStringLiteral("liveState"), QStringLiteral("online")},
+                    {QStringLiteral("active"), false}},
+        QVariantMap{{QStringLiteral("id"), QStringLiteral("hamster-offline")},
+                    {QStringLiteral("anchorName"), QStringLiteral("离线主播")},
+                    {QStringLiteral("roomId"), QStringLiteral("84452")},
+                    {QStringLiteral("status"), QStringLiteral("resolved")},
+                    {QStringLiteral("avatarUrl"), QString()},
+                    {QStringLiteral("liveState"), QStringLiteral("offline")},
+                    {QStringLiteral("active"), false}},
+        QVariantMap{{QStringLiteral("id"), QStringLiteral("hamster-unknown")},
+                    {QStringLiteral("anchorName"), QStringLiteral("检查主播")},
+                    {QStringLiteral("roomId"), QString()},
+                    {QStringLiteral("status"), QStringLiteral("resolving")},
+                    {QStringLiteral("liveState"), QStringLiteral("unknown")},
+                    {QStringLiteral("active"), false}},
+    };
+    controller.teamItems = QVariantList{
+        QVariantMap{{QStringLiteral("id"), QStringLiteral("team-a")},
+                    {QStringLiteral("name"), QStringLiteral("一队")},
+                    {QStringLiteral("memberIds"), QStringList{QStringLiteral("hamster-online"),
+                                                              QStringLiteral("hamster-offline"),
+                                                              QStringLiteral("hamster-unknown")}}},
+    };
+
+    QQmlApplicationEngine engine;
+    QQmlComponent component(&engine,
+                            QUrl(QStringLiteral("qrc:/qml/components/GuildNavigationPanel.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    QQuickWindow hostWindow;
+    hostWindow.resize(QSize(284, 720));
+    hostWindow.show();
+    std::unique_ptr<QObject> panel(component.createWithInitialProperties({
+        {QStringLiteral("parent"), QVariant::fromValue(hostWindow.contentItem())},
+        {QStringLiteral("width"), 284},
+        {QStringLiteral("height"), 720},
+        {QStringLiteral("controller"),
+         QVariant::fromValue(static_cast<QObject *>(&controller))},
+    }));
+    QVERIFY2(panel != nullptr, qPrintable(component.errorString()));
+
+    QObject *visibleRows = panel->findChild<QObject *>(QStringLiteral("guildVisibleRows"));
+    QVERIFY(visibleRows != nullptr);
+    QTRY_COMPARE(visibleRows->property("count").toInt(), 5);
+
+    const QList<QString> expectedStates{QStringLiteral("直播中"), QStringLiteral("未开播"),
+                                      QStringLiteral("检查中")};
+    const QList<QString> expectedAvatars{QStringLiteral("https://example.invalid/online.jpg"),
+                                        QString(), QString()};
+    for (int index = 0; index < expectedStates.size(); ++index) {
+        QQuickItem *row = nullptr;
+        QVERIFY(QMetaObject::invokeMethod(visibleRows, "itemAt",
+                                          Q_RETURN_ARG(QQuickItem *, row),
+                                          Q_ARG(int, index + 1)));
+        QVERIFY(row != nullptr);
+        QObject *liveLabel =
+            row->findChild<QObject *>(QStringLiteral("guildMemberLiveStateLabel"));
+        QObject *avatarImage =
+            row->findChild<QObject *>(QStringLiteral("guildMemberAvatarImage"));
+        QVERIFY(liveLabel != nullptr);
+        QVERIFY(avatarImage != nullptr);
+        QTRY_COMPARE(liveLabel->property("text").toString(), expectedStates.at(index));
+        QTRY_COMPARE(avatarImage->property("source").toString(), expectedAvatars.at(index));
     }
 }
 
