@@ -179,6 +179,7 @@ ApplicationWindow {
             danmakuRateLimited: 0
             danmakuQueueOverflow: 0
             danmakuUpstreamDropped: 0
+            renderEnabled: true
         }
         ListElement {
             roomId: "preview-2"
@@ -208,11 +209,12 @@ ApplicationWindow {
             danmakuRateLimited: 0
             danmakuQueueOverflow: 0
             danmakuUpstreamDropped: 0
+            renderEnabled: true
         }
         ListElement {
             roomId: "preview-3"
-            anchorName: "九路布局"
-            title: "最多容纳 9 个房间"
+            anchorName: "十六路布局"
+            title: "最多容纳 16 个房间"
             category: "工作区"
             viewerLabel: "--"
             avatarUrl: ""
@@ -237,6 +239,7 @@ ApplicationWindow {
             danmakuRateLimited: 0
             danmakuQueueOverflow: 0
             danmakuUpstreamDropped: 0
+            renderEnabled: true
         }
     }
 

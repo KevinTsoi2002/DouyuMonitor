@@ -8,6 +8,7 @@
 
 enum class DanmakuConnectionState {
     Idle,
+    WaitingForSession,
     Connecting,
     Connected,
     Reconnecting,

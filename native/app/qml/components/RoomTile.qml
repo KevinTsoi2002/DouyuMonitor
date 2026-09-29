@@ -29,6 +29,7 @@ FocusScope {
     required property bool danmakuEnabled
     required property string danmakuState
     required property string danmakuErrorCode
+    required property bool renderEnabled
     required property int index
     required property var availableQualities
     property var controller: null
@@ -39,6 +40,11 @@ FocusScope {
     property bool menuOpen: false
     property bool controlsVisible: true
     property string attachedPlayerRoomId: ""
+    readonly property string density: root.width >= 320
+                                      ? "comfortable"
+                                      : (root.width >= 180 ? "compact" : "dense")
+    readonly property bool compact: density === "compact"
+    readonly property bool dense: density === "dense"
     readonly property string displayAnchorName: root.anchorName.trim().length > 0 ? root.anchorName : root.roomId
     readonly property string displayTitle: root.title.trim().length > 0 ? root.title : "斗鱼直播间"
     readonly property string displayCategory: root.category.trim().length > 0 ? root.category : "未分类"
@@ -120,7 +126,7 @@ FocusScope {
         Loader {
             id: playerLoader
             anchors.fill: parent
-            active: root.controller !== null
+            active: root.renderEnabled && root.controller !== null
             sourceComponent: Component {
                 MpvQuickItem {
                     id: player
@@ -138,18 +144,41 @@ FocusScope {
             enabled: root.danmakuEnabled && root.controller !== null
                      && root.controller.danmaku.globalEnabled
             topInset: topBar.height
-            bottomInset: bottomBar.height
+            bottomInset: bottomBar.visible ? bottomBar.height : 0
+        }
+
+        Rectangle {
+            objectName: "danmakuWaitingLabel"
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.top: topBar.bottom
+            anchors.topMargin: 7
+            width: waitingLabel.width + 14
+            height: 21
+            radius: Theme.radiusSmall
+            z: 4
+            visible: root.danmakuState === "waiting"
+            color: Qt.rgba(0.92, 0.68, 0.24, 0.16)
+            border.color: Qt.rgba(0.92, 0.68, 0.24, 0.56)
+            Text {
+                id: waitingLabel
+                anchors.centerIn: parent
+                color: "#e7b95d"
+                font.pixelSize: 10
+                text: "等待弹幕会话"
+            }
         }
 
         Rectangle {
             anchors.fill: parent
-            visible: root.controller === null
+            visible: !root.renderEnabled || root.controller === null
             color: root.index % 3 === 0 ? Theme.controlSurface : root.index % 3 === 1 ? "#29241f" : "#202b2a"
             Text {
                 anchors.centerIn: parent
                 color: "#657181"
                 font.pixelSize: 12
-                text: root.playbackState === "offline" ? "未开播" : "等待播放"
+                text: !root.renderEnabled
+                      ? "预览模式"
+                      : (root.playbackState === "offline" ? "未开播" : "等待播放")
             }
         }
 
@@ -159,7 +188,7 @@ FocusScope {
             anchors.top: parent.top
             anchors.left: parent.left
             anchors.right: parent.right
-            height: 36
+            height: root.dense ? 28 : root.compact ? 32 : 36
             z: 10
             color: Qt.rgba(Theme.appBar.r, Theme.appBar.g, Theme.appBar.b, 0.88)
             opacity: root.controlsVisible ? 1 : 0
@@ -178,8 +207,8 @@ FocusScope {
                     id: liveStatusBadge
                     anchors.left: parent.left
                     anchors.verticalCenter: parent.verticalCenter
-                    height: 19
-                    width: statusLabel.width + 12
+                    height: root.dense ? 17 : 19
+                    width: statusLabel.width + (root.dense ? 8 : 12)
                     radius: Theme.radiusSmall
                     color: root.liveState === "online"
                            ? Qt.rgba(Theme.online.r, Theme.online.g, Theme.online.b, 0.14)
@@ -199,7 +228,7 @@ FocusScope {
                                ? Theme.online
                                : (root.liveState === "offline" ? Theme.danger : Theme.mutedText)
                         font.bold: true
-                        font.pixelSize: 9
+                        font.pixelSize: root.dense ? 8 : 9
                         text: root.liveState === "online" ? "直播中" : root.liveState === "offline" ? "未开播" : "检查中"
                     }
                 }
@@ -216,8 +245,8 @@ FocusScope {
                     anchors.leftMargin: visible ? 6 : 0
                     anchors.verticalCenter: parent.verticalCenter
                     visible: root.primary || root.secondaryPrimary
-                    width: visible ? primaryRoomLabel.width + 12 : 0
-                    height: 19
+                    width: visible ? primaryRoomLabel.width + (root.dense ? 8 : 12) : 0
+                    height: root.dense ? 17 : 19
                     radius: Theme.radiusSmall
                     color: Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.16)
                     border.color: Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.52)
@@ -226,7 +255,7 @@ FocusScope {
                         anchors.centerIn: parent
                         color: root.accentColor
                         font.bold: true
-                        font.pixelSize: 9
+                        font.pixelSize: root.dense ? 8 : 9
                         text: primaryRoomBadge.text
                     }
                 }
@@ -238,16 +267,35 @@ FocusScope {
                     anchors.right: viewerLabel.left
                     anchors.rightMargin: 7
                     anchors.verticalCenter: parent.verticalCenter
+                    visible: !root.compact && !root.dense
                     color: Theme.text
                     elide: Text.ElideRight
                     font.pixelSize: 10
                     text: root.displayCategory
                 }
                 Text {
+                    id: denseAnchorLabel
+                    anchors.left: (root.primary || root.secondaryPrimary)
+                                  ? primaryRoomBadge.right : liveStatusBadge.right
+                    anchors.leftMargin: 6
+                    anchors.right: viewerLabel.left
+                    anchors.rightMargin: 4
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: root.dense
+                    width: Math.max(0, parent.width - x - anchors.leftMargin
+                                    - anchors.rightMargin)
+                    color: Theme.text
+                    elide: Text.ElideRight
+                    font.bold: true
+                    font.pixelSize: 9
+                    text: root.displayAnchorName
+                }
+                Text {
                     id: viewerLabel
                     objectName: "roomViewerLabel"
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
+                    visible: !root.compact && !root.dense
                     width: 74
                     color: Theme.mutedText
                     elide: Text.ElideRight
@@ -261,10 +309,10 @@ FocusScope {
                 id: roomTopActions
                 objectName: "roomTopActions"
                 anchors.right: parent.right
-                anchors.rightMargin: 7
+                anchors.rightMargin: root.dense ? 4 : 7
                 anchors.verticalCenter: parent.verticalCenter
-                width: 34
-                height: 28
+                width: root.dense ? 30 : 34
+                height: root.dense ? 24 : 28
                 Accessible.name: "更多操作"
                 ToolTip.visible: hovered
                 ToolTip.text: Accessible.name
@@ -277,7 +325,7 @@ FocusScope {
         Rectangle {
             id: menu
             visible: root.menuOpen
-            z: 3
+            z: 30
             width: 172
             height: 156
             anchors.top: topBar.bottom
@@ -339,7 +387,8 @@ FocusScope {
             anchors.bottom: parent.bottom
             anchors.left: parent.left
             anchors.right: parent.right
-            height: 58
+            height: root.dense ? 22 : root.compact ? 44 : 58
+            visible: !root.dense
             color: Qt.rgba(Theme.appBar.r, Theme.appBar.g, Theme.appBar.b, 0.92)
             opacity: root.controlsVisible ? 1 : 0
             Behavior on opacity { NumberAnimation { duration: 150 } }
@@ -351,8 +400,8 @@ FocusScope {
                 anchors.rightMargin: 10
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 3
-                Text { objectName: "roomAnchorName"; width: parent.width; color: root.textColor; elide: Text.ElideRight; font.bold: true; font.pixelSize: 12; text: root.displayAnchorName }
-                Text { objectName: "roomTitleText"; width: parent.width; color: root.mutedTextColor; elide: Text.ElideRight; font.pixelSize: 9; text: root.displayTitle }
+                Text { objectName: "roomAnchorName"; width: parent.width; color: root.textColor; elide: Text.ElideRight; font.bold: true; font.pixelSize: root.compact ? 10 : 12; text: root.displayAnchorName }
+                Text { objectName: "roomTitleText"; width: parent.width; visible: !root.compact; color: root.mutedTextColor; elide: Text.ElideRight; font.pixelSize: 9; text: root.displayTitle }
                 Text { objectName: "roomTitle"; visible: false; text: root.displayTitle }
             }
 
@@ -361,9 +410,9 @@ FocusScope {
                 anchors.left: parent.left
                 anchors.leftMargin: 10
                 anchors.verticalCenter: parent.verticalCenter
-                width: 34
-                height: 34
-                radius: 17
+                width: root.compact ? 26 : 34
+                height: root.compact ? 26 : 34
+                radius: width / 2
                 color: root.primary ? "#3a2820" : "#28313a"
 
                 Image {
@@ -384,7 +433,7 @@ FocusScope {
                     visible: !roomAvatarImage.visible
                     color: root.textColor
                     font.bold: true
-                    font.pixelSize: 12
+                    font.pixelSize: root.compact ? 10 : 12
                     text: root.displayAnchorName.slice(0, 1)
                 }
             }
@@ -399,6 +448,7 @@ FocusScope {
                 Slider {
                     id: roomVolumeSlider
                     objectName: "roomVolumeSlider"
+                    visible: !root.compact
                     width: 76
                     height: 27
                     from: 0
@@ -455,7 +505,10 @@ FocusScope {
                 ToolButton {
                     width: 27; height: 27
                     Accessible.name: root.danmakuState === "failed" || root.danmakuState === "platform-blocked"
-                                     ? "重试弹幕连接" : root.danmakuEnabled ? "隐藏弹幕" : "显示弹幕"
+                                     ? "重试弹幕连接"
+                                     : (root.danmakuState === "waiting"
+                                        ? "等待弹幕会话"
+                                        : (root.danmakuEnabled ? "隐藏弹幕" : "显示弹幕"))
                     ToolTip.visible: hovered
                     ToolTip.text: root.danmakuErrorCode === "AUTH_REQUIRED"
                                   ? "弹幕连接需要认证，点击重试" : Accessible.name
@@ -463,6 +516,8 @@ FocusScope {
                         if (!root.controller) return
                         if (root.danmakuState === "failed" || root.danmakuState === "platform-blocked") {
                             root.controller.danmaku.retry(root.roomId)
+                        } else if (root.danmakuState === "waiting") {
+                            return
                         } else {
                             root.controller.toggleDanmaku(root.roomId)
                         }
@@ -485,7 +540,10 @@ FocusScope {
                             visible: root.danmakuState === "connected"
                                      || root.danmakuState === "failed"
                                      || root.danmakuState === "platform-blocked"
-                            color: root.danmakuState === "connected" ? "#55b975" : "#e57062"
+                                     || root.danmakuState === "waiting"
+                            color: root.danmakuState === "connected"
+                                   ? "#55b975"
+                                   : (root.danmakuState === "waiting" ? "#e7b95d" : "#e57062")
                             border.color: "#10151b"
                             border.width: 1
                         }

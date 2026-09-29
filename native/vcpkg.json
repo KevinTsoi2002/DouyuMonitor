@@ -1,6 +1,6 @@
 {
   "name": "douyu-monitor-native",
-  "version-string": "0.2.12",
+  "version-string": "0.2.13",
   "dependencies": [
     {
       "name": "qtbase",

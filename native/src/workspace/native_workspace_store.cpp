@@ -2,6 +2,7 @@
 
 #include "danmaku/danmaku_governance.h"
 #include "workspace/guild_roster.h"
+#include "workspace/room_capacity.h"
 
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -16,8 +17,6 @@ namespace {
 
 constexpr auto kSettingsKey = "DouyuMonitor/nativeWorkspaceV1";
 constexpr int kCurrentVersion = 6;
-constexpr int kMaxActiveRooms = 10;
-constexpr int kMaxGroupRooms = 10;
 constexpr int kMaxTeams = 20;
 const QRegularExpression kRoomIdPattern(QStringLiteral(R"(^[0-9]{1,20}$)"));
 
@@ -244,7 +243,8 @@ NativeWorkspaceSnapshot normalize(NativeWorkspaceSnapshot snapshot)
         if (knownIds.contains(it.key())) roomOverrides.insert(it.key(), normalizeOverride(it.value()));
     }
     snapshot.danmaku.roomOverrides = std::move(roomOverrides);
-    snapshot.activeRoomIds = normalizeRoomIds(snapshot.activeRoomIds, knownIds, kMaxActiveRooms);
+    const int maxRooms = RoomCapacity::currentLimits().maxLayoutRooms;
+    snapshot.activeRoomIds = normalizeRoomIds(snapshot.activeRoomIds, knownIds, maxRooms);
 
     QVector<NativeRoomGroup> groups;
     QSet<QString> groupIds;
@@ -252,7 +252,7 @@ NativeWorkspaceSnapshot normalize(NativeWorkspaceSnapshot snapshot)
         group.id = group.id.trimmed();
         group.name = group.name.trimmed();
         if (group.id.isEmpty() || group.name.isEmpty() || groupIds.contains(group.id)) continue;
-        group.roomIds = normalizeRoomIds(group.roomIds, knownIds, kMaxGroupRooms);
+        group.roomIds = normalizeRoomIds(group.roomIds, knownIds, maxRooms);
         groupIds.insert(group.id);
         groups.push_back(std::move(group));
     }
@@ -310,7 +310,7 @@ NativeWorkspaceSnapshot normalize(NativeWorkspaceSnapshot snapshot)
             || presetIds.contains(preset.id)) {
             continue;
         }
-        preset.roomIds = normalizePresetRoomIds(preset.roomIds, kMaxActiveRooms);
+        preset.roomIds = normalizePresetRoomIds(preset.roomIds, maxRooms);
         preset.danmaku.display =
             DanmakuGovernance::validatedDisplaySettings(preset.danmaku.display);
         preset.danmaku.governance =

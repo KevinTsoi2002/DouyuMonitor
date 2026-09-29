@@ -22,6 +22,15 @@
         "QT_ROOT": "$env{QT_ROOT}",
         "MPV_ROOT": "$env{MPV_ROOT}"
       }
+    },
+    {
+      "name": "windows-x64-beta24",
+      "displayName": "Windows x64 Release (24-room full-decode beta)",
+      "inherits": "windows-x64-release",
+      "binaryDir": "${sourceDir}/out/build/windows-x64-beta24",
+      "cacheVariables": {
+        "DOUYU_ROOM_CAPACITY_PHASE24": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -32,6 +41,10 @@
     {
       "name": "windows-x64-release",
       "configurePreset": "windows-x64-release"
+    },
+    {
+      "name": "windows-x64-beta24",
+      "configurePreset": "windows-x64-beta24"
     }
   ],
   "testPresets": [
@@ -45,6 +58,13 @@
     {
       "name": "windows-x64-release",
       "configurePreset": "windows-x64-release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows-x64-beta24",
+      "configurePreset": "windows-x64-beta24",
       "output": {
         "outputOnFailure": true
       }

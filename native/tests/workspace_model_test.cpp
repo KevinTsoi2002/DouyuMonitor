@@ -3,6 +3,7 @@
 
 #include "ui/monitoring_model.h"
 #include "ui/workspace_model.h"
+#include "workspace/room_capacity.h"
 
 class WorkspaceModelTest final : public QObject {
     Q_OBJECT
@@ -24,7 +25,9 @@ void WorkspaceModelTest::mapsRoomLimitToFixedChineseFeedback()
     WorkspaceModel model(nullptr);
 
     const QString message = model.commandMessage(RoomCommandResult::RoomLimitReached);
-    QCOMPARE(message, QStringLiteral("最多添加 10 个房间"));
+    QCOMPARE(message,
+             QStringLiteral("最多添加 %1 个房间")
+                 .arg(RoomCapacity::currentLimits().maxLayoutRooms));
     QVERIFY(!message.contains(QStringLiteral("://")));
 }
 

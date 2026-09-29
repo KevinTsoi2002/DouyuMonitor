@@ -43,7 +43,12 @@ Five tests passed under the configured CTest environment:
 - `multi_room_coordinator_test`
 - `mpv_quick_item_test`
 
-`qml_close_regression_test` fails only with the offscreen backend. Its nine-player case creates nine player items but no render contexts become ready (`9 players and 0 ready contexts`). The same test was then run with `QT_QPA_PLATFORM=windows`; all three cases passed, including `closesNineAttachedPlayersWithoutLingeringCallbacks`.
+`qml_close_regression_test` runs under `QT_QPA_PLATFORM=windows` with
+`DOUYU_PERF_ROOM_COUNT=16`. It verifies that 16 active rooms create 16 decoded
+players, that all 16 render contexts become ready, and that closing the window
+releases every attached player. The `windows-x64-beta24` build raises the same
+room and decode capacity to 24 and is validated with
+`DOUYU_PERF_ROOM_COUNT=24`.
 
 ## Packaged module metadata
 
@@ -80,11 +85,20 @@ The current state matrix is:
 
 | Baseline | State |
 | --- | --- |
+| `layout-auto-1-1280x720.png` | One room, automatic layout |
 | `layout-auto-4-1280x720.png` | Four rooms, automatic layout |
 | `layout-auto-9-1920x1080.png` | Nine rooms, automatic layout |
+| `layout-auto-12-1920x1080.png` | Twelve rooms, automatic layout |
+| `layout-auto-16-1920x1080.png` | Sixteen rooms, automatic layout |
+| `layout-auto-24-1920x1080.png` | Twenty-four rooms, automatic layout |
 | `layout-primary-9-1920x1080.png` | Nine rooms, primary-room layout |
+| `layout-primary-12-1920x1080.png` | Twelve rooms, primary-room layout |
+| `layout-primary-16-1920x1080.png` | Sixteen rooms, primary-room layout |
+| `layout-primary-24-1920x1080.png` | Twenty-four rooms, primary-room layout |
 | `layout-primary-two-4-1280x720.png` | Four rooms, dual-primary layout |
 | `layout-primary-two-10-1920x1080.png` | Ten rooms, dual-primary layout |
+| `layout-primary-two-16-1920x1080.png` | Sixteen rooms, dual-primary layout |
+| `layout-primary-two-24-1920x1080.png` | Twenty-four rooms, dual-primary layout |
 | `header-dual-disabled-960x260.png` | Dual-primary option disabled below four rooms |
 | `header-dual-enabled-960x260.png` | Dual-primary option enabled with four rooms |
 | `room-quality-popup-640x420.png` | Quality selector popup open |

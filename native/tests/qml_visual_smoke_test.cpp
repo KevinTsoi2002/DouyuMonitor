@@ -202,6 +202,7 @@ QVariantList roomFixtures(int count)
             {QStringLiteral("danmakuEnabled"), false},
             {QStringLiteral("danmakuState"), QStringLiteral("idle")},
             {QStringLiteral("danmakuErrorCode"), QStringLiteral("NONE")},
+            {QStringLiteral("renderEnabled"), true},
             {QStringLiteral("index"), index},
         });
     }
@@ -539,9 +540,11 @@ void QmlVisualSmokeTest::capturesReferenceRoomCounts()
         QString name;
     } fixtures[] = {
         {1, QSize(1280, 720), QStringLiteral("one-room-1280x720.png")},
-        {3, QSize(1600, 900), QStringLiteral("three-rooms-1600x900.png")},
-        {5, QSize(1600, 900), QStringLiteral("five-rooms-1600x900.png")},
+        {4, QSize(1600, 900), QStringLiteral("four-rooms-1600x900.png")},
         {9, QSize(1920, 1080), QStringLiteral("nine-rooms-1920x1080.png")},
+        {12, QSize(1920, 1080), QStringLiteral("twelve-rooms-1920x1080.png")},
+        {16, QSize(1920, 1080), QStringLiteral("sixteen-rooms-1920x1080.png")},
+        {24, QSize(1920, 1080), QStringLiteral("twenty-four-rooms-1920x1080.png")},
     };
 
     for (const Fixture &fixture : fixtures) {

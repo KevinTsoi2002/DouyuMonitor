@@ -33,6 +33,8 @@ Assert-FileExists 'Inno Setup installer script' $innoScriptPath
 Assert-Contains 'Inno compiler lookup' 'INNO_SETUP_COMPILER'
 Assert-Contains 'Inno compiler invocation' '$innoCompiler'
 Assert-Contains 'CMake version parsing' 'projectVersion'
+Assert-Contains 'explicit installer version override' '[string]$Version'
+Assert-Contains 'installer version validation' '^[0-9]+\.[0-9]+\.[0-9]+'
 Assert-Contains 'Inno script invocation' 'DouyuMonitor.iss'
 Assert-Contains 'versioned installer output' 'DouyuMonitor-Setup-V$projectVersion.exe'
 Assert-Contains 'runtime dependency validation' 'verify_runtime_dependencies.cmake'

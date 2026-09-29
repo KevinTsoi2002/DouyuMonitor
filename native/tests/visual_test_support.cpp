@@ -112,6 +112,7 @@ QVariantList visualRoomFixtures(int count, bool multiAudio, bool includeQualitie
             {QStringLiteral("danmakuEnabled"), false},
             {QStringLiteral("danmakuState"), QStringLiteral("idle")},
             {QStringLiteral("danmakuErrorCode"), QStringLiteral("NONE")},
+            {QStringLiteral("renderEnabled"), true},
             {QStringLiteral("index"), index},
         });
     }

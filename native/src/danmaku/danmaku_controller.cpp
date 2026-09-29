@@ -12,6 +12,8 @@ QString stateString(DanmakuConnectionState state)
     switch (state) {
     case DanmakuConnectionState::Idle:
         return QStringLiteral("idle");
+    case DanmakuConnectionState::WaitingForSession:
+        return QStringLiteral("waiting");
     case DanmakuConnectionState::Connecting:
         return QStringLiteral("connecting");
     case DanmakuConnectionState::Connected:

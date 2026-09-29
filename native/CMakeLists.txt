@@ -1,10 +1,23 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(DouyuMonitorNative VERSION 0.2.12 LANGUAGES CXX)
+project(DouyuMonitorNative VERSION 0.2.13 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+
+option(DOUYU_ROOM_CAPACITY_PHASE24
+    "Build the 24-room full-decode test edition"
+    OFF)
+if(DOUYU_ROOM_CAPACITY_PHASE24)
+    add_compile_definitions(DOUYU_ROOM_CAPACITY_PHASE24=1)
+    set(DOUYU_CAPACITY_TEST_ROOM_COUNT 24)
+    message(STATUS "DouyuMonitor capacity: Phase24 (24 rooms, 24 decoded)")
+else()
+    set(DOUYU_CAPACITY_TEST_ROOM_COUNT 16)
+    message(STATUS "DouyuMonitor capacity: Phase16 (16 rooms, 16 decoded)")
+endif()
+
 set(CMAKE_AUTOMOC ON)
 
 set(QT_ROOT "$ENV{QT_ROOT}" CACHE PATH "Qt SDK root")
@@ -323,6 +336,7 @@ add_executable(qml_interaction_test
     src/ui/mpv_quick_item.cpp
     src/ui/room_list_model.cpp
     src/ui/workspace_model.cpp
+    src/workspace/room_capacity.cpp
 )
 target_link_libraries(qml_interaction_test PRIVATE
     Qt6::Core
@@ -398,6 +412,7 @@ add_executable(qml_close_regression_test
     src/workspace/room_session.cpp
     src/workspace/room_status_scheduler.cpp
     src/workspace/multi_room_coordinator.cpp
+    src/workspace/room_capacity.cpp
     src/workspace/favorite_monitor.cpp
     src/danmaku/danmaku_controller.cpp
 )
@@ -459,14 +474,18 @@ add_custom_command(TARGET qml_close_regression_test POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${QT_ROOT}/plugins/platforms/qoffscreen.dll"
         "$<TARGET_FILE_DIR:qml_close_regression_test>/platforms/qoffscreen.dll"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${QT_ROOT}/plugins/platforms/qwindows.dll"
+        "$<TARGET_FILE_DIR:qml_close_regression_test>/platforms/qwindows.dll"
 )
 add_test(NAME qml_close_regression_test COMMAND qml_close_regression_test)
 set_property(TEST qml_close_regression_test PROPERTY ENVIRONMENT_MODIFICATION
     "PATH=path_list_prepend:${QT_ROOT}/bin"
     "QT_PLUGIN_PATH=set:${QT_ROOT}/plugins"
     "QML2_IMPORT_PATH=set:${QT_ROOT}/qml"
-    "QT_QPA_PLATFORM=set:offscreen"
+    "QT_QPA_PLATFORM=set:windows"
     "QT_QUICK_CONTROLS_STYLE=set:Basic"
+    "DOUYU_PERF_ROOM_COUNT=set:${DOUYU_CAPACITY_TEST_ROOM_COUNT}"
 )
 
 add_executable(qml_danmaku_overlay_test
@@ -511,6 +530,7 @@ add_executable(workspace_model_test
     tests/workspace_model_test.cpp
     src/ui/workspace_model.cpp
     src/ui/monitoring_model.cpp
+    src/workspace/room_capacity.cpp
 )
 target_link_libraries(workspace_model_test PRIVATE
     Qt6::Core
@@ -553,6 +573,7 @@ add_executable(app_controller_test
     src/workspace/room_session.cpp
     src/workspace/room_status_scheduler.cpp
     src/workspace/multi_room_coordinator.cpp
+    src/workspace/room_capacity.cpp
     src/workspace/favorite_monitor.cpp
     src/danmaku/danmaku_controller.cpp
 )
@@ -671,8 +692,10 @@ target_include_directories(douyu_danmaku PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 add_executable(douyu_danmaku_client_test
     tests/douyu_danmaku_client_test.cpp
+    src/workspace/room_capacity.cpp
 )
-target_link_libraries(douyu_danmaku_client_test PRIVATE douyu_danmaku Qt6::Test)
+target_link_libraries(douyu_danmaku_client_test PRIVATE douyu_danmaku Qt6::Core Qt6::Test)
+target_include_directories(douyu_danmaku_client_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 add_test(NAME douyu_danmaku_client_test COMMAND douyu_danmaku_client_test)
 set_tests_properties(douyu_danmaku_client_test PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${QT_ROOT}/bin"
@@ -680,8 +703,10 @@ set_tests_properties(douyu_danmaku_client_test PROPERTIES
 
 add_executable(danmaku_session_manager_test
     tests/danmaku_session_manager_test.cpp
+    src/workspace/room_capacity.cpp
 )
-target_link_libraries(danmaku_session_manager_test PRIVATE douyu_danmaku Qt6::Test)
+target_link_libraries(danmaku_session_manager_test PRIVATE douyu_danmaku Qt6::Core Qt6::Test)
+target_include_directories(danmaku_session_manager_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 add_test(NAME danmaku_session_manager_test COMMAND danmaku_session_manager_test)
 set_tests_properties(danmaku_session_manager_test PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${QT_ROOT}/bin"
@@ -743,6 +768,7 @@ add_executable(native_workspace_store_test
     tests/native_workspace_store_test.cpp
     src/workspace/native_workspace_types.cpp
     src/workspace/native_workspace_store.cpp
+    src/workspace/room_capacity.cpp
 )
 target_link_libraries(native_workspace_store_test PRIVATE douyu_danmaku douyu_guild Qt6::Core Qt6::Test)
 target_include_directories(native_workspace_store_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -852,6 +878,7 @@ set_property(TEST room_session_test PROPERTY ENVIRONMENT_MODIFICATION
 add_executable(multi_room_coordinator_test
     tests/multi_room_coordinator_test.cpp
     src/workspace/multi_room_coordinator.cpp
+    src/workspace/room_capacity.cpp
     src/workspace/room_session.cpp
     src/workspace/room_status_scheduler.cpp
     src/workspace/quality_policy.cpp
@@ -944,6 +971,7 @@ add_executable(douyu_monitor_native
     src/workspace/room_session.cpp
     src/workspace/room_status_scheduler.cpp
     src/workspace/multi_room_coordinator.cpp
+    src/workspace/room_capacity.cpp
     src/workspace/favorite_monitor.cpp
     src/danmaku/danmaku_controller.cpp
     src/ui/mpv_quick_item.cpp

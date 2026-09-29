@@ -1,11 +1,14 @@
 #include "danmaku/danmaku_session_manager.h"
 
+#include <algorithm>
+
 #include <QDateTime>
 #include <QDebug>
 
+#include "workspace/room_capacity.h"
+
 namespace {
 
-constexpr int kMaxSessions = 9;
 constexpr int kMaxSeenIds = 200;
 constexpr int kMaxPendingMessages = 100;
 
@@ -31,10 +34,20 @@ void DanmakuSessionManager::synchronize(const QVector<DanmakuRoomEligibility> &r
         if (!eligibleIds.contains(roomId)) removeSession(roomId);
     }
 
+    QVector<DanmakuRoomEligibility> prioritized = rooms;
+    std::stable_sort(prioritized.begin(), prioritized.end(),
+                     [](const DanmakuRoomEligibility &left,
+                        const DanmakuRoomEligibility &right) {
+                         return left.priority < right.priority;
+                     });
+
+    const int maxSessions = RoomCapacity::currentLimits().defaultDanmakuSessions;
     int sessionCount = sessions_.size();
-    for (const DanmakuRoomEligibility &room : rooms) {
+    for (const DanmakuRoomEligibility &room : prioritized) {
         if (!isEligible(room)) {
-            statuses_[room.roomId] = DanmakuConnectionStatus{room.roomId};
+            if (!sessions_.contains(room.roomId)) {
+                statuses_[room.roomId] = DanmakuConnectionStatus{room.roomId};
+            }
             continue;
         }
         auto existing = sessions_.find(room.roomId);
@@ -47,14 +60,21 @@ void DanmakuSessionManager::synchronize(const QVector<DanmakuRoomEligibility> &r
             }
             continue;
         }
-        if (sessionCount >= kMaxSessions || !factory_) {
-            statuses_[room.roomId] = DanmakuConnectionStatus{room.roomId};
+        if (sessionCount >= maxSessions) {
+            statuses_[room.roomId] = DanmakuConnectionStatus{
+                room.roomId, DanmakuConnectionState::WaitingForSession};
+            continue;
+        }
+        if (!factory_) {
+            statuses_[room.roomId] = DanmakuConnectionStatus{
+                room.roomId, DanmakuConnectionState::WaitingForSession};
             continue;
         }
 
         auto client = factory_(room.roomId, this);
         if (!client) {
-            statuses_[room.roomId] = DanmakuConnectionStatus{room.roomId};
+            statuses_[room.roomId] = DanmakuConnectionStatus{
+                room.roomId, DanmakuConnectionState::WaitingForSession};
             continue;
         }
         auto session = std::make_shared<Session>();

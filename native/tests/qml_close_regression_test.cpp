@@ -13,6 +13,7 @@
 
 #include "ui/app_controller.h"
 #include "ui/mpv_quick_item.h"
+#include "workspace/room_capacity.h"
 
 #ifndef FAKE_STREAMGET_SERVICE_PATH
 #define FAKE_STREAMGET_SERVICE_PATH "fake_streamget_service"
@@ -36,7 +37,8 @@ int requestedRoomCount()
 {
     bool ok = false;
     const int count = qEnvironmentVariableIntValue("DOUYU_PERF_ROOM_COUNT", &ok);
-    if (!ok || count <= 0 || count > 9) return 9;
+    const int maxRooms = RoomCapacity::currentLimits().maxLayoutRooms;
+    if (!ok || count <= 0 || count > maxRooms) return maxRooms;
     return count;
 }
 
@@ -84,7 +86,7 @@ class QmlCloseRegressionTest final : public QObject {
     Q_OBJECT
 
 private slots:
-    void closesNineAttachedPlayersWithoutLingeringCallbacks();
+    void closesAttachedPlayersWithoutLingeringCallbacks();
     void removesAttachedPlayersWhileWindowRemainsOpen();
     void appliesPresetAndRefreshesAllRoomDelegates();
     void closeDialogHasNonOverlappingRememberRow();
@@ -156,7 +158,7 @@ void QmlCloseRegressionTest::cancelCloseDialogLeavesControllerStateUnchanged()
     QVERIFY(!controller.backgroundHosted());
 }
 
-void QmlCloseRegressionTest::closesNineAttachedPlayersWithoutLingeringCallbacks()
+void QmlCloseRegressionTest::closesAttachedPlayersWithoutLingeringCallbacks()
 {
     QTemporaryDir directory;
     QVERIFY(directory.isValid());
@@ -166,14 +168,18 @@ void QmlCloseRegressionTest::closesNineAttachedPlayersWithoutLingeringCallbacks(
     auto engine = std::make_unique<QQmlApplicationEngine>();
 
     const int roomCount = requestedRoomCount();
+    const int expectedPlayerCount = qMin(roomCount,
+                                         RoomCapacity::currentLimits().defaultDecodedRooms);
     QQuickWindow *window = loadWindowWithFakeRooms(*engine, controller, roomCount);
     QVERIFY(window != nullptr);
     QVERIFY(QTest::qWaitForWindowExposed(window));
-    QTRY_COMPARE_WITH_TIMEOUT(controller.attachedPlayerCountForTest(), roomCount, 5000);
-    const auto allPlayersReady = [window, roomCount] {
+    QTRY_COMPARE_WITH_TIMEOUT(controller.rooms()->rowCount(), roomCount, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(controller.attachedPlayerCountForTest(),
+                              expectedPlayerCount, 5000);
+    const auto allPlayersReady = [window, expectedPlayerCount] {
         window->update();
         const auto players = playersInItemTree(window->contentItem());
-        if (players.size() != roomCount) return false;
+        if (players.size() != expectedPlayerCount) return false;
         for (MpvQuickItem *player : players) {
             if (player == nullptr || !player->isRenderContextReady()) return false;
         }
@@ -192,7 +198,7 @@ void QmlCloseRegressionTest::closesNineAttachedPlayersWithoutLingeringCallbacks(
     if (!allPlayersReady()) {
         if (qEnvironmentVariable("QT_QPA_PLATFORM") != QStringLiteral("offscreen")) {
             QVERIFY2(false, qPrintable(QStringLiteral("expected %1 players and %1 render contexts, got %2 players and %3 ready contexts")
-                                            .arg(roomCount)
+                                            .arg(expectedPlayerCount)
                                             .arg(players.size())
                                             .arg(readyCount)));
         }
@@ -222,24 +228,27 @@ void QmlCloseRegressionTest::removesAttachedPlayersWhileWindowRemainsOpen()
     QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
     auto engine = std::make_unique<QQmlApplicationEngine>();
 
-    QQuickWindow *window = loadWindowWithFakeRooms(*engine, controller, 3);
+    const int roomCount = requestedRoomCount();
+    QQuickWindow *window = loadWindowWithFakeRooms(*engine, controller, roomCount);
     QVERIFY(window != nullptr);
     QVERIFY(QTest::qWaitForWindowExposed(window));
-    QTRY_COMPARE_WITH_TIMEOUT(controller.attachedPlayerCountForTest(), 3, 5000);
+    const int expectedPlayerCount = qMin(
+        roomCount,
+        RoomCapacity::currentLimits().defaultDecodedRooms);
+    QTRY_COMPARE_WITH_TIMEOUT(controller.attachedPlayerCountForTest(),
+                              expectedPlayerCount,
+                              5000);
 
-    QCOMPARE(controller.removeRoom(QStringLiteral("63137")), QString());
-    QTRY_COMPARE_WITH_TIMEOUT(controller.rooms()->rowCount(), 2, 5000);
-    QTRY_COMPARE_WITH_TIMEOUT(controller.attachedPlayerCountForTest(), 2, 5000);
-    QVERIFY(window->isVisible());
-
-    QCOMPARE(controller.removeRoom(QStringLiteral("63136")), QString());
-    QTRY_COMPARE_WITH_TIMEOUT(controller.rooms()->rowCount(), 1, 5000);
-    QTRY_COMPARE_WITH_TIMEOUT(controller.attachedPlayerCountForTest(), 1, 5000);
-    QVERIFY(window->isVisible());
-
-    QCOMPARE(controller.removeRoom(QStringLiteral("63138")), QString());
-    QTRY_COMPARE_WITH_TIMEOUT(controller.rooms()->rowCount(), 0, 5000);
-    QTRY_COMPARE_WITH_TIMEOUT(controller.attachedPlayerCountForTest(), 0, 5000);
+    for (int index = roomCount - 1; index >= 0; --index) {
+        const QString roomId = QString::number(63136 + index);
+        QCOMPARE(controller.removeRoom(roomId), QString());
+        QTRY_COMPARE_WITH_TIMEOUT(controller.rooms()->rowCount(), index, 5000);
+        QTRY_COMPARE_WITH_TIMEOUT(
+            controller.attachedPlayerCountForTest(),
+            qMin(index, RoomCapacity::currentLimits().defaultDecodedRooms),
+            5000);
+        QVERIFY(window->isVisible());
+    }
     QVERIFY(window->isVisible());
 
     controller.closeToTray();
