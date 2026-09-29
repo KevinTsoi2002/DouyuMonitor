@@ -8,6 +8,7 @@ FocusScope {
 
     implicitWidth: 320
     implicitHeight: 180
+    z: menuOpen ? 1000 : 0
 
     required property string roomId
     required property string anchorName
@@ -150,8 +151,8 @@ FocusScope {
         Rectangle {
             objectName: "danmakuWaitingLabel"
             anchors.horizontalCenter: parent.horizontalCenter
-            anchors.top: topBar.bottom
-            anchors.topMargin: 7
+            anchors.top: parent.top
+            anchors.topMargin: topBar.height + 7
             width: waitingLabel.width + 14
             height: 21
             radius: Theme.radiusSmall
@@ -185,11 +186,12 @@ FocusScope {
         Rectangle {
             id: topBar
             objectName: "roomTopBar"
+            parent: root
             anchors.top: parent.top
             anchors.left: parent.left
             anchors.right: parent.right
             height: root.dense ? 28 : root.compact ? 32 : 36
-            z: 10
+            z: 100
             color: Qt.rgba(Theme.appBar.r, Theme.appBar.g, Theme.appBar.b, 0.88)
             opacity: root.controlsVisible ? 1 : 0
             Behavior on opacity { NumberAnimation { duration: 150 } }
@@ -324,8 +326,10 @@ FocusScope {
 
         Rectangle {
             id: menu
+            objectName: "roomControlMenu"
+            parent: root
             visible: root.menuOpen
-            z: 30
+            z: 110
             width: 172
             height: 156
             anchors.top: topBar.bottom

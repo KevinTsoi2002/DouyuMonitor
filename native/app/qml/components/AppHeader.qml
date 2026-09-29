@@ -79,6 +79,31 @@ Rectangle {
             }
         }
 
+        ToolButton {
+            objectName: "maoziRankButton"
+            width: Theme.controlHeight
+            height: Theme.controlHeight
+            text: "郎团S1野榜"
+            Accessible.name: text
+            ToolTip.visible: hovered
+            ToolTip.text: Accessible.name
+            onClicked: if (root.controller) {
+                root.controller.openExternalUrl("https://dy656750-39nb2xg.maozi.io/")
+            }
+            contentItem: Image {
+                objectName: "maoziRankIcon"
+                anchors.centerIn: parent
+                width: 16
+                height: 16
+                source: Qt.resolvedUrl("../assets/icons/trophy.svg")
+                opacity: parent.hovered ? 1 : 0.82
+            }
+            background: Rectangle {
+                radius: Theme.radiusSmall
+                color: parent.down ? Theme.well : (parent.hovered ? Theme.controlSurface : "transparent")
+            }
+        }
+
         Rectangle {
             objectName: "brandMark"
             width: 28

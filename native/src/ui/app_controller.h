@@ -86,6 +86,7 @@ public:
     Q_INVOKABLE void searchRooms(const QString &query);
     Q_INVOKABLE void checkForUpdates();
     Q_INVOKABLE bool openLatestRelease();
+    Q_INVOKABLE bool openExternalUrl(const QString &url);
     Q_INVOKABLE QString addRoomCandidate(const QString &roomId);
     Q_INVOKABLE QString removeRoom(const QString &roomId);
     Q_INVOKABLE void requestRemoveRoom(const QString &roomId);

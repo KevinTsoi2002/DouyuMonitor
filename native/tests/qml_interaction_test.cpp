@@ -99,12 +99,19 @@ public:
         return true;
     }
 
+    Q_INVOKABLE bool openExternalUrl(const QString &url)
+    {
+        externalUrl = url;
+        return true;
+    }
+
     WorkspaceModel workspaceModel;
     RoomListModel roomModel;
     bool lastMuted = false;
     QString lastAudioMode;
     QString lastLayout;
     bool fullScreenToggled = false;
+    QString externalUrl;
 };
 
 class FakeRoomController final : public QObject {
@@ -1183,14 +1190,17 @@ void QmlInteractionTest::placesNavigationEntryAfterSidebarToggleAndBeforeBrand()
     QObject *sidebarToggle = window->findChild<QObject *>(QStringLiteral("sidebarToggleButton"));
     QObject *navigationToggle =
         window->findChild<QObject *>(QStringLiteral("hamsterNavigationButton"));
+    QObject *rankButton = window->findChild<QObject *>(QStringLiteral("maoziRankButton"));
     QObject *brandMark = window->findChild<QObject *>(QStringLiteral("brandMark"));
     QVERIFY(sidebarToggle != nullptr);
     QVERIFY(navigationToggle != nullptr);
+    QVERIFY(rankButton != nullptr);
     QVERIFY(brandMark != nullptr);
     QCOMPARE(navigationToggle->property("text").toString(),
              QStringLiteral("CSTG狼团S1导航页"));
     QVERIFY(sidebarToggle->property("x").toDouble() < navigationToggle->property("x").toDouble());
-    QVERIFY(navigationToggle->property("x").toDouble() < brandMark->property("x").toDouble());
+    QVERIFY(navigationToggle->property("x").toDouble() < rankButton->property("x").toDouble());
+    QVERIFY(rankButton->property("x").toDouble() < brandMark->property("x").toDouble());
 }
 
 void QmlInteractionTest::makesRoomListAndNavigationPanelsMutuallyExclusive()
@@ -1474,6 +1484,12 @@ void QmlInteractionTest::usesGroupedHeaderControls()
         QCOMPARE(control->property("width").toInt(), 32);
         QCOMPARE(control->property("height").toInt(), 32);
     }
+    QObject *rank = header->findChild<QObject *>(QStringLiteral("maoziRankButton"));
+    QVERIFY(rank != nullptr);
+    QCOMPARE(rank->property("width").toInt(), 32);
+    QCOMPARE(rank->property("height").toInt(), 32);
+    click(rank);
+    QCOMPARE(controller.externalUrl, QStringLiteral("https://dy656750-39nb2xg.maozi.io/"));
 
     QObject *sound = header->findChild<QObject *>(QStringLiteral("soundMasterButton"));
     QObject *popover = header->findChild<QObject *>(QStringLiteral("soundMasterPopover"));
@@ -1691,12 +1707,25 @@ void QmlInteractionTest::exposesRoomVolumeAndRefreshControls()
     QObject *refresh = tile->findChild<QObject *>(QStringLiteral("refreshRoomAction"));
     QObject *topBar = tile->findChild<QObject *>(QStringLiteral("roomTopBar"));
     QObject *topActions = tile->findChild<QObject *>(QStringLiteral("roomTopActions"));
+    QObject *cardSurface = tile->findChild<QObject *>(QStringLiteral("roomCardSurface"));
     QVERIFY(slider != nullptr);
     QVERIFY(refresh != nullptr);
     QVERIFY(topBar != nullptr);
     QVERIFY(topActions != nullptr);
+    QVERIFY(cardSurface != nullptr);
     QVERIFY(topActions->property("width").toDouble() >= 32.0);
-    QVERIFY(topBar->property("z").toDouble() > 3.0);
+    QCOMPARE(qobject_cast<QQuickItem *>(topBar)->parentItem(),
+             qobject_cast<QQuickItem *>(tile.get()));
+    QVERIFY(topBar->property("z").toDouble() > cardSurface->property("z").toDouble());
+    QVERIFY(QMetaObject::invokeMethod(topActions, "clicked"));
+    QTRY_VERIFY(tile->property("menuOpen").toBool());
+    QObject *menu = tile->findChild<QObject *>(QStringLiteral("roomControlMenu"));
+    QVERIFY(menu != nullptr);
+    QCOMPARE(qobject_cast<QQuickItem *>(menu)->parentItem(),
+             qobject_cast<QQuickItem *>(tile.get()));
+    QVERIFY(menu->property("z").toDouble() > topBar->property("z").toDouble());
+    QVERIFY(tile->property("z").toDouble() > 0.0);
+    tile->setProperty("menuOpen", false);
     QCOMPARE(slider->objectName(), QStringLiteral("roomVolumeSlider"));
     QObject *sliderHandle = tile->findChild<QObject *>(QStringLiteral("roomVolumeSliderHandle"));
     QVERIFY(sliderHandle != nullptr);

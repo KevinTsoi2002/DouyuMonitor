@@ -385,6 +385,16 @@ bool AppController::openLatestRelease()
     return url.isValid() && QDesktopServices::openUrl(url);
 }
 
+bool AppController::openExternalUrl(const QString &url)
+{
+    const QUrl target(url);
+    if (!target.isValid() || target.scheme() != QStringLiteral("https")
+        || target.host().isEmpty()) {
+        return false;
+    }
+    return QDesktopServices::openUrl(target);
+}
+
 bool AppController::backgroundHosted() const noexcept
 {
     return backgroundHosted_;

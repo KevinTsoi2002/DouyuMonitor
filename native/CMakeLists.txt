@@ -73,6 +73,7 @@ set(DOUYU_QML_ICON_ASSETS
     app/qml/assets/icons/settings.svg
     app/qml/assets/icons/square.svg
     app/qml/assets/icons/star.svg
+    app/qml/assets/icons/trophy.svg
     app/qml/assets/icons/volume-2.svg
     app/qml/assets/icons/x.svg
     app/qml/assets/icons/window-maximize.svg

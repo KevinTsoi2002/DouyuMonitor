@@ -154,6 +154,8 @@ void AppControllerTest::exposesUpdateCheckerState()
     QCOMPARE(controller.latestVersion(), QString());
     QVERIFY(!controller.updateReleaseUrl().isValid());
     QVERIFY(!controller.openLatestRelease());
+    QVERIFY(!controller.openExternalUrl(QStringLiteral("javascript:alert(1)")));
+    QVERIFY(!controller.openExternalUrl(QStringLiteral("http://example.com")));
 }
 
 void AppControllerTest::minimizesWithoutEnteringBackground()
@@ -766,7 +768,9 @@ void AppControllerTest::restoresActiveGroupMembershipInOrder()
 
     QSettings restoredSettings(settingsPath, QSettings::IniFormat);
     AppController restored(fakeServicePath(), &restoredSettings, &sink);
-    QCOMPARE(restored.workspace()->groupItems().first().toMap().value(QStringLiteral("active"))
+    const QVariantList restoredGroups = restored.workspace()->groupItems();
+    QVERIFY(!restoredGroups.isEmpty());
+    QCOMPARE(restoredGroups.first().toMap().value(QStringLiteral("active"))
                  .toBool(),
              true);
     QCOMPARE(restored.rooms()->rowCount(), 2);
