@@ -7,6 +7,7 @@ class GuildRosterTest final : public QObject {
 
 private slots:
     void loadsBundledRosterWithoutRoleLabels();
+    void exposesStablePinyinKeysForEveryMember();
     void stripsRoleSuffixOnlyForSearch();
     void rejectsInvalidRoomIdsFromResource();
     void rejectsMalformedRootAndUnsupportedVersion();
@@ -26,6 +27,31 @@ void GuildRosterTest::loadsBundledRosterWithoutRoleLabels()
         QVERIFY(!member.anchorName.contains(QStringLiteral("-队员")));
         QVERIFY(!member.anchorName.endsWith(QStringLiteral("-OB")));
     }
+}
+
+void GuildRosterTest::exposesStablePinyinKeysForEveryMember()
+{
+    const QVector<GuildMember> members = GuildRoster::bundled();
+    QCOMPARE(members.size(), 58);
+
+    for (const GuildMember &member : members) {
+        QVERIFY2(!member.pinyinKey.isEmpty(), qPrintable(member.anchorName));
+        QVERIFY2(member.pinyinKey.size() == 1, qPrintable(member.anchorName));
+        const QChar key = member.pinyinKey.at(0);
+        QVERIFY2((key >= QLatin1Char('A') && key <= QLatin1Char('Z'))
+                     || key == QLatin1Char('#'),
+                 qPrintable(QStringLiteral("%1 -> %2")
+                                .arg(member.anchorName, member.pinyinKey)));
+    }
+
+    QCOMPARE(GuildRoster::findByName(QStringLiteral("寅子"))->pinyinKey,
+             QStringLiteral("Y"));
+    QCOMPARE(GuildRoster::findByName(QStringLiteral("主播阿飞"))->pinyinKey,
+             QStringLiteral("Z"));
+    QCOMPARE(GuildRoster::findByName(QStringLiteral("阿愈Ayu"))->pinyinKey,
+             QStringLiteral("A"));
+    QCOMPARE(GuildRoster::findByName(QStringLiteral("bulaQoQ"))->pinyinKey,
+             QStringLiteral("B"));
 }
 
 void GuildRosterTest::stripsRoleSuffixOnlyForSearch()
@@ -110,10 +136,10 @@ void GuildRosterTest::rejectsInvalidMemberShapesAndIds()
                 {},
                 { "id": "", "name": "空 ID" },
                 { "id": "   ", "name": "空白 ID" },
-                { "id": "hamster-001", "name": "有效成员" },
-                { "id": "hamster-001", "name": "重复 ID" },
-                { "id": "hamster-002", "name": "   " },
-                { "id": "hamster-003", "name": "另一位有效成员", "roomId": "12345" }
+                { "id": "hamster-001", "name": "有效成员", "pinyinKey": "Y" },
+                { "id": "hamster-001", "name": "重复 ID", "pinyinKey": "C" },
+                { "id": "hamster-002", "name": "   ", "pinyinKey": "K" },
+                { "id": "hamster-003", "name": "另一位有效成员", "roomId": "12345", "pinyinKey": "L" }
             ]
         })"));
 
@@ -128,10 +154,10 @@ void GuildRosterTest::rejectsMalformedRoomIdsButAcceptsEmptyRoomId()
         QByteArrayLiteral(R"({
             "version": 1,
             "members": [
-                { "id": "hamster-001", "name": "空房间号", "roomId": "" },
-                { "id": "hamster-002", "name": "字母房间号", "roomId": "abc" },
-                { "id": "hamster-003", "name": "负数房间号", "roomId": "-1" },
-                { "id": "hamster-004", "name": "超长房间号", "roomId": "123456789012345678901" }
+                { "id": "hamster-001", "name": "空房间号", "roomId": "", "pinyinKey": "K" },
+                { "id": "hamster-002", "name": "字母房间号", "roomId": "abc", "pinyinKey": "Z" },
+                { "id": "hamster-003", "name": "负数房间号", "roomId": "-1", "pinyinKey": "F" },
+                { "id": "hamster-004", "name": "超长房间号", "roomId": "123456789012345678901", "pinyinKey": "C" }
             ]
         })"));
 

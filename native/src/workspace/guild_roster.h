@@ -9,6 +9,7 @@ struct GuildMember {
     QString anchorName;
     QString searchName;
     QString roomId;
+    QString pinyinKey;
 
     bool operator==(const GuildMember &) const = default;
 };
