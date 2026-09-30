@@ -230,6 +230,55 @@ public:
     QString lastAddedMemberId;
 };
 
+class FakeGuildHoverController final : public QObject {
+    Q_OBJECT
+    Q_PROPERTY(QVariantList guildRoster READ guildRoster CONSTANT)
+    Q_PROPERTY(QVariantList teams READ teams CONSTANT)
+
+public:
+    QVariantList guildRoster() const
+    {
+        return {
+            QVariantMap{
+                {QStringLiteral("id"), QStringLiteral("hamster-001")},
+                {QStringLiteral("anchorName"), QStringLiteral("寅子")},
+                {QStringLiteral("pinyinKey"), QStringLiteral("Y")},
+                {QStringLiteral("roomId"), QStringLiteral("71415")},
+                {QStringLiteral("status"), QStringLiteral("resolved")},
+                {QStringLiteral("avatarUrl"), QString()},
+                {QStringLiteral("liveState"), QStringLiteral("online")},
+                {QStringLiteral("active"), false},
+                {QStringLiteral("role"), QStringLiteral("member")},
+                {QStringLiteral("rankMatched"), true},
+                {QStringLiteral("radarDimensions"), QVariantList{
+                     QVariantMap{{QStringLiteral("name"), QStringLiteral("力量")},
+                                 {QStringLiteral("average"), 18.0},
+                                 {QStringLiteral("count"), 100}},
+                     QVariantMap{{QStringLiteral("name"), QStringLiteral("财力")},
+                                 {QStringLiteral("average"), 12.0},
+                                 {QStringLiteral("count"), 100}},
+                 }},
+                {QStringLiteral("placementAverage"), 88.5},
+                {QStringLiteral("placementScoredSessions"), 3},
+                {QStringLiteral("playValue"), 6.4},
+                {QStringLiteral("playValueBombed"), 1},
+                {QStringLiteral("playValueUpdatedAt"),
+                 QStringLiteral("2026-09-30T12:26:01+08:00")},
+            },
+        };
+    }
+
+    QVariantList teams() const
+    {
+        return {
+            QVariantMap{{QStringLiteral("id"), QStringLiteral("team-a")},
+                        {QStringLiteral("name"), QStringLiteral("一队")},
+                        {QStringLiteral("memberIds"), QStringList{
+                             QStringLiteral("hamster-001")}}},
+        };
+    }
+};
+
 class FakeTeamManagerController final : public QObject {
     Q_OBJECT
     Q_PROPERTY(QVariantList guildRoster READ guildRoster CONSTANT)
@@ -302,6 +351,75 @@ private:
     QString updateState_ = QStringLiteral("idle");
     QString updateMessage_;
     QUrl updateReleaseUrl_;
+};
+
+class FakeMaoziRankClient final : public QObject {
+    Q_OBJECT
+    Q_PROPERTY(QVariantList entries READ entries NOTIFY entriesChanged)
+    Q_PROPERTY(bool loading READ loading NOTIFY entriesChanged)
+    Q_PROPERTY(QString statusText READ statusText NOTIFY entriesChanged)
+
+public:
+    QVariantList entries() const
+    {
+        return {
+            QVariantMap{
+                {QStringLiteral("id"), QStringLiteral("host-1")},
+                {QStringLiteral("rank"), 1},
+                {QStringLiteral("name"), QStringLiteral("寅子")},
+                {QStringLiteral("roomId"), QStringLiteral("71415")},
+                {QStringLiteral("note"), QStringLiteral("猴王")},
+                {QStringLiteral("teamName"), QStringLiteral("红队")},
+                {QStringLiteral("grade"), QStringLiteral("S")},
+                {QStringLiteral("gradeColor"), QStringLiteral("#ffc93c")},
+                {QStringLiteral("score"), 18.5},
+                {QStringLiteral("voters"), 120},
+                {QStringLiteral("live"), true},
+                {QStringLiteral("posterUrl"), QString()},
+            },
+            QVariantMap{
+                {QStringLiteral("id"), QStringLiteral("host-2")},
+                {QStringLiteral("rank"), 2},
+                {QStringLiteral("name"), QStringLiteral("主播阿飞")},
+                {QStringLiteral("roomId"), QStringLiteral("84452")},
+                {QStringLiteral("note"), QString()},
+                {QStringLiteral("teamName"), QStringLiteral("蓝队")},
+                {QStringLiteral("grade"), QStringLiteral("A")},
+                {QStringLiteral("gradeColor"), QStringLiteral("#a78bfa")},
+                {QStringLiteral("score"), 12.0},
+                {QStringLiteral("voters"), 80},
+                {QStringLiteral("live"), false},
+                {QStringLiteral("posterUrl"), QString()},
+            },
+        };
+    }
+
+    bool loading() const { return loading_; }
+    QString statusText() const { return QStringLiteral("共 2 位主播 · 200 人参与"); }
+
+    Q_INVOKABLE void refresh()
+    {
+        ++refreshCount;
+        emit entriesChanged();
+    }
+
+    int refreshCount = 0;
+
+signals:
+    void entriesChanged();
+
+private:
+    bool loading_ = false;
+};
+
+class FakeMaoziController final : public QObject {
+    Q_OBJECT
+    Q_PROPERTY(FakeMaoziRankClient *maoziRank READ maoziRank CONSTANT)
+
+public:
+    FakeMaoziRankClient *maoziRank() noexcept { return &rank; }
+
+    FakeMaoziRankClient rank;
 };
 
 void registerQmlTypes()
@@ -443,6 +561,10 @@ private slots:
     void quickAddsResolvedGuildMember();
     void submitsManualGuildRoomId();
     void rendersGuildMemberAvatarAndLiveState();
+    void ordersGuildNavigationByRoleTeamAndPinyin();
+    void checksRankVersionOnlyWhileGuildNavigationIsVisible();
+    void opensMaoziRankPageFromHeader();
+    void filtersAndRefreshesMaoziRankPage();
 };
 
 void QmlInteractionTest::groupsGuildNavigationByTeamsWithoutRoleLabels()
@@ -493,10 +615,10 @@ void QmlInteractionTest::groupsGuildNavigationByTeamsWithoutRoleLabels()
 
     QObject *visibleRows = panel->findChild<QObject *>(QStringLiteral("guildVisibleRows"));
     QVERIFY(visibleRows != nullptr);
-    QCOMPARE(visibleRows->property("count").toInt(), 5);
+    QCOMPARE(visibleRows->property("count").toInt(), 7);
 
     QStringList renderedNames;
-    for (const int rowIndex : {1, 3}) {
+    for (const int rowIndex : {2, 5}) {
         QQuickItem *memberRow = nullptr;
         QVERIFY(QMetaObject::invokeMethod(visibleRows,
                                           "itemAt",
@@ -569,6 +691,115 @@ void QmlInteractionTest::filtersGuildNavigationWithoutChangingTeamOrder()
     search->setProperty("text", QStringLiteral("阿飞"));
     QTRY_COMPARE(panel->property("visibleMemberCount").toInt(), 1);
     QCOMPARE(panel->property("visibleTeamCount").toInt(), 3);
+}
+
+void QmlInteractionTest::ordersGuildNavigationByRoleTeamAndPinyin()
+{
+    FakeGuildNavigationController controller;
+    controller.roster = QVariantList{
+        QVariantMap{{QStringLiteral("id"), QStringLiteral("hamster-004")},
+                    {QStringLiteral("anchorName"), QStringLiteral("主播阿郎")},
+                    {QStringLiteral("pinyinKey"), QStringLiteral("Z")},
+                    {QStringLiteral("roomId"), QStringLiteral("320155")},
+                    {QStringLiteral("role"), QStringLiteral("leader")}},
+        QVariantMap{{QStringLiteral("id"), QStringLiteral("hamster-005")},
+                    {QStringLiteral("anchorName"), QStringLiteral("尐表哥")},
+                    {QStringLiteral("pinyinKey"), QStringLiteral("S")},
+                    {QStringLiteral("roomId"), QStringLiteral("217331")},
+                    {QStringLiteral("role"), QStringLiteral("captain")}},
+        QVariantMap{{QStringLiteral("id"), QStringLiteral("hamster-001")},
+                    {QStringLiteral("anchorName"), QStringLiteral("阿飞")},
+                    {QStringLiteral("pinyinKey"), QStringLiteral("A")},
+                    {QStringLiteral("roomId"), QStringLiteral("84452")},
+                    {QStringLiteral("role"), QStringLiteral("member")}},
+        QVariantMap{{QStringLiteral("id"), QStringLiteral("hamster-046")},
+                    {QStringLiteral("anchorName"), QStringLiteral("白小帅子")},
+                    {QStringLiteral("pinyinKey"), QStringLiteral("B")},
+                    {QStringLiteral("roomId"), QString()},
+                    {QStringLiteral("role"), QStringLiteral("other")}},
+    };
+    controller.teamItems = QVariantList{
+        QVariantMap{{QStringLiteral("id"), QStringLiteral("team-a")},
+                    {QStringLiteral("name"), QStringLiteral("一队")},
+                    {QStringLiteral("memberIds"),
+                     QStringList{QStringLiteral("hamster-005"),
+                                 QStringLiteral("hamster-001"),
+                                 QStringLiteral("hamster-046")}}},
+    };
+
+    QQmlApplicationEngine engine;
+    QQmlComponent component(&engine,
+                            QUrl(QStringLiteral("qrc:/qml/components/GuildNavigationPanel.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    std::unique_ptr<QObject> panel(component.createWithInitialProperties({
+        {QStringLiteral("controller"), QVariant::fromValue(static_cast<QObject *>(&controller))},
+    }));
+    QVERIFY2(panel != nullptr, qPrintable(component.errorString()));
+
+    QObject *rows = panel->findChild<QObject *>(QStringLiteral("guildVisibleRows"));
+    QVERIFY(rows != nullptr);
+    QTRY_COMPARE(rows->property("count").toInt(), 8);
+
+    QQuickItem *leaderHeader = nullptr;
+    QVERIFY(QMetaObject::invokeMethod(rows, "itemAt",
+                                      Q_RETURN_ARG(QQuickItem *, leaderHeader),
+                                      Q_ARG(int, 0)));
+    QVERIFY(leaderHeader != nullptr);
+    QObject *leaderHeaderText =
+        leaderHeader->findChild<QObject *>(QStringLiteral("guildTeamTitle"));
+    QVERIFY(leaderHeaderText != nullptr);
+    QCOMPARE(leaderHeaderText->property("text").toString(), QStringLiteral("团长"));
+    QVERIFY(leaderHeader->property("rowType").toString() == QStringLiteral("header"));
+    QQuickItem *teamHeader = nullptr;
+    QVERIFY(QMetaObject::invokeMethod(rows, "itemAt",
+                                      Q_RETURN_ARG(QQuickItem *, teamHeader),
+                                      Q_ARG(int, 2)));
+    QVERIFY(teamHeader != nullptr);
+    QObject *teamHeaderText =
+        teamHeader->findChild<QObject *>(QStringLiteral("guildTeamTitle"));
+    QVERIFY(teamHeaderText != nullptr);
+    QCOMPARE(teamHeaderText->property("text").toString(), QStringLiteral("一队"));
+
+    QQuickItem *captainTitle = nullptr;
+    QVERIFY(QMetaObject::invokeMethod(rows, "itemAt",
+                                      Q_RETURN_ARG(QQuickItem *, captainTitle),
+                                      Q_ARG(int, 3)));
+    QVERIFY(captainTitle != nullptr);
+    QObject *captainTitleText =
+        captainTitle->findChild<QObject *>(QStringLiteral("guildRoleTitle"));
+    QVERIFY(captainTitleText != nullptr);
+    QCOMPARE(captainTitleText->property("text").toString(), QStringLiteral("队长"));
+    QQuickItem *teamCaptainRow = nullptr;
+    QVERIFY(QMetaObject::invokeMethod(rows, "itemAt",
+                                      Q_RETURN_ARG(QQuickItem *, teamCaptainRow),
+                                      Q_ARG(int, 4)));
+    QVERIFY(teamCaptainRow != nullptr);
+    QObject *teamCaptainName =
+        teamCaptainRow->findChild<QObject *>(QStringLiteral("guildMemberName"));
+    QVERIFY(teamCaptainName != nullptr);
+    QCOMPARE(teamCaptainName->property("text").toString(), QStringLiteral("尐表哥"));
+}
+
+void QmlInteractionTest::checksRankVersionOnlyWhileGuildNavigationIsVisible()
+{
+    FakeGuildNavigationController controller;
+    QQmlApplicationEngine engine;
+    QQmlComponent component(&engine,
+                            QUrl(QStringLiteral("qrc:/qml/components/GuildNavigationPanel.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    std::unique_ptr<QObject> panel(component.createWithInitialProperties({
+        {QStringLiteral("controller"), QVariant::fromValue(static_cast<QObject *>(&controller))},
+        {QStringLiteral("visible"), true},
+    }));
+    QVERIFY2(panel != nullptr, qPrintable(component.errorString()));
+
+    QObject *timer = panel->findChild<QObject *>(QStringLiteral("rankSyncTimer"));
+    QVERIFY(timer != nullptr);
+    QVERIFY(timer->property("running").toBool());
+    QCOMPARE(timer->property("interval").toInt(), 60000);
+
+    panel->setProperty("visible", false);
+    QTRY_VERIFY(!timer->property("running").toBool());
 }
 
 void QmlInteractionTest::quickAddsResolvedGuildMember()
@@ -1488,8 +1719,9 @@ void QmlInteractionTest::usesGroupedHeaderControls()
     QVERIFY(rank != nullptr);
     QCOMPARE(rank->property("width").toInt(), 32);
     QCOMPARE(rank->property("height").toInt(), 32);
+    QSignalSpy rankRequested(header.get(), SIGNAL(openMaoziRank()));
     click(rank);
-    QCOMPARE(controller.externalUrl, QStringLiteral("https://dy656750-39nb2xg.maozi.io/"));
+    QCOMPARE(rankRequested.count(), 1);
 
     QObject *sound = header->findChild<QObject *>(QStringLiteral("soundMasterButton"));
     QObject *popover = header->findChild<QObject *>(QStringLiteral("soundMasterPopover"));
@@ -2514,6 +2746,69 @@ void QmlInteractionTest::rendersGuildMemberAvatarAndLiveState()
         QTRY_COMPARE(liveLabel->property("text").toString(), expectedStates.at(index));
         QTRY_COMPARE(avatarImage->property("source").toString(), expectedAvatars.at(index));
     }
+}
+
+void QmlInteractionTest::opensMaoziRankPageFromHeader()
+{
+    registerQmlTypes();
+    FakeMaoziController controller;
+    QQmlApplicationEngine engine;
+    engine.setInitialProperties({
+        {QStringLiteral("appController"),
+         QVariant::fromValue(static_cast<QObject *>(&controller))},
+    });
+    engine.load(QUrl(QStringLiteral("qrc:/qml/Main.qml")));
+    QVERIFY(!engine.rootObjects().isEmpty());
+    auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().constFirst());
+    QVERIFY(window != nullptr);
+    window->resize(QSize(1280, 720));
+    window->show();
+
+    QObject *rankButton = window->findChild<QObject *>(QStringLiteral("maoziRankButton"));
+    QVERIFY(rankButton != nullptr);
+    click(rankButton);
+
+    QObject *page = window->findChild<QObject *>(QStringLiteral("maoziRankPage"));
+    QVERIFY(page != nullptr);
+    QTRY_VERIFY(page->property("visible").toBool());
+    QObject *list = page->findChild<QObject *>(QStringLiteral("maoziRankList"));
+    QVERIFY(list != nullptr);
+    QTRY_COMPARE(list->property("count").toInt(), 2);
+}
+
+void QmlInteractionTest::filtersAndRefreshesMaoziRankPage()
+{
+    registerQmlTypes();
+    FakeMaoziController controller;
+    QQmlApplicationEngine engine;
+    QQuickWindow hostWindow;
+    hostWindow.resize(QSize(1100, 720));
+    hostWindow.show();
+
+    QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qml/pages/MaoziRankPage.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    std::unique_ptr<QObject> page(component.createWithInitialProperties({
+        {QStringLiteral("parent"), QVariant::fromValue(hostWindow.contentItem())},
+        {QStringLiteral("width"), 1100},
+        {QStringLiteral("height"), 720},
+        {QStringLiteral("controller"),
+         QVariant::fromValue(static_cast<QObject *>(&controller))},
+    }));
+    QVERIFY2(page != nullptr, qPrintable(component.errorString()));
+
+    QObject *list = page->findChild<QObject *>(QStringLiteral("maoziRankList"));
+    QVERIFY(list != nullptr);
+    QTRY_COMPARE(list->property("count").toInt(), 2);
+
+    QObject *search = page->findChild<QObject *>(QStringLiteral("maoziSearchField"));
+    QVERIFY(search != nullptr);
+    search->setProperty("text", QStringLiteral("阿飞"));
+    QTRY_COMPARE(list->property("count").toInt(), 1);
+
+    QObject *refresh = page->findChild<QObject *>(QStringLiteral("maoziRefreshButton"));
+    QVERIFY(refresh != nullptr);
+    click(refresh);
+    QCOMPARE(controller.rank.refreshCount, 1);
 }
 
 QTEST_MAIN(QmlInteractionTest)

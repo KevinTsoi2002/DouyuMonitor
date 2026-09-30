@@ -14,6 +14,7 @@
 #include <memory>
 
 #include "app/windows_notification_service.h"
+#include "app/maozi_rank_client.h"
 #include "app/update_checker.h"
 #include "app/windows_tray_service.h"
 #include "danmaku/danmaku_socket.h"
@@ -128,6 +129,13 @@ AppController::AppController(QString serviceProgram,
     monitoring_ = std::make_unique<MonitoringModel>(this);
     danmaku_ = std::make_unique<DanmakuController>(std::move(danmakuFactory), this);
     updateChecker_ = std::make_unique<UpdateChecker>(QStringLiteral(DOUYU_APP_VERSION), QUrl{}, 8000, this);
+    maoziRank_ = std::make_unique<MaoziRankClient>(QUrl{}, QUrl{}, 15000, this);
+    connect(maoziRank_.get(), &MaoziRankClient::entriesChanged,
+            this, &AppController::guildRosterChanged);
+    connect(maoziRank_.get(), &MaoziRankClient::syncStateChanged,
+            this, &AppController::rankSyncStateChanged);
+    connect(maoziRank_.get(), &MaoziRankClient::syncStateChanged,
+            this, &AppController::guildRosterChanged);
     connect(updateChecker_.get(), &UpdateChecker::stateChanged, this, &AppController::updateStateChanged);
     connect(updateChecker_.get(), &UpdateChecker::resultChanged, this, &AppController::updateStateChanged);
 
@@ -284,9 +292,19 @@ QVariantList AppController::guildRoster() const
         const QString resolvedRoomId = guildRoomResolver_ != nullptr
             ? guildRoomResolver_->roomIdFor(member.id)
             : member.roomId;
+        QVariantMap rankEntry;
+        if (maoziRank_ != nullptr) {
+            rankEntry = maoziRank_->entryForName(member.anchorName);
+            if (rankEntry.isEmpty()) rankEntry = maoziRank_->entryForRoomId(resolvedRoomId);
+            if (rankEntry.isEmpty() && member.searchName != member.anchorName) {
+                rankEntry = maoziRank_->entryForName(member.searchName);
+            }
+        }
+        const bool rankMatched = !rankEntry.isEmpty();
         projection.push_back(QVariantMap{
             {QStringLiteral("id"), member.id},
             {QStringLiteral("anchorName"), member.anchorName},
+            {QStringLiteral("pinyinKey"), member.pinyinKey},
             {QStringLiteral("roomId"), resolvedRoomId},
             {QStringLiteral("status"), guildRoomResolver_ != nullptr
                  ? guildRoomResolver_->statusFor(member.id)
@@ -298,6 +316,21 @@ QVariantList AppController::guildRoster() const
                  ? guildRoomResolver_->liveStateFor(member.id)
                  : QStringLiteral("unknown")},
             {QStringLiteral("active"), snapshot_.activeRoomIds.contains(resolvedRoomId)},
+            {QStringLiteral("role"), rankMatched
+                 ? rankEntry.value(QStringLiteral("role"))
+                 : QStringLiteral("other")},
+            {QStringLiteral("rankMatched"), rankMatched},
+            {QStringLiteral("rankHostId"), rankEntry.value(QStringLiteral("id"))},
+            {QStringLiteral("radarDimensions"), rankEntry.value(QStringLiteral("dimensions"))},
+            {QStringLiteral("placementAverage"),
+             rankEntry.value(QStringLiteral("placementAverage"), -1.0)},
+            {QStringLiteral("placementScoredSessions"),
+             rankEntry.value(QStringLiteral("placementScoredSessions"), 0)},
+            {QStringLiteral("playValue"), rankEntry.value(QStringLiteral("playValue"))},
+            {QStringLiteral("playValueBombed"),
+             rankEntry.value(QStringLiteral("playValueBombed"), 0)},
+            {QStringLiteral("playValueUpdatedAt"),
+             rankEntry.value(QStringLiteral("playValueUpdatedAt"))},
         });
     }
     return projection;
@@ -372,6 +405,21 @@ QString AppController::latestVersion() const
 QUrl AppController::updateReleaseUrl() const
 {
     return updateChecker_ != nullptr ? updateChecker_->releaseUrl() : QUrl();
+}
+
+MaoziRankClient *AppController::maoziRank() noexcept
+{
+    return maoziRank_.get();
+}
+
+bool AppController::rankSyncPending() const noexcept
+{
+    return maoziRank_ != nullptr && maoziRank_->syncPending();
+}
+
+QString AppController::rankSyncError() const
+{
+    return maoziRank_ != nullptr ? maoziRank_->lastSyncError() : QString();
 }
 
 void AppController::checkForUpdates()

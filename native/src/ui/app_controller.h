@@ -15,6 +15,7 @@
 #include "ui/mpv_quick_item.h"
 #include "ui/room_list_model.h"
 #include "ui/workspace_model.h"
+#include "app/maozi_rank_client.h"
 #include "danmaku/danmaku_controller.h"
 #include "workspace/native_workspace_store.h"
 #include "workspace/notification_policy.h"
@@ -51,6 +52,9 @@ class AppController final : public QObject {
     Q_PROPERTY(QString currentVersion READ currentVersion CONSTANT)
     Q_PROPERTY(QString latestVersion READ latestVersion NOTIFY updateStateChanged)
     Q_PROPERTY(QUrl updateReleaseUrl READ updateReleaseUrl NOTIFY updateStateChanged)
+    Q_PROPERTY(bool rankSyncPending READ rankSyncPending NOTIFY rankSyncStateChanged)
+    Q_PROPERTY(QString rankSyncError READ rankSyncError NOTIFY rankSyncStateChanged)
+    Q_PROPERTY(MaoziRankClient *maoziRank READ maoziRank CONSTANT)
 
 public:
     explicit AppController(QString serviceProgram,
@@ -75,6 +79,9 @@ public:
     QString currentVersion() const;
     QString latestVersion() const;
     QUrl updateReleaseUrl() const;
+    MaoziRankClient *maoziRank() noexcept;
+    bool rankSyncPending() const noexcept;
+    QString rankSyncError() const;
     bool backgroundHosted() const noexcept;
     bool windowMinimized() const noexcept;
     QString closeBehavior() const;
@@ -169,6 +176,7 @@ signals:
     void searchResultsChanged();
     void searchStateChanged();
     void updateStateChanged();
+    void rankSyncStateChanged();
     void backgroundHostedChanged();
     void windowMinimizedChanged();
     void closeBehaviorChanged();
@@ -223,6 +231,7 @@ private:
     QString searchStatus_ = QStringLiteral("idle");
     QString searchError_;
     std::unique_ptr<UpdateChecker> updateChecker_;
+    std::unique_ptr<MaoziRankClient> maoziRank_;
     QHash<QString, RoomLiveStatus> lastLiveStatuses_;
     QHash<QString, RoomLiveStatus> favoriteLiveStatuses_;
 };

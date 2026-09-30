@@ -11,6 +11,8 @@ Item {
     property bool canAdd: false
     signal addRequested(string memberId)
     signal roomIdSubmitted(string memberId, string roomId)
+    signal hoverEntered(string memberId)
+    signal hoverExited(string memberId)
     readonly property string memberId: member ? String(member.id || "") : ""
     readonly property string anchorName: member ? String(member.anchorName || memberId) : ""
     readonly property string roomId: member ? String(member.roomId || "") : ""
@@ -18,6 +20,14 @@ Item {
     readonly property bool confirming: roomEdit.visible
 
     height: confirming ? 84 : 46
+
+    HoverHandler {
+        id: memberHover
+        onHoveredChanged: {
+            if (hovered) root.hoverEntered(root.memberId)
+            else root.hoverExited(root.memberId)
+        }
+    }
 
     function beginConfirmation()
     {
