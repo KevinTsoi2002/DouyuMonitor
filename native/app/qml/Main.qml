@@ -34,6 +34,10 @@ ApplicationWindow {
     property bool sidebarVisible: appController
                                   ? appController.workspace.sidebarVisible
                                   : true
+    property string hoveredGuildMemberId: ""
+    property var hoveredGuildMember: null
+    property real guildHoverX: 0
+    property real guildHoverY: 0
     property bool navigationFallbackVisible: false
     readonly property bool navigationVisible: workspaceModel
                                              ? workspaceModel.navigationVisible
@@ -48,7 +52,39 @@ ApplicationWindow {
     readonly property var libraryRooms: appController ? appController.libraryRooms : []
     readonly property var workspaceModel: appController ? appController.workspace : null
     readonly property var monitoringModel: appController ? appController.monitoring : null
+    function guildMemberById(memberId)
+    {
+        if (!appController || !appController.guildRoster) return null
+        const roster = appController.guildRoster
+        for (let index = 0; index < roster.length; ++index) {
+            if (String(roster[index].id || "") === memberId) return roster[index]
+        }
+        return null
+    }
 
+    Timer {
+        id: guildHoverTimer
+        interval: 450
+        repeat: false
+        onTriggered: {
+            root.hoveredGuildMember = root.guildMemberById(root.hoveredGuildMemberId)
+            guildRankHoverCard.member = root.hoveredGuildMember
+            guildRankHoverCard.visible = root.hoveredGuildMember !== null
+        }
+    }
+
+    GuildRankHoverCard {
+        id: guildRankHoverCard
+        objectName: "guildRankHoverCard"
+        parent: root.contentItem
+        z: 120
+        visible: false
+        member: null
+        x: Math.min(root.width - width - 8,
+                    Math.max(8, root.guildHoverX + 10))
+        y: Math.min(root.height - height - 8,
+                    Math.max(8, root.guildHoverY - 18))
+    }
     function toggleSidebarVisibility() {
         const nextVisible = !sidebarVisible
         if (appController) {
@@ -68,6 +104,15 @@ ApplicationWindow {
         } else {
             navigationFallbackVisible = nextVisible
             if (nextVisible && sidebarVisible) sidebarVisible = false
+        }
+    }
+
+    function toggleMaoziRank() {
+        root.currentView = root.currentView === "maoziRank" ? "monitoring" : "maoziRank"
+        if (root.currentView === "maoziRank"
+                && root.appController
+                && root.appController.maoziRank) {
+            root.appController.maoziRank.refresh()
         }
     }
 
@@ -262,6 +307,7 @@ ApplicationWindow {
         onOpenDanmaku: danmakuSettingsPanel.open()
         onOpenMonitoring: monitoringDrawer.open()
         onOpenWorkspace: workspacePresetsPanel.open()
+        onOpenMaoziRank: root.toggleMaoziRank()
         onSystemMoveRequested: root.startSystemMove()
         onToggleMaximizedRequested: root.toggleWindowMaximized()
         onToggleFullScreenRequested: root.toggleFullScreen()
@@ -298,6 +344,16 @@ ApplicationWindow {
         visible: width > 0
         controller: root.appController
         workspaceModel: root.workspaceModel
+        onMemberHovered: function(memberId, x, y) {
+            root.hoveredGuildMemberId = memberId
+            root.guildHoverX = x
+            root.guildHoverY = y
+            guildHoverTimer.restart()
+        }
+        onMemberHoverExited: {
+            guildHoverTimer.stop()
+            guildRankHoverCard.visible = false
+        }
     }
 
     Item {
@@ -366,6 +422,19 @@ ApplicationWindow {
         controller: root.appController
         onBackRequested: root.currentView = "monitoring"
         onTeamManagerRequested: teamManagerDialog.open()
+    }
+
+    MaoziRankPage {
+        id: maoziRankPage
+        objectName: "maoziRankPage"
+        anchors.top: header.bottom
+        anchors.left: leftPanelBoundary.right
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        visible: root.currentView === "maoziRank"
+        z: 20
+        controller: root.appController
+        onBackRequested: root.currentView = "monitoring"
     }
 
     ToastViewport {

@@ -29,6 +29,7 @@ public:
                     int timeoutMs = 10000,
                     int qualityRate = -1);
     quint64 search(const QString &query, int timeoutMs = 10000);
+    quint64 status(const QString &roomId, int timeoutMs = 10000);
 
     bool cancel(quint64 requestId);
     void shutdown(int timeoutMs = 1000);

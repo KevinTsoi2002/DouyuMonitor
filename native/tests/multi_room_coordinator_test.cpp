@@ -59,6 +59,7 @@ private slots:
     void preservesManualLayoutWhenRoomCountChanges();
     void reducesLayoutModesAndMigratesLegacyChoices();
     void supportsTwoPrimaryRoomsAndQualityPriority();
+    void publishesStableDecodedRoomsAcrossLayoutSwitches();
     void rejectsDualPrimaryLayoutBelowFourRooms();
     void replacesRemovedSecondaryPrimaryRoom();
 };
@@ -201,6 +202,43 @@ void MultiRoomCoordinatorTest::supportsTwoPrimaryRoomsAndQualityPriority()
     QCOMPARE(coordinator.effectiveQuality(roomId(0)), StreamQuality::Original);
     QCOMPARE(coordinator.effectiveQuality(roomId(1)), StreamQuality::Original);
     QCOMPARE(coordinator.effectiveQuality(roomId(2)), StreamQuality::Standard);
+    client.shutdown();
+}
+
+void MultiRoomCoordinatorTest::publishesStableDecodedRoomsAcrossLayoutSwitches()
+{
+    StreamgetProcessClient client(fakeServicePath());
+    MultiRoomCoordinator coordinator(&client);
+    const int rooms = qMin(8, RoomCapacity::currentLimits().maxLayoutRooms);
+    for (int index = 0; index < rooms; ++index) {
+        QCOMPARE(coordinator.addRoomDetailed(roomId(index)), RoomCommandResult::Accepted);
+    }
+
+    QSignalSpy snapshotsChanged(&coordinator, &MultiRoomCoordinator::roomSnapshotsChanged);
+    const RoomSnapshots before = coordinator.roomSnapshots();
+    const int expectedDecoded = qMin(rooms, RoomCapacity::currentLimits().defaultDecodedRooms);
+    int beforeDecoded = 0;
+    for (const RoomSnapshot &snapshot : before) beforeDecoded += snapshot.renderEnabled ? 1 : 0;
+    QCOMPARE(beforeDecoded, expectedDecoded);
+
+    QVERIFY(coordinator.setLayout(QStringLiteral("primary")));
+    QVERIFY(!snapshotsChanged.isEmpty());
+    const RoomSnapshots afterPrimary = coordinator.roomSnapshots();
+    QCOMPARE(afterPrimary.size(), before.size());
+    int primaryDecoded = 0;
+    for (const RoomSnapshot &snapshot : afterPrimary) {
+        primaryDecoded += snapshot.renderEnabled ? 1 : 0;
+    }
+    QCOMPARE(primaryDecoded, expectedDecoded);
+
+    QVERIFY(coordinator.setLayout(QStringLiteral("auto")));
+    const RoomSnapshots afterAuto = coordinator.roomSnapshots();
+    QCOMPARE(afterAuto.size(), before.size());
+    int autoDecoded = 0;
+    for (const RoomSnapshot &snapshot : afterAuto) {
+        autoDecoded += snapshot.renderEnabled ? 1 : 0;
+    }
+    QCOMPARE(autoDecoded, expectedDecoded);
     client.shutdown();
 }
 

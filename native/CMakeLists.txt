@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(DouyuMonitorNative VERSION 0.2.13 LANGUAGES CXX)
+project(DouyuMonitorNative VERSION 0.2.14 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -59,7 +59,7 @@ qt_policy(SET QTP0004 NEW)
 
 set(DOUYU_QML_ICON_ASSETS
     app/qml/assets/douyu_monitor.svg
-    app/qml/assets/icons/hamster-agent.jfif
+    app/qml/assets/icons/hamster-agent.svg
     app/qml/assets/icons/activity.svg
     app/qml/assets/icons/chevron-down.svg
     app/qml/assets/icons/chevron-up.svg
@@ -73,6 +73,7 @@ set(DOUYU_QML_ICON_ASSETS
     app/qml/assets/icons/settings.svg
     app/qml/assets/icons/square.svg
     app/qml/assets/icons/star.svg
+    app/qml/assets/icons/trophy.svg
     app/qml/assets/icons/volume-2.svg
     app/qml/assets/icons/x.svg
     app/qml/assets/icons/window-maximize.svg
@@ -139,6 +140,7 @@ qt_add_qml_module(douyu_qml
         app/qml/components/RoomSidebar.qml
         app/qml/components/GuildNavigationPanel.qml
         app/qml/components/GuildMemberRow.qml
+        app/qml/components/GuildRankHoverCard.qml
         app/qml/components/RoomLibraryView.qml
         app/qml/components/WorkspaceGrid.qml
         app/qml/components/PrimaryRoomDivider.qml
@@ -152,6 +154,7 @@ qt_add_qml_module(douyu_qml
         app/qml/panels/MonitoringStatusPanel.qml
         app/qml/panels/WorkspacePresetsPanel.qml
         app/qml/pages/SettingsPage.qml
+        app/qml/pages/MaoziRankPage.qml
         app/qml/dialogs/AddRoomDialog.qml
         app/qml/dialogs/NotificationSettingsDialog.qml
         app/qml/dialogs/CloseBehaviorDialog.qml
@@ -195,6 +198,7 @@ qt_add_resources(qml_engine_smoke_test qml_engine_test_resources
         app/qml/components/RoomSidebar.qml
         app/qml/components/GuildNavigationPanel.qml
         app/qml/components/GuildMemberRow.qml
+        app/qml/components/GuildRankHoverCard.qml
         app/qml/components/RoomLibraryView.qml
         app/qml/components/WorkspaceGrid.qml
         app/qml/components/PrimaryRoomDivider.qml
@@ -208,6 +212,7 @@ qt_add_resources(qml_engine_smoke_test qml_engine_test_resources
         app/qml/panels/MonitoringStatusPanel.qml
         app/qml/panels/WorkspacePresetsPanel.qml
         app/qml/pages/SettingsPage.qml
+        app/qml/pages/MaoziRankPage.qml
         app/qml/dialogs/AddRoomDialog.qml
         app/qml/dialogs/NotificationSettingsDialog.qml
         app/qml/dialogs/CloseBehaviorDialog.qml
@@ -261,6 +266,7 @@ qt_add_resources(qml_visual_smoke_test qml_visual_smoke_test_resources
         app/qml/components/RoomSidebar.qml
         app/qml/components/GuildNavigationPanel.qml
         app/qml/components/GuildMemberRow.qml
+        app/qml/components/GuildRankHoverCard.qml
         app/qml/components/RoomLibraryView.qml
         app/qml/components/WorkspaceGrid.qml
         app/qml/components/PrimaryRoomDivider.qml
@@ -274,6 +280,7 @@ qt_add_resources(qml_visual_smoke_test qml_visual_smoke_test_resources
         app/qml/panels/MonitoringStatusPanel.qml
         app/qml/panels/WorkspacePresetsPanel.qml
         app/qml/pages/SettingsPage.qml
+        app/qml/pages/MaoziRankPage.qml
         app/qml/dialogs/AddRoomDialog.qml
         app/qml/dialogs/NotificationSettingsDialog.qml
         app/qml/dialogs/CloseBehaviorDialog.qml
@@ -337,6 +344,7 @@ add_executable(qml_interaction_test
     src/ui/room_list_model.cpp
     src/ui/workspace_model.cpp
     src/workspace/room_capacity.cpp
+    src/app/maozi_rank_client.cpp
 )
 target_link_libraries(qml_interaction_test PRIVATE
     Qt6::Core
@@ -361,6 +369,7 @@ qt_add_resources(qml_interaction_test qml_interaction_test_resources
         app/qml/components/RoomSidebar.qml
         app/qml/components/GuildNavigationPanel.qml
         app/qml/components/GuildMemberRow.qml
+        app/qml/components/GuildRankHoverCard.qml
         app/qml/components/RoomLibraryView.qml
         app/qml/components/WorkspaceGrid.qml
         app/qml/components/PrimaryRoomDivider.qml
@@ -374,6 +383,7 @@ qt_add_resources(qml_interaction_test qml_interaction_test_resources
         app/qml/panels/MonitoringStatusPanel.qml
         app/qml/panels/WorkspacePresetsPanel.qml
         app/qml/pages/SettingsPage.qml
+        app/qml/pages/MaoziRankPage.qml
         app/qml/dialogs/AddRoomDialog.qml
         app/qml/dialogs/NotificationSettingsDialog.qml
         app/qml/dialogs/CloseBehaviorDialog.qml
@@ -404,6 +414,7 @@ add_executable(qml_close_regression_test
     src/ui/mpv_quick_item.cpp
     src/app/windows_notification_service.cpp
     src/app/update_checker.cpp
+    src/app/maozi_rank_client.cpp
     src/app/windows_tray_service.cpp
     src/workspace/quality_policy.cpp
     src/workspace/native_workspace_types.cpp
@@ -446,6 +457,7 @@ qt_add_resources(qml_close_regression_test qml_close_regression_test_resources
         app/qml/components/RoomSidebar.qml
         app/qml/components/GuildNavigationPanel.qml
         app/qml/components/GuildMemberRow.qml
+        app/qml/components/GuildRankHoverCard.qml
         app/qml/components/RoomLibraryView.qml
         app/qml/components/WorkspaceGrid.qml
         app/qml/components/PrimaryRoomDivider.qml
@@ -459,6 +471,7 @@ qt_add_resources(qml_close_regression_test qml_close_regression_test_resources
         app/qml/panels/MonitoringStatusPanel.qml
         app/qml/panels/WorkspacePresetsPanel.qml
         app/qml/pages/SettingsPage.qml
+        app/qml/pages/MaoziRankPage.qml
         app/qml/dialogs/AddRoomDialog.qml
         app/qml/dialogs/NotificationSettingsDialog.qml
         app/qml/dialogs/CloseBehaviorDialog.qml
@@ -555,6 +568,22 @@ set_property(TEST update_checker_test PROPERTY ENVIRONMENT_MODIFICATION
     "QT_PLUGIN_PATH=set:${QT_ROOT}/plugins"
 )
 
+add_executable(maozi_rank_client_test
+    tests/maozi_rank_client_test.cpp
+    src/app/maozi_rank_client.cpp
+)
+target_link_libraries(maozi_rank_client_test PRIVATE
+    Qt6::Core
+    Qt6::Network
+    Qt6::Test
+)
+target_include_directories(maozi_rank_client_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+add_test(NAME maozi_rank_client_test COMMAND maozi_rank_client_test)
+set_property(TEST maozi_rank_client_test PROPERTY ENVIRONMENT_MODIFICATION
+    "PATH=path_list_prepend:${QT_ROOT}/bin"
+    "QT_PLUGIN_PATH=set:${QT_ROOT}/plugins"
+)
+
 add_executable(app_controller_test
     tests/app_controller_test.cpp
     src/ui/app_controller.cpp
@@ -565,6 +594,7 @@ add_executable(app_controller_test
     src/ui/mpv_quick_item.cpp
     src/app/windows_notification_service.cpp
     src/app/update_checker.cpp
+    src/app/maozi_rank_client.cpp
     src/app/windows_tray_service.cpp
     src/workspace/quality_policy.cpp
     src/workspace/native_workspace_types.cpp
@@ -958,6 +988,7 @@ endif()
 
 add_executable(douyu_monitor_native
     app/main.cpp
+    src/app/maozi_rank_client.cpp
     src/workspace/guild_room_resolver.cpp
     src/app/application_logger.cpp
     src/media/media_source.cpp
@@ -987,6 +1018,12 @@ set_target_properties(douyu_monitor_native PROPERTIES
 
 if(WIN32)
     target_sources(douyu_monitor_native PRIVATE app/resources/app_icon.rc)
+    qt_add_resources(douyu_monitor_native native_app_icon
+        PREFIX "/app"
+        BASE "${CMAKE_CURRENT_SOURCE_DIR}"
+        FILES
+            app/assets/douyu_monitor.ico
+    )
 
     add_executable(douyu_monitor_uninstaller WIN32
         app/uninstaller_main.cpp

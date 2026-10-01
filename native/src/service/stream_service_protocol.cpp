@@ -70,6 +70,8 @@ QString operationToString(ServiceOperation operation)
         return QStringLiteral("resolve");
     case ServiceOperation::Search:
         return QStringLiteral("search");
+    case ServiceOperation::Status:
+        return QStringLiteral("status");
     case ServiceOperation::Cancel:
         return QStringLiteral("cancel");
     case ServiceOperation::Shutdown:
@@ -83,6 +85,7 @@ std::optional<ServiceOperation> operationFromString(const QString &value)
     if (value == QStringLiteral("ping")) return ServiceOperation::Ping;
     if (value == QStringLiteral("resolve")) return ServiceOperation::Resolve;
     if (value == QStringLiteral("search")) return ServiceOperation::Search;
+    if (value == QStringLiteral("status")) return ServiceOperation::Status;
     if (value == QStringLiteral("cancel")) return ServiceOperation::Cancel;
     if (value == QStringLiteral("shutdown")) return ServiceOperation::Shutdown;
     return std::nullopt;
@@ -127,6 +130,7 @@ QByteArray encodeRequest(const ServiceRequest &request)
         }
         break;
     case ServiceOperation::Search:
+    case ServiceOperation::Status:
         object.insert(QStringLiteral("query"), request.query);
         break;
     case ServiceOperation::Cancel:
@@ -171,7 +175,8 @@ std::optional<ServiceRequest> decodeRequest(const QByteArray &line)
         }
         request.quality = *quality;
         request.qualityRate = qualityRate.isUndefined() ? -1 : qualityRate.toInt();
-    } else if (*operation == ServiceOperation::Search) {
+    } else if (*operation == ServiceOperation::Search
+               || *operation == ServiceOperation::Status) {
         request.query = object.value(QStringLiteral("query")).toString().trimmed();
         if (request.query.isEmpty() || request.query.size() > 200) return std::nullopt;
     } else if (*operation == ServiceOperation::Cancel) {
@@ -262,6 +267,17 @@ std::optional<ServiceResponse> decodeResponse(const QByteArray &line)
             }
             response.results.push_back(item);
         }
+        return response;
+    }
+
+    if (object.contains(QStringLiteral("status"))) {
+        if (!object.value(QStringLiteral("status")).isBool()
+            || !object.value(QStringLiteral("status")).toBool()
+            || !object.value(QStringLiteral("isLive")).isBool()) {
+            return std::nullopt;
+        }
+        response.status = true;
+        response.isLive = object.value(QStringLiteral("isLive")).toBool();
         return response;
     }
 

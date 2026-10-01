@@ -52,8 +52,15 @@ QVector<GuildMember> GuildRoster::parse(const QByteArray &json)
         const QString id = object.value(QStringLiteral("id")).toString().trimmed();
         const QString rawName = object.value(QStringLiteral("name")).toString().trimmed();
         const QString roomId = object.value(QStringLiteral("roomId")).toString().trimmed();
+        const QString pinyinKey =
+            object.value(QStringLiteral("pinyinKey")).toString().trimmed().toUpper();
+        const bool validPinyinKey =
+            pinyinKey.size() == 1
+            && ((pinyinKey.at(0) >= QLatin1Char('A') && pinyinKey.at(0) <= QLatin1Char('Z'))
+                || pinyinKey.at(0) == QLatin1Char('#'));
         if (id.isEmpty() || rawName.isEmpty() || ids.contains(id)
-            || (!roomId.isEmpty() && !isValidRoomId(roomId))) {
+            || (!roomId.isEmpty() && !isValidRoomId(roomId))
+            || !validPinyinKey) {
             continue;
         }
 
@@ -66,6 +73,7 @@ QVector<GuildMember> GuildRoster::parse(const QByteArray &json)
             anchorName,
             searchName(rawName),
             roomId,
+            pinyinKey,
         });
     }
     return members;

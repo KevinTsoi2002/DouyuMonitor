@@ -14,6 +14,7 @@
 #include <memory>
 
 #include "app/windows_notification_service.h"
+#include "app/maozi_rank_client.h"
 #include "app/update_checker.h"
 #include "app/windows_tray_service.h"
 #include "danmaku/danmaku_socket.h"
@@ -46,6 +47,11 @@ public:
     quint64 search(const QString &query) override
     {
         return client_ != nullptr ? client_->search(query) : 0;
+    }
+
+    quint64 status(const QString &roomId) override
+    {
+        return client_ != nullptr ? client_->status(roomId) : 0;
     }
 
     void cancel(quint64 requestId) override
@@ -128,6 +134,13 @@ AppController::AppController(QString serviceProgram,
     monitoring_ = std::make_unique<MonitoringModel>(this);
     danmaku_ = std::make_unique<DanmakuController>(std::move(danmakuFactory), this);
     updateChecker_ = std::make_unique<UpdateChecker>(QStringLiteral(DOUYU_APP_VERSION), QUrl{}, 8000, this);
+    maoziRank_ = std::make_unique<MaoziRankClient>(QUrl{}, QUrl{}, 15000, this);
+    connect(maoziRank_.get(), &MaoziRankClient::entriesChanged,
+            this, &AppController::guildRosterChanged);
+    connect(maoziRank_.get(), &MaoziRankClient::syncStateChanged,
+            this, &AppController::rankSyncStateChanged);
+    connect(maoziRank_.get(), &MaoziRankClient::syncStateChanged,
+            this, &AppController::guildRosterChanged);
     connect(updateChecker_.get(), &UpdateChecker::stateChanged, this, &AppController::updateStateChanged);
     connect(updateChecker_.get(), &UpdateChecker::resultChanged, this, &AppController::updateStateChanged);
 
@@ -202,7 +215,7 @@ void AppController::shutdown()
     if (favoriteMonitor_ != nullptr) favoriteMonitor_->stop();
     favoriteMonitor_.reset();
     if (service_ != nullptr) {
-        service_->shutdown();
+        service_->shutdown(250);
         service_.reset();
     }
     notificationService_.reset();
@@ -284,14 +297,48 @@ QVariantList AppController::guildRoster() const
         const QString resolvedRoomId = guildRoomResolver_ != nullptr
             ? guildRoomResolver_->roomIdFor(member.id)
             : member.roomId;
+        QVariantMap rankEntry;
+        if (maoziRank_ != nullptr) {
+            rankEntry = maoziRank_->entryForName(member.anchorName);
+            if (rankEntry.isEmpty()) rankEntry = maoziRank_->entryForRoomId(resolvedRoomId);
+            if (rankEntry.isEmpty() && member.searchName != member.anchorName) {
+                rankEntry = maoziRank_->entryForName(member.searchName);
+            }
+        }
+        const bool rankMatched = !rankEntry.isEmpty();
         projection.push_back(QVariantMap{
             {QStringLiteral("id"), member.id},
             {QStringLiteral("anchorName"), member.anchorName},
+            {QStringLiteral("pinyinKey"), member.pinyinKey},
             {QStringLiteral("roomId"), resolvedRoomId},
             {QStringLiteral("status"), guildRoomResolver_ != nullptr
                  ? guildRoomResolver_->statusFor(member.id)
                  : QString()},
+            {QStringLiteral("avatarUrl"), guildRoomResolver_ != nullptr
+                 ? guildRoomResolver_->avatarUrlFor(member.id)
+                 : QString()},
+            {QStringLiteral("liveState"), guildRoomResolver_ != nullptr
+                 ? guildRoomResolver_->liveStateFor(member.id)
+                 : QStringLiteral("unknown")},
             {QStringLiteral("active"), snapshot_.activeRoomIds.contains(resolvedRoomId)},
+            {QStringLiteral("role"), rankMatched
+                 ? rankEntry.value(QStringLiteral("role"))
+                 : QStringLiteral("other")},
+            {QStringLiteral("rankMatched"), rankMatched},
+            {QStringLiteral("rankHostId"), rankEntry.value(QStringLiteral("id"))},
+            {QStringLiteral("radarDimensions"), rankEntry.value(QStringLiteral("dimensions"))},
+            {QStringLiteral("score"), rankEntry.value(QStringLiteral("score"), -1.0)},
+            {QStringLiteral("grade"), rankEntry.value(QStringLiteral("grade"))},
+            {QStringLiteral("gradeColor"), rankEntry.value(QStringLiteral("gradeColor"))},
+            {QStringLiteral("placementAverage"),
+             rankEntry.value(QStringLiteral("placementAverage"), -1.0)},
+            {QStringLiteral("placementScoredSessions"),
+             rankEntry.value(QStringLiteral("placementScoredSessions"), 0)},
+            {QStringLiteral("playValue"), rankEntry.value(QStringLiteral("playValue"))},
+            {QStringLiteral("playValueBombed"),
+             rankEntry.value(QStringLiteral("playValueBombed"), 0)},
+            {QStringLiteral("playValueUpdatedAt"),
+             rankEntry.value(QStringLiteral("playValueUpdatedAt"))},
         });
     }
     return projection;
@@ -368,6 +415,21 @@ QUrl AppController::updateReleaseUrl() const
     return updateChecker_ != nullptr ? updateChecker_->releaseUrl() : QUrl();
 }
 
+MaoziRankClient *AppController::maoziRank() noexcept
+{
+    return maoziRank_.get();
+}
+
+bool AppController::rankSyncPending() const noexcept
+{
+    return maoziRank_ != nullptr && maoziRank_->syncPending();
+}
+
+QString AppController::rankSyncError() const
+{
+    return maoziRank_ != nullptr ? maoziRank_->lastSyncError() : QString();
+}
+
 void AppController::checkForUpdates()
 {
     if (updateChecker_ != nullptr) updateChecker_->check();
@@ -377,6 +439,16 @@ bool AppController::openLatestRelease()
 {
     const QUrl url = updateReleaseUrl();
     return url.isValid() && QDesktopServices::openUrl(url);
+}
+
+bool AppController::openExternalUrl(const QString &url)
+{
+    const QUrl target(url);
+    if (!target.isValid() || target.scheme() != QStringLiteral("https")
+        || target.host().isEmpty()) {
+        return false;
+    }
+    return QDesktopServices::openUrl(target);
 }
 
 bool AppController::backgroundHosted() const noexcept
@@ -1021,6 +1093,7 @@ QString AppController::setNavigationVisible(bool visible)
     if (snapshot_.navigationVisible == visible && workspace_->navigationVisible() == visible) return {};
     snapshot_.navigationVisible = visible;
     workspace_->setNavigationVisible(visible);
+    if (visible && guildRoomResolver_ != nullptr) guildRoomResolver_->refreshMetadata(false);
     persistWorkspace();
     return {};
 }

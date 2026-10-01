@@ -5,6 +5,7 @@
 #include <QFileInfo>
 #include <QElapsedTimer>
 #include <QGuiApplication>
+#include <QIcon>
 #include <QSettings>
 #include <QTimer>
 #include <QQmlApplicationEngine>
@@ -142,6 +143,7 @@ int main(int argc, char *argv[])
     QCoreApplication::setOrganizationDomain(QStringLiteral("douyu-monitor.local"));
     QCoreApplication::setApplicationName(QStringLiteral("DouyuMonitor"));
     ApplicationLogger::install();
+    QGuiApplication::setWindowIcon(QIcon(QStringLiteral(":/app/assets/douyu_monitor.ico")));
     qInfo() << "application started";
     QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
     QQuickStyle::setStyle(QStringLiteral("Basic"));

@@ -16,7 +16,8 @@
 namespace {
 
 constexpr auto kSettingsKey = "DouyuMonitor/nativeWorkspaceV1";
-constexpr int kCurrentVersion = 6;
+constexpr int kCurrentVersion = 8;
+constexpr int kGuildLiveStateVersion = 8;
 constexpr int kMaxTeams = 20;
 const QRegularExpression kRoomIdPattern(QStringLiteral(R"(^[0-9]{1,20}$)"));
 
@@ -205,6 +206,7 @@ DanmakuGovernanceOverride normalizeOverride(const DanmakuGovernanceOverride &raw
 
 NativeWorkspaceSnapshot normalize(NativeWorkspaceSnapshot snapshot)
 {
+    const int sourceVersion = snapshot.version;
     snapshot.version = kCurrentVersion;
     if (!isSupportedLayoutId(snapshot.layoutId)) snapshot.layoutId = QStringLiteral("auto");
     if (!isSupportedAudioMode(snapshot.audioMode)) snapshot.audioMode = QStringLiteral("single");
@@ -292,10 +294,22 @@ NativeWorkspaceSnapshot normalize(NativeWorkspaceSnapshot snapshot)
         const GuildMember *member = GuildRoster::findById(entry.memberId);
         if (member == nullptr || cachedMemberIds.contains(entry.memberId)
             || !isValidRoomId(entry.roomId) || entry.anchorName.isEmpty()
-            || entry.verifiedAtMs <= 0) {
+            || entry.verifiedAtMs <= 0
+            || (!entry.avatarUrl.isEmpty() && !isSafeHttpUrl(entry.avatarUrl))) {
             continue;
         }
         entry.anchorName = member->anchorName;
+        entry.metadataCheckedAtMs = qMax(entry.metadataCheckedAtMs, 0);
+        if (sourceVersion < kGuildLiveStateVersion) {
+            entry.liveState = QStringLiteral("unknown");
+            entry.liveCheckedAtMs = 0;
+        }
+        if (entry.liveState != QStringLiteral("online")
+            && entry.liveState != QStringLiteral("offline")
+            && entry.liveState != QStringLiteral("unknown")) {
+            entry.liveState = QStringLiteral("unknown");
+        }
+        entry.liveCheckedAtMs = qMax(entry.liveCheckedAtMs, 0);
         cachedMemberIds.insert(entry.memberId);
         guildRoomCache.push_back(std::move(entry));
     }
@@ -398,12 +412,19 @@ QJsonObject toJson(const NativeTeam &team)
 
 QJsonObject toJson(const GuildRoomCacheEntry &entry)
 {
-    return {
+    QJsonObject object{
         {QStringLiteral("memberId"), entry.memberId},
         {QStringLiteral("roomId"), entry.roomId},
         {QStringLiteral("anchorName"), entry.anchorName},
+        {QStringLiteral("metadataCheckedAtMs"), entry.metadataCheckedAtMs},
+        {QStringLiteral("liveState"), entry.liveState},
+        {QStringLiteral("liveCheckedAtMs"), entry.liveCheckedAtMs},
         {QStringLiteral("verifiedAtMs"), entry.verifiedAtMs},
     };
+    if (!entry.avatarUrl.isEmpty()) {
+        object.insert(QStringLiteral("avatarUrl"), entry.avatarUrl.toString());
+    }
+    return object;
 }
 
 QJsonObject toJson(const DanmakuDisplaySettings &settings)
@@ -763,7 +784,8 @@ std::optional<NativeTeam> teamFromJson(const QJsonObject &object)
     return team;
 }
 
-std::optional<GuildRoomCacheEntry> guildRoomCacheEntryFromJson(const QJsonObject &object)
+std::optional<GuildRoomCacheEntry> guildRoomCacheEntryFromJson(const QJsonObject &object,
+                                                               int version)
 {
     if (containsSensitiveKey(object)
         || !object.value(QStringLiteral("memberId")).isString()
@@ -777,7 +799,29 @@ std::optional<GuildRoomCacheEntry> guildRoomCacheEntryFromJson(const QJsonObject
     entry.memberId = object.value(QStringLiteral("memberId")).toString();
     entry.roomId = object.value(QStringLiteral("roomId")).toString();
     entry.anchorName = object.value(QStringLiteral("anchorName")).toString();
+    if (object.contains(QStringLiteral("metadataCheckedAtMs"))
+        && !object.value(QStringLiteral("metadataCheckedAtMs")).isDouble()) {
+        return std::nullopt;
+    }
+    if (object.contains(QStringLiteral("metadataCheckedAtMs"))) {
+        entry.metadataCheckedAtMs =
+            object.value(QStringLiteral("metadataCheckedAtMs")).toInteger();
+    }
+    if (version >= kGuildLiveStateVersion && object.contains(QStringLiteral("liveState"))) {
+        if (!object.value(QStringLiteral("liveState")).isString()) return std::nullopt;
+        entry.liveState = object.value(QStringLiteral("liveState")).toString();
+        if (entry.liveState.isEmpty()) entry.liveState = QStringLiteral("unknown");
+    }
+    if (version >= kGuildLiveStateVersion && object.contains(QStringLiteral("liveCheckedAtMs"))) {
+        if (!object.value(QStringLiteral("liveCheckedAtMs")).isDouble()) return std::nullopt;
+        entry.liveCheckedAtMs = object.value(QStringLiteral("liveCheckedAtMs")).toInteger();
+    }
     entry.verifiedAtMs = object.value(QStringLiteral("verifiedAtMs")).toInteger();
+    if (object.contains(QStringLiteral("avatarUrl"))) {
+        if (!object.value(QStringLiteral("avatarUrl")).isString()) return std::nullopt;
+        entry.avatarUrl = QUrl(object.value(QStringLiteral("avatarUrl")).toString());
+        if (!isSafeHttpUrl(entry.avatarUrl)) return std::nullopt;
+    }
     return entry;
 }
 
@@ -839,6 +883,7 @@ NativeWorkspaceSnapshot fromJson(const QJsonObject &object)
     }
 
     NativeWorkspaceSnapshot snapshot;
+    snapshot.version = version;
     for (const QJsonValue &value : object.value(QStringLiteral("library")).toArray()) {
         if (!value.isObject()) continue;
         const auto record = recordFromJson(value.toObject(), version);
@@ -859,7 +904,7 @@ NativeWorkspaceSnapshot fromJson(const QJsonObject &object)
     if (object.value(QStringLiteral("guildRoomCache")).isArray()) {
         for (const QJsonValue &value : object.value(QStringLiteral("guildRoomCache")).toArray()) {
             if (!value.isObject()) continue;
-            const auto entry = guildRoomCacheEntryFromJson(value.toObject());
+            const auto entry = guildRoomCacheEntryFromJson(value.toObject(), version);
             if (entry.has_value()) snapshot.guildRoomCache.push_back(*entry);
         }
     }

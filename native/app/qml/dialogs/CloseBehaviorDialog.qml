@@ -11,6 +11,18 @@ Dialog {
     width: 360
     padding: 16
     anchors.centerIn: parent
+    palette.window: Theme.controlSurface
+    palette.base: Theme.well
+    palette.button: Theme.controlSurface
+    palette.buttonText: Theme.text
+    palette.text: Theme.text
+    palette.windowText: Theme.text
+    palette.highlight: Theme.accent
+    palette.highlightedText: Theme.text
+    palette.brightText: Theme.text
+    palette.dark: Theme.borderStrong
+    palette.mid: Theme.border
+    palette.shadow: "#000000"
 
     background: Rectangle {
         color: Theme.controlSurface

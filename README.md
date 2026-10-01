@@ -2,12 +2,40 @@
 
 DouyuMonitor 是基于 Qt Quick/QML、C++ 和 libmpv 的 Windows x64 斗鱼多直播间监看工具。当前 `main` 只维护原生 Qt 实现，正式版布局最多支持 16 路并全部解码，24 路全解码测试版通过独立构建开关生成；旧 Electron/TypeScript 实现已从 `main` 移除，并保存在 `legacy-framework` 分支供历史追溯。
 
+## 界面预览
+
+单直播间监看，顶部信息栏显示热度，右侧房间列表可展开收起：
+
+![单直播间监控](docs/images/screenshot-single-room.jpg)
+
+多直播间同时监看，每路独立弹幕、音量、清晰度和开播状态：
+
+![多直播间监控](docs/images/screenshot-multi-room.jpg)
+
+房间列表支持历史与收藏，并显示主播头像和当前开播状态：
+
+![房间列表与历史收藏](docs/images/screenshot-room-sidebar.jpg)
+
+郎团S1野榜支持综合排名、定级赛榜和游乐值榜：
+
+![郎团S1野榜综合排名](docs/images/screenshot-maozi-rank.png)
+
+![郎团S1定级赛榜](docs/images/screenshot-maozi-placement.png)
+
+![郎团S1游乐值榜](docs/images/screenshot-maozi-play-value.png)
+
+24 路全解码测试版在 1920x1080 下的自动布局：
+
+![24路自动布局](docs/images/screenshot-24-rooms.png)
+
 ## 当前版本
 
-- 正式版：`V0.2.13`
-- Windows 正式版安装包：`DouyuMonitor-Setup-V0.2.13.exe`
-- 24 路全解码测试版：`V0.2.13-beta.24`
-- Windows 24 路测试版安装包：`DouyuMonitor-Setup-V0.2.13-beta.24.exe`
+- 正式版：`V0.2.14`
+- Windows 正式版安装包：`DouyuMonitor-Setup-V0.2.14.exe`
+- 24 路全解码测试版：`V0.2.14-beta.24`
+- Windows 24 路测试版安装包：`DouyuMonitor-Setup-V0.2.14-beta.24.exe`
+- 正式版 Release：[DouyuMonitor V0.2.14](https://github.com/KevinTsoi2002/DouyuMonitor/releases/tag/V0.2.14)
+- 24 路测试版 Release：[DouyuMonitor V0.2.14-beta.24](https://github.com/KevinTsoi2002/DouyuMonitor/releases/tag/V0.2.14-beta.24)
 - 未提供代码签名；下载后请以 Release 页面中的 SHA-256 值校验安装包
 
 ## 功能
@@ -17,9 +45,13 @@ DouyuMonitor 是基于 Qt Quick/QML、C++ 和 libmpv 的 Windows x64 斗鱼多�
 - 正式版自动布局、主直播间布局和双主直播间布局最多 16 路并全部解码；双主布局要求至少 4 路，两个主画面均享有高画质优先级
 - 24 路全解码测试版支持三种布局最多 24 路，并同时创建 24 路播放器
 - 每个房间独立弹幕、弹幕过滤、重复抑制和峰值治理
-- 房间资料、主播头像、标题、观众数和开播状态定时刷新
+- 房间资料、主播头像、标题、热度和开播状态定时刷新
 - 历史记录、收藏、自定义分组和工作区预设
-- 顶栏房间列表按钮右侧提供仓鼠特工导航入口，按独立队伍展示内置公会名单；未分配成员进入“未分队”，队伍管理位于“设置 -> 队伍管理”
+- 顶栏房间列表按钮右侧提供CSTG狼团S1导航页入口，按独立队伍展示内置公会名单；未分配成员进入“未分队”，队伍管理位于“设置 -> 队伍管理”
+- CSTG狼团S1导航页按“团长、队伍、队长、队员、其他”分层展示，并以野榜身份为角色权威来源；主播列表按昵称拼音首字母排序
+- 鼠标悬停导航页主播可查看雷达图、定级赛总评和游乐值，点击“查看详情”跳转“郎团S1野榜”页面
+- 导航页可见期间按版本号增量同步野榜数据，版本未变化时不重复拉取完整快照
+- 主播开播状态写入本地缓存，短时间重复打开导航页不会再次排队检查全部主播
 - 声音总控、单声道/多声道、独立音量和默认音频焦点
 - StreamGet 动态清晰度列表、播放源重试和状态 Toast
 - 应用级全屏，支持 F11 切换和 Escape 退出
@@ -80,9 +112,23 @@ ctest --preset windows-x64-release
 .\scripts\build-windows-installer.ps1
 ```
 
-安装包输出到 `native/out/installer/DouyuMonitor-Setup-V0.2.13.exe`。后续版本会自动将版本号加入安装包文件名。构建 24 路全解码测试版时执行 `.\scripts\build-windows-installer.ps1 -ReleaseDir .\out\build\windows-x64-beta24 -Version 0.2.13-beta.24`。运行安装包时可选择安装目录；如果选择 `D:\` 这样的磁盘根目录，安装器会自动使用 `D:\DouyuMonitor`，不会把程序文件直接写入根目录。安装完成后会创建开始菜单和可选的桌面快捷方式，并可直接启动程序。卸载入口由 Inno Setup 生成的 `unins000.exe` 提供，同时登记到 Windows 设置的“已安装的应用”。
+安装包输出到 `native/out/installer/DouyuMonitor-Setup-V0.2.14.exe`。后续版本会自动将版本号加入安装包文件名。构建 24 路全解码测试版时执行 `.\scripts\build-windows-installer.ps1 -ReleaseDir .\out\build\windows-x64-beta24 -Version 0.2.14-beta.24`。运行安装包时可选择安装目录；如果选择 `D:\` 这样的磁盘根目录，安装器会自动使用 `D:\DouyuMonitor`，不会把程序文件直接写入根目录。安装完成后会创建开始菜单和可选的桌面快捷方式，并可直接启动程序。卸载入口由 Inno Setup 生成的 `unins000.exe` 提供，同时登记到 Windows 设置的“已安装的应用”。
 
-仓鼠特工导航只展示应用内置的公会名单，不根据直播资料动态扩张名单，也不显示团长、队长、队员或 OB 等角色标签。已确认房间号可以直接加入当前工作区；无法自动确认的成员需要在行内手工输入房间号。快捷加入受当前构建的布局容量限制。
+CSTG狼团S1导航页展示应用内置的公会名单、主播头像和开播状态，不根据直播资料动态扩张名单，也不显示团长、队长、队员或 OB 等角色标签。已确认房间号可以直接加入当前工作区；无法自动确认的成员需要在行内手工输入房间号。快捷加入受当前构建的布局容量限制。
+
+### CSTG狼团S1导航与郎团S1野榜
+
+导航页按“团长 -> 队伍 -> 队长 -> 队员 -> 其他”排列主播。角色以野榜身份集合为准；导航页中存在但野榜中没有记录的成员归入“其他”。每个小分类内按主播昵称拼音首字母排序。
+
+鼠标悬停在主播上会显示共享卡片，包含雷达图、定级赛总评和游乐值；点击“查看详情”进入郎团S1野榜页面。导航页可见时每 60 秒做一次轻量版本检查，版本变化后才重新拉取完整快照；同步失败时保留上一次成功数据并提示数据可能已过期。开播状态使用 15 分钟本地缓存，短时间内关闭再打开导航页会直接复用结果；缓存过期后才做轻量开播状态刷新。
+
+郎团S1野榜页面展示排名、主播、房间号、队伍、评级、综合评分、参与人数和开播状态：
+
+![郎团S1野榜](docs/images/screenshot-rank-page.jpg)
+
+队伍管理位于“设置 -> 队伍管理”，队伍是导航页的主分组，可创建空队伍并调整成员归属：
+
+![队伍管理](docs/images/screenshot-team-manager.jpg)
 
 ## StreamGet 服务
 

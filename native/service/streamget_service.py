@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import sys
 from collections.abc import AsyncIterable, Awaitable, Callable
 from typing import Any
@@ -36,7 +37,9 @@ async def run_service(
     lines: AsyncIterable[str],
     emit: Callable[[dict[str, Any]], Awaitable[None]],
     backend: Any,
-) -> None:
+    *,
+    exit_on_shutdown: bool = False,
+) -> bool:
     tasks: dict[int, asyncio.Task[None]] = {}
     semaphore = asyncio.Semaphore(2)
     shutting_down = False
@@ -61,6 +64,14 @@ async def run_service(
                 elif request["op"] == "search":
                     results = await asyncio.to_thread(backend.search, request["query"])
                     await emit({"requestId": request_id, "ok": True, "results": results})
+                elif request["op"] == "status":
+                    is_live = await asyncio.to_thread(backend.room_status, request["query"])
+                    await emit({
+                        "requestId": request_id,
+                        "ok": True,
+                        "status": True,
+                        "isLive": bool(is_live),
+                    })
         except asyncio.CancelledError:
             raise
         except BackendError as error:
@@ -88,7 +99,12 @@ async def run_service(
             for task in list(tasks.values()):
                 task.cancel()
             await emit({"requestId": request_id, "ok": True, "shutdown": True})
-            break
+            if exit_on_shutdown:
+                # Worker threads may be blocked in synchronous HTTP calls that
+                # cannot be interrupted. Exit after the flushed protocol response
+                # instead of waiting for asyncio's default executor to join.
+                os._exit(0)
+            return True
         elif operation == "cancel":
             target = tasks.get(request["targetRequestId"])
             if target is not None:
@@ -103,6 +119,7 @@ async def run_service(
 
     if tasks:
         await asyncio.gather(*list(tasks.values()), return_exceptions=True)
+    return False
 
 
 async def _stdin_lines() -> AsyncIterable[str]:
@@ -120,7 +137,7 @@ async def _stdout_emit(value: dict[str, Any]) -> None:
 
 async def main() -> int:
     _configure_stdio()
-    await run_service(_stdin_lines(), _stdout_emit, DouyuBackend())
+    await run_service(_stdin_lines(), _stdout_emit, DouyuBackend(), exit_on_shutdown=True)
     return 0
 
 

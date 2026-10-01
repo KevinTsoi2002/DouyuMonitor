@@ -11,13 +11,23 @@ Item {
     property bool canAdd: false
     signal addRequested(string memberId)
     signal roomIdSubmitted(string memberId, string roomId)
+    signal hoverEntered(string memberId)
+    signal hoverExited(string memberId)
     readonly property string memberId: member ? String(member.id || "") : ""
     readonly property string anchorName: member ? String(member.anchorName || memberId) : ""
     readonly property string roomId: member ? String(member.roomId || "") : ""
     readonly property bool resolved: roomId.length > 0
     readonly property bool confirming: roomEdit.visible
 
-    height: confirming ? 76 : 38
+    height: confirming ? 84 : 46
+
+    HoverHandler {
+        id: memberHover
+        onHoveredChanged: {
+            if (hovered) root.hoverEntered(root.memberId)
+            else root.hoverExited(root.memberId)
+        }
+    }
 
     function beginConfirmation()
     {
@@ -36,15 +46,51 @@ Item {
     }
 
     Row {
+        id: memberLine
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
-        height: 38
+        height: 46
         spacing: 6
+
+        Rectangle {
+            id: avatar
+            objectName: "guildMemberAvatar"
+            anchors.verticalCenter: parent.verticalCenter
+            width: 30
+            height: 30
+            radius: 15
+            color: Theme.well
+
+            Image {
+                id: avatarImage
+                objectName: "guildMemberAvatarImage"
+                anchors.fill: parent
+                anchors.margins: 1
+                source: root.member ? String(root.member.avatarUrl || "") : ""
+                visible: source.toString().length > 0 && status !== Image.Error
+                fillMode: Image.PreserveAspectCrop
+                asynchronous: true
+                smooth: true
+                clip: true
+            }
+
+            Text {
+                objectName: "guildMemberAvatarFallback"
+                anchors.centerIn: parent
+                visible: !avatarImage.visible
+                color: Theme.text
+                font.bold: true
+                font.pixelSize: 11
+                text: root.anchorName.length > 0 ? root.anchorName.slice(0, 1)
+                                                 : root.memberId.slice(0, 1)
+            }
+        }
 
         Column {
             anchors.verticalCenter: parent.verticalCenter
-            width: Math.max(80, parent.width - statusLabel.width - addButton.width - 18)
+            width: Math.max(80, parent.width - avatar.width - liveState.width - statusLabel.width
+                           - addButton.width - 30)
             spacing: 1
 
             Text {
@@ -59,7 +105,7 @@ Item {
             ToolButton {
                 objectName: "guildMemberRoomLabel"
                 width: parent.width
-                height: 15
+                height: 16
                 enabled: !root.resolved
                 text: root.resolved ? root.roomId : "待确认"
                 padding: 0
@@ -75,16 +121,52 @@ Item {
             }
         }
 
+        Row {
+            id: liveState
+            objectName: "guildMemberLiveState"
+            anchors.verticalCenter: parent.verticalCenter
+            width: 46
+            spacing: 4
+
+            Rectangle {
+                anchors.verticalCenter: parent.verticalCenter
+                width: 5
+                height: 5
+                radius: 3
+                color: root.member && root.member.liveState === "online"
+                       ? Theme.online
+                       : (root.member && root.member.liveState === "offline"
+                          ? Theme.mutedText : Theme.warning)
+            }
+
+            Text {
+                objectName: "guildMemberLiveStateLabel"
+                anchors.verticalCenter: parent.verticalCenter
+                width: parent.width - 9
+                color: root.member && root.member.liveState === "online"
+                       ? Theme.online
+                       : (root.member && root.member.liveState === "offline"
+                          ? Theme.mutedText : Theme.warning)
+                elide: Text.ElideRight
+                font.pixelSize: 9
+                text: root.member && root.member.liveState === "online"
+                      ? "直播中"
+                      : (root.member && root.member.liveState === "offline"
+                         ? "未开播" : "检查中")
+            }
+        }
+
         Text {
             id: statusLabel
             objectName: "guildMemberStatus"
             anchors.verticalCenter: parent.verticalCenter
-            width: 44
-            color: root.active ? Theme.online : Theme.mutedText
+            width: root.active ? 36 : 0
+            visible: root.active
+            color: Theme.online
             horizontalAlignment: Text.AlignRight
             elide: Text.ElideRight
             font.pixelSize: 9
-            text: root.active ? "已添加" : ""
+            text: "已添加"
         }
 
         ToolButton {
@@ -112,14 +194,13 @@ Item {
             }
         }
     }
-
     TextField {
         id: roomEdit
         objectName: "guildMemberRoomInput"
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
-        anchors.topMargin: 40
+        anchors.topMargin: 48
         height: 0
         visible: false
         placeholderText: "输入房间号"
