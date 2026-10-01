@@ -4,17 +4,19 @@ DouyuMonitor 是基于 Qt Quick/QML、C++ 和 libmpv 的 Windows x64 斗鱼多�
 
 ## 界面预览
 
-单直播间监看，顶部信息栏显示热度，右侧房间列表可展开收起：
+图一 单直播间监看，顶部信息栏显示热度，右侧房间列表可展开收起：
 
-![单直播间监控](docs/images/screenshot-single-room.jpg)
+![单直播间监控](docs/images/screenshot-single-room.png)
 
-多直播间同时监看，每路独立弹幕、音量、清晰度和开播状态：
+图二 多直播间同时监看，每路独立弹幕、音量、清晰度和开播状态：
 
-![多直播间监控](docs/images/screenshot-multi-room.jpg)
+![多直播间监控](docs/images/screenshot-multi-room.png)
 
-房间列表支持历史与收藏，并显示主播头像和当前开播状态：
+图三、图四 房间列表支持历史与收藏，并显示主播头像和当前开播状态：
 
-![房间列表与历史收藏](docs/images/screenshot-room-sidebar.jpg)
+![房间列表与历史收藏一](docs/images/screenshot-room-sidebar.png)
+
+![房间列表与历史收藏二](docs/images/screenshot-room-sidebar-2.png)
 
 郎团S1野榜支持综合排名、定级赛榜和游乐值榜：
 
