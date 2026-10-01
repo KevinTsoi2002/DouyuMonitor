@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(DouyuMonitorNative VERSION 0.2.13 LANGUAGES CXX)
+project(DouyuMonitorNative VERSION 0.2.14 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -1018,6 +1018,12 @@ set_target_properties(douyu_monitor_native PROPERTIES
 
 if(WIN32)
     target_sources(douyu_monitor_native PRIVATE app/resources/app_icon.rc)
+    qt_add_resources(douyu_monitor_native native_app_icon
+        PREFIX "/app"
+        BASE "${CMAKE_CURRENT_SOURCE_DIR}"
+        FILES
+            app/assets/douyu_monitor.ico
+    )
 
     add_executable(douyu_monitor_uninstaller WIN32
         app/uninstaller_main.cpp

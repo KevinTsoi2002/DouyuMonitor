@@ -7,7 +7,9 @@ function densityRatio(density) {
 }
 
 function lanes(height, fontSize, region, density) {
-    const lineHeight = Math.max(1, fontSize * 1.35)
+    // Outlined text and the optional shadow extend beyond the nominal glyph
+    // box. Keep a full 1.6x font line box so neighbouring lanes cannot touch.
+    const lineHeight = Math.max(1, fontSize * 1.6)
     const regionHeight = region === "full" ? height : height / 2
     const regionTop = region === "bottom" ? height / 2 : 0
     const maximum = Math.max(1, Math.floor(regionHeight / lineHeight))

@@ -7,10 +7,9 @@ Popup {
 
     property var member: null
     readonly property bool hasRankData: member && member.rankMatched
-    signal detailsRequested(string query)
 
     width: 320
-    height: 300
+    height: 258
     padding: 12
     closePolicy: Popup.NoAutoClose
     focus: false
@@ -165,18 +164,6 @@ Popup {
                 font.bold: true
                 font.pixelSize: 10
             }
-        }
-
-        Item { width: 1; height: 4 }
-
-        Button {
-            objectName: "guildRankDetailsButton"
-            width: parent.width
-            height: 30
-            text: "查看详情"
-            onClicked: root.detailsRequested(root.member
-                                             ? String(root.member.anchorName || "")
-                                             : "")
         }
     }
 }

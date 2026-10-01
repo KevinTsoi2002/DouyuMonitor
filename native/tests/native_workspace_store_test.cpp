@@ -77,6 +77,7 @@ private slots:
     void normalizesTeamFieldsAndLimits();
     void defaultsMissingTeamsAndNavigationVisibility();
     void roundTripsGuildRoomCacheWithoutSensitiveFields();
+    void roundTripsGuildLiveStateCache();
     void normalizesDuplicateAndInvalidGuildRoomCacheEntries();
 };
 
@@ -229,7 +230,7 @@ void NativeWorkspaceStoreTest::roundTripsRequestedQualityRate()
 
     QVERIFY(store.save(snapshot));
     const NativeWorkspaceSnapshot loaded = store.load();
-    QCOMPARE(loaded.version, 6);
+        QCOMPARE(loaded.version, 8);
     QCOMPARE(loaded.library.front().requestedQualityRate, 8);
     QCOMPARE(loaded.library.back().requestedQualityRate, -1);
     QCOMPARE(loaded, snapshot);
@@ -246,7 +247,7 @@ void NativeWorkspaceStoreTest::migratesVersionFourRecordsWithoutQualityRate()
     NativeWorkspaceStore store(&settings);
 
     const NativeWorkspaceSnapshot loaded = store.load();
-    QCOMPARE(loaded.version, 6);
+    QCOMPARE(loaded.version, 8);
     QCOMPARE(loaded.library.size(), 1);
     QCOMPARE(loaded.library.front().requestedQuality, StreamQuality::High);
     QCOMPARE(loaded.library.front().requestedQualityRate, -1);
@@ -361,7 +362,7 @@ void NativeWorkspaceStoreTest::roundTripsIndependentTeamsAndOneTeamPerMember()
     NativeWorkspaceStore store(&settings);
     QVERIFY(store.save(snapshot));
     const NativeWorkspaceSnapshot loaded = store.load();
-    QCOMPARE(loaded.version, 6);
+    QCOMPARE(loaded.version, 8);
     QCOMPARE(loaded.teams.size(), 4);
     QCOMPARE(loaded.teams.at(2).memberIds, QStringList{});
     QCOMPARE(loaded.teams.at(3).memberIds, QStringList{});
@@ -430,7 +431,7 @@ void NativeWorkspaceStoreTest::defaultsMissingTeamsAndNavigationVisibility()
     NativeWorkspaceStore store(&settings);
 
     const NativeWorkspaceSnapshot loaded = store.load();
-    QCOMPARE(loaded.version, 6);
+    QCOMPARE(loaded.version, 8);
     QVERIFY(loaded.teams.isEmpty());
     QVERIFY(!loaded.navigationVisible);
 }
@@ -446,16 +447,26 @@ void NativeWorkspaceStoreTest::roundTripsGuildRoomCacheWithoutSensitiveFields()
         {QStringLiteral("hamster-001"),
          QStringLiteral("71415"),
          QStringLiteral("寅子"),
-         1'700'000'000'000},
+         QUrl(),
+         1'700'000'000'002,
+         1'700'000'000'000,
+         QStringLiteral("online"),
+         1'700'000'000'004},
         {QStringLiteral("hamster-002"),
          QStringLiteral("84452"),
          QStringLiteral("主播阿飞"),
-         1'700'000'000'001},
+         QUrl(QStringLiteral("https://example.invalid/avatar.jpg")),
+         1'700'000'000'003,
+         1'700'000'000'001,
+          QStringLiteral("offline"),
+         1'700'000'000'005},
     };
 
     QVERIFY(store.save(snapshot));
     const NativeWorkspaceSnapshot loaded = store.load();
     QCOMPARE(loaded.guildRoomCache, snapshot.guildRoomCache);
+    QCOMPARE(loaded.guildRoomCache.at(1).avatarUrl,
+             QUrl(QStringLiteral("https://example.invalid/avatar.jpg")));
     const QByteArray saved = settings.value(QStringLiteral("DouyuMonitor/nativeWorkspaceV1"))
                                  .toByteArray();
     for (const QByteArray &key : {QByteArrayLiteral("token"), QByteArrayLiteral("cookie"),
@@ -466,6 +477,32 @@ void NativeWorkspaceStoreTest::roundTripsGuildRoomCacheWithoutSensitiveFields()
                                   QByteArrayLiteral("raw")}) {
         QVERIFY2(!saved.contains(key), key.constData());
     }
+}
+
+void NativeWorkspaceStoreTest::roundTripsGuildLiveStateCache()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSettings settings(directory.filePath(QStringLiteral("workspace.ini")), QSettings::IniFormat);
+    NativeWorkspaceStore store(&settings);
+    NativeWorkspaceSnapshot snapshot = fixtureWorkspace();
+    snapshot.guildRoomCache = {{
+        QStringLiteral("hamster-001"),
+        QStringLiteral("71415"),
+        QStringLiteral("寅子"),
+        QUrl(),
+        1'700'000'000'002,
+        1'700'000'000'000,
+        QStringLiteral("online"),
+        1'700'000'000'006,
+    }};
+
+    QVERIFY(store.save(snapshot));
+    const NativeWorkspaceSnapshot loaded = store.load();
+    QCOMPARE(loaded.version, 8);
+    QCOMPARE(loaded.guildRoomCache.size(), 1);
+    QCOMPARE(loaded.guildRoomCache.first().liveState, QStringLiteral("online"));
+    QCOMPARE(loaded.guildRoomCache.first().liveCheckedAtMs, qint64(1'700'000'000'006));
 }
 
 void NativeWorkspaceStoreTest::normalizesDuplicateAndInvalidGuildRoomCacheEntries()
@@ -479,19 +516,35 @@ void NativeWorkspaceStoreTest::normalizesDuplicateAndInvalidGuildRoomCacheEntrie
         {QStringLiteral("unknown-member"),
          QStringLiteral("12345"),
          QStringLiteral("未知主播"),
-         1},
+         QUrl(),
+         0,
+         1,
+         QStringLiteral("unknown"),
+         0},
         {QStringLiteral("hamster-001"),
          QStringLiteral("abc"),
          QStringLiteral("寅子"),
-         2},
+         QUrl(),
+         0,
+         2,
+         QStringLiteral("unknown"),
+         0},
         {QStringLiteral("hamster-001"),
          QStringLiteral("71415"),
          QStringLiteral("寅子"),
-         3},
+         QUrl(),
+         0,
+         3,
+         QStringLiteral("online"),
+         9},
         {QStringLiteral("hamster-001"),
          QStringLiteral("71416"),
          QStringLiteral("寅子"),
-         4},
+         QUrl(),
+         0,
+         4,
+         QStringLiteral("offline"),
+         10},
     };
 
     QVERIFY(store.save(snapshot));
@@ -500,6 +553,9 @@ void NativeWorkspaceStoreTest::normalizesDuplicateAndInvalidGuildRoomCacheEntrie
     QCOMPARE(loaded.guildRoomCache.first().memberId, QStringLiteral("hamster-001"));
     QCOMPARE(loaded.guildRoomCache.first().roomId, QStringLiteral("71415"));
     QCOMPARE(loaded.guildRoomCache.first().anchorName, QStringLiteral("寅子"));
+    QVERIFY(loaded.guildRoomCache.first().avatarUrl.isEmpty());
+    QCOMPARE(loaded.guildRoomCache.first().liveState, QStringLiteral("online"));
+    QCOMPARE(loaded.guildRoomCache.first().liveCheckedAtMs, qint64(9));
 }
 QTEST_MAIN(NativeWorkspaceStoreTest)
 

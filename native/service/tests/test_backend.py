@@ -133,6 +133,25 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(results[0]["avatarUrl"], "https://example.com/a.jpg")
         self.assertFalse(results[1]["online"])
 
+    def test_queries_only_room_status_without_building_search_results(self):
+        calls = []
+
+        def fetch_json(url, _timeout):
+            calls.append(url)
+            return {
+                "error": 0,
+                "data": {
+                    "room_id": "63136",
+                    "room_name": "Test Live",
+                    "owner_name": "Anchor",
+                    "room_status": "0",
+                },
+            }
+
+        backend = DouyuBackend(fetch_json=fetch_json)
+        self.assertFalse(backend.room_status("63136"))
+        self.assertEqual(calls, ["https://open.douyucdn.cn/api/RoomApi/room/63136"])
+
     def test_searches_numeric_vip_id_and_maps_real_room_id(self):
         def fetch_json(url, _timeout):
             if url.startswith("https://www.douyu.com/wgapi/livenc/search/overallSearchV8"):

@@ -34,6 +34,10 @@ ApplicationWindow {
     property bool sidebarVisible: appController
                                   ? appController.workspace.sidebarVisible
                                   : true
+    property string hoveredGuildMemberId: ""
+    property var hoveredGuildMember: null
+    property real guildHoverX: 0
+    property real guildHoverY: 0
     property bool navigationFallbackVisible: false
     readonly property bool navigationVisible: workspaceModel
                                              ? workspaceModel.navigationVisible
@@ -48,10 +52,6 @@ ApplicationWindow {
     readonly property var libraryRooms: appController ? appController.libraryRooms : []
     readonly property var workspaceModel: appController ? appController.workspace : null
     readonly property var monitoringModel: appController ? appController.monitoring : null
-    property string hoveredGuildMemberId: ""
-    property var hoveredGuildMember: null
-    property real guildHoverX: 0
-    property real guildHoverY: 0
     function guildMemberById(memberId)
     {
         if (!appController || !appController.guildRoster) return null
@@ -84,15 +84,7 @@ ApplicationWindow {
                     Math.max(8, root.guildHoverX + 10))
         y: Math.min(root.height - height - 8,
                     Math.max(8, root.guildHoverY - 18))
-        onDetailsRequested: function(query) {
-            guildRankHoverCard.visible = false
-            root.currentView = "maoziRank"
-            maoziRankPage.query = query
-            if (root.appController && root.appController.maoziRank)
-                root.appController.maoziRank.refresh()
-        }
     }
-
     function toggleSidebarVisibility() {
         const nextVisible = !sidebarVisible
         if (appController) {

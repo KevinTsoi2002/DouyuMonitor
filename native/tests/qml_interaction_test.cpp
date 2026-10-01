@@ -250,6 +250,7 @@ public:
                 {QStringLiteral("active"), false},
                 {QStringLiteral("role"), QStringLiteral("member")},
                 {QStringLiteral("rankMatched"), true},
+                {QStringLiteral("score"), 15.36},
                 {QStringLiteral("radarDimensions"), QVariantList{
                      QVariantMap{{QStringLiteral("name"), QStringLiteral("力量")},
                                  {QStringLiteral("average"), 18.0},
@@ -356,6 +357,9 @@ private:
 class FakeMaoziRankClient final : public QObject {
     Q_OBJECT
     Q_PROPERTY(QVariantList entries READ entries NOTIFY entriesChanged)
+    Q_PROPERTY(QVariantList placementEntries READ placementEntries NOTIFY entriesChanged)
+    Q_PROPERTY(QVariantMap placementColumns READ placementColumns NOTIFY entriesChanged)
+    Q_PROPERTY(QVariantList playValueEntries READ playValueEntries NOTIFY entriesChanged)
     Q_PROPERTY(bool loading READ loading NOTIFY entriesChanged)
     Q_PROPERTY(QString statusText READ statusText NOTIFY entriesChanged)
 
@@ -396,6 +400,53 @@ public:
 
     bool loading() const { return loading_; }
     QString statusText() const { return QStringLiteral("共 2 位主播 · 200 人参与"); }
+    QVariantList placementEntries() const
+    {
+        return {
+            QVariantMap{
+                {QStringLiteral("id"), QStringLiteral("host-1")},
+                {QStringLiteral("name"), QStringLiteral("寅子")},
+                {QStringLiteral("roomId"), QStringLiteral("71415")},
+                {QStringLiteral("posterUrl"), QString()},
+                {QStringLiteral("placementRank"), 1},
+                {QStringLiteral("placementAverage"), 88.5},
+                {QStringLiteral("placementScoredSessions"), 3},
+                {QStringLiteral("placementSessions"),
+                 QVariantMap{{QStringLiteral("2026-09-28:1"), 94.0},
+                             {QStringLiteral("2026-09-28:2"), 88.4},
+                             {QStringLiteral("2026-09-29:1"), 83.1}}},
+            },
+        };
+    }
+    QVariantMap placementColumns() const
+    {
+        return {
+            {QStringLiteral("2026-09-28:1"),
+             QVariantMap{{QStringLiteral("key"), QStringLiteral("2026-09-28:1")},
+                         {QStringLiteral("label"), QStringLiteral("28午")}}},
+            {QStringLiteral("2026-09-28:2"),
+             QVariantMap{{QStringLiteral("key"), QStringLiteral("2026-09-28:2")},
+                         {QStringLiteral("label"), QStringLiteral("28晚")}}},
+            {QStringLiteral("2026-09-29:1"),
+             QVariantMap{{QStringLiteral("key"), QStringLiteral("2026-09-29:1")},
+                         {QStringLiteral("label"), QStringLiteral("29午")}}},
+        };
+    }
+    QVariantList playValueEntries() const
+    {
+        return {
+            QVariantMap{
+                {QStringLiteral("name"), QStringLiteral("尐表哥")},
+                {QStringLiteral("points"), 10600.0},
+                {QStringLiteral("roomId"), QStringLiteral("217331")},
+                {QStringLiteral("teamName"), QStringLiteral("未分队")},
+                {QStringLiteral("role"), QStringLiteral("captain")},
+                {QStringLiteral("posterUrl"), QString()},
+                {QStringLiteral("live"), true},
+                {QStringLiteral("rank"), 1},
+            },
+        };
+    }
 
     Q_INVOKABLE void refresh()
     {
@@ -418,8 +469,14 @@ class FakeMaoziController final : public QObject {
 
 public:
     FakeMaoziRankClient *maoziRank() noexcept { return &rank; }
+    Q_INVOKABLE bool openExternalUrl(const QString &url)
+    {
+        lastExternalUrl = url;
+        return true;
+    }
 
     FakeMaoziRankClient rank;
+    QString lastExternalUrl;
 };
 
 void registerQmlTypes()
@@ -563,6 +620,7 @@ private slots:
     void rendersGuildMemberAvatarAndLiveState();
     void ordersGuildNavigationByRoleTeamAndPinyin();
     void checksRankVersionOnlyWhileGuildNavigationIsVisible();
+    void hoverCardOmitsDetailsButton();
     void opensMaoziRankPageFromHeader();
     void filtersAndRefreshesMaoziRankPage();
 };
@@ -800,6 +858,17 @@ void QmlInteractionTest::checksRankVersionOnlyWhileGuildNavigationIsVisible()
 
     panel->setProperty("visible", false);
     QTRY_VERIFY(!timer->property("running").toBool());
+}
+
+void QmlInteractionTest::hoverCardOmitsDetailsButton()
+{
+    QQmlApplicationEngine engine;
+    QQmlComponent component(
+        &engine, QUrl(QStringLiteral("qrc:/qml/components/GuildRankHoverCard.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    std::unique_ptr<QObject> card(component.create());
+    QVERIFY2(card != nullptr, qPrintable(component.errorString()));
+    QVERIFY(card->findChild<QObject *>(QStringLiteral("guildRankDetailsButton")) == nullptr);
 }
 
 void QmlInteractionTest::quickAddsResolvedGuildMember()
@@ -2800,6 +2869,35 @@ void QmlInteractionTest::filtersAndRefreshesMaoziRankPage()
     QVERIFY(list != nullptr);
     QTRY_COMPARE(list->property("count").toInt(), 2);
 
+    QObject *placementTab = page->findChild<QObject *>(QStringLiteral("maoziPlacementTab"));
+    QObject *playValueTab = page->findChild<QObject *>(QStringLiteral("maoziPlayValueTab"));
+    QObject *placementHeader =
+        page->findChild<QObject *>(QStringLiteral("maoziPlacementHeaderBar"));
+    QObject *playValueHeader =
+        page->findChild<QObject *>(QStringLiteral("maoziPlayValueHeaderBar"));
+    QObject *placementList =
+        page->findChild<QObject *>(QStringLiteral("maoziPlacementList"));
+    QObject *playValueList =
+        page->findChild<QObject *>(QStringLiteral("maoziPlayValueList"));
+    QVERIFY(placementTab != nullptr);
+    QVERIFY(playValueTab != nullptr);
+    QVERIFY(placementHeader != nullptr);
+    QVERIFY(playValueHeader != nullptr);
+    QVERIFY(placementList != nullptr);
+    QVERIFY(playValueList != nullptr);
+
+    click(placementTab);
+    QTRY_VERIFY(placementHeader->property("visible").toBool());
+    QTRY_VERIFY(placementList->property("visible").toBool());
+    QTRY_COMPARE(placementList->property("count").toInt(), 1);
+    QVERIFY(!playValueHeader->property("visible").toBool());
+
+    click(playValueTab);
+    QTRY_VERIFY(playValueHeader->property("visible").toBool());
+    QTRY_VERIFY(playValueList->property("visible").toBool());
+    QTRY_COMPARE(playValueList->property("count").toInt(), 1);
+    QVERIFY(!placementHeader->property("visible").toBool());
+
     QObject *search = page->findChild<QObject *>(QStringLiteral("maoziSearchField"));
     QVERIFY(search != nullptr);
     search->setProperty("text", QStringLiteral("阿飞"));
@@ -2809,6 +2907,12 @@ void QmlInteractionTest::filtersAndRefreshesMaoziRankPage()
     QVERIFY(refresh != nullptr);
     click(refresh);
     QCOMPARE(controller.rank.refreshCount, 1);
+
+    QObject *openSite = page->findChild<QObject *>(QStringLiteral("maoziOpenSiteButton"));
+    QVERIFY(openSite != nullptr);
+    click(openSite);
+    QCOMPARE(controller.lastExternalUrl,
+             QStringLiteral("https://dy656750-39nb2xg.maozi.io/"));
 }
 
 QTEST_MAIN(QmlInteractionTest)

@@ -14,6 +14,9 @@ class QTimer;
 class MaoziRankClient final : public QObject {
     Q_OBJECT
     Q_PROPERTY(QVariantList entries READ entries NOTIFY entriesChanged)
+    Q_PROPERTY(QVariantList placementEntries READ placementEntries NOTIFY entriesChanged)
+    Q_PROPERTY(QVariantMap placementColumns READ placementColumns NOTIFY entriesChanged)
+    Q_PROPERTY(QVariantList playValueEntries READ playValueEntries NOTIFY entriesChanged)
     Q_PROPERTY(bool loading READ loading NOTIFY loadingChanged)
     Q_PROPERTY(QString errorMessage READ errorMessage NOTIFY entriesChanged)
     Q_PROPERTY(int totalVoters READ totalVoters NOTIFY entriesChanged)
@@ -29,6 +32,9 @@ public:
                              QObject *parent = nullptr);
 
     QVariantList entries() const { return entries_; }
+    QVariantList placementEntries() const { return placementEntries_; }
+    QVariantMap placementColumns() const { return placementColumns_; }
+    QVariantList playValueEntries() const { return playValueEntries_; }
     bool loading() const noexcept { return loading_; }
     QString errorMessage() const { return errorMessage_; }
     int totalVoters() const noexcept { return totalVoters_; }
@@ -66,6 +72,9 @@ private:
     void handleVersionReply(QNetworkReply *reply);
     void parseSnapshot(const QByteArray &payload);
     void applyEntries(QVariantList entries,
+                      QVariantList placementEntries,
+                      QVariantMap placementColumns,
+                      QVariantList playValueEntries,
                       int totalVoters,
                       const QString &updatedAt,
                       const QString &version);
@@ -86,6 +95,9 @@ private:
     PendingAuthAction pendingAuthAction_ = PendingAuthAction::None;
     QString accessToken_;
     QVariantList entries_;
+    QVariantList placementEntries_;
+    QVariantMap placementColumns_;
+    QVariantList playValueEntries_;
     QHash<QString, int> entryIndexByRoomId_;
     QHash<QString, int> entryIndexByName_;
     bool loading_ = false;

@@ -36,11 +36,13 @@ private slots:
     void startsLazilyAndPings();
     void searchesWithTypedResults();
     void searchesNumericRoomWithScriptedStatus();
+    void refreshesRoomStatus();
     void correlatesRequestsAndKeepsTwoInFlight();
     void timesOutAndCancelsLateResponses();
     void rejectsMalformedChildOutput();
     void failsPendingWorkAndRestartsAfterCrash();
     void shutsDownWithinBound();
+    void killsAnUnresponsiveServiceAtShutdownBoundary();
     void startsANewClientAfterImmediateShutdown();
 };
 
@@ -120,6 +122,27 @@ void StreamgetProcessClientTest::searchesNumericRoomWithScriptedStatus()
         QCOMPARE(result.viewerLabel, QStringLiteral("1,234"));
         QCOMPARE(result.online, expected);
         QVERIFY(result.avatarUrl.isValid());
+    }
+
+    client.shutdown();
+}
+
+void StreamgetProcessClientTest::refreshesRoomStatus()
+{
+    StreamgetProcessClient client(fakeServicePath(),
+                                  {QStringLiteral("--search-script"),
+                                   QStringLiteral("online,offline")});
+    QSignalSpy responses(&client, &StreamgetProcessClient::responseReceived);
+
+    const QStringList expectedStates{QStringLiteral("online"), QStringLiteral("offline")};
+    for (int index = 0; index < expectedStates.size(); ++index) {
+        const quint64 requestId = client.status(QStringLiteral("63136"), 1000);
+        waitForSignalCount(responses, responses.count() + 1);
+        const ServiceResponse response = responseFrom(responses, responses.count() - 1);
+        QCOMPARE(response.requestId, requestId);
+        QVERIFY(response.ok);
+        QVERIFY(response.status);
+        QCOMPARE(response.isLive, expectedStates.at(index) == QStringLiteral("online"));
     }
 
     client.shutdown();
@@ -229,6 +252,28 @@ void StreamgetProcessClientTest::shutsDownWithinBound()
     client.shutdown(100);
     QVERIFY(elapsed.elapsed() < 1000);
     waitForSignalCount(stopped, 1, 1000);
+    QVERIFY(!client.isRunning());
+}
+
+void StreamgetProcessClientTest::killsAnUnresponsiveServiceAtShutdownBoundary()
+{
+    StreamgetProcessClient client(fakeServicePath(),
+                                  {QStringLiteral("--ignore-shutdown")});
+    QSignalSpy started(&client, &StreamgetProcessClient::childStarted);
+    QSignalSpy responses(&client, &StreamgetProcessClient::responseReceived);
+    QSignalSpy stopped(&client, &StreamgetProcessClient::childStopped);
+
+    const quint64 requestId = client.ping(1000);
+    QVERIFY(requestId > 0);
+    waitForSignalCount(started, 1);
+    waitForSignalCount(responses, 1);
+
+    QElapsedTimer elapsed;
+    elapsed.start();
+    client.shutdown(250);
+    QVERIFY2(elapsed.elapsed() < 1500,
+             qPrintable(QStringLiteral("shutdown took %1 ms").arg(elapsed.elapsed())));
+    waitForSignalCount(stopped, 1);
     QVERIFY(!client.isRunning());
 }
 

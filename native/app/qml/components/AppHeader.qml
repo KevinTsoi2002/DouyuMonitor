@@ -13,6 +13,7 @@ Rectangle {
     signal openDanmaku()
     signal openMonitoring()
     signal openWorkspace()
+    signal openMaoziRank()
     signal systemMoveRequested()
     signal toggleMaximizedRequested()
     signal toggleFullScreenRequested()
@@ -88,7 +89,7 @@ Rectangle {
             ToolTip.visible: hovered
             ToolTip.text: Accessible.name
             onClicked: if (root.controller) {
-                root.controller.openExternalUrl("https://dy656750-39nb2xg.maozi.io/")
+                root.openMaoziRank()
             }
             contentItem: Image {
                 objectName: "maoziRankIcon"

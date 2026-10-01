@@ -7,7 +7,7 @@ from typing import Any
 ROOM_ID_RE = re.compile(r"^[0-9]{1,20}$")
 QUALITY_VALUES = frozenset({"auto", "original", "super", "high", "standard"})
 MAX_QUALITY_RATE = 255
-OPERATIONS = frozenset({"ping", "resolve", "search", "cancel", "shutdown"})
+OPERATIONS = frozenset({"ping", "resolve", "search", "status", "cancel", "shutdown"})
 
 
 class ErrorCode(str, Enum):
@@ -92,7 +92,7 @@ def parse_request(line: str) -> dict[str, Any]:
             result["qualityRate"] = quality_rate
         return result
 
-    if operation == "search":
+    if operation == "search" or operation == "status":
         query = value.get("query")
         if not isinstance(query, str) or not query.strip() or len(query.strip()) > 200:
             raise ProtocolError(ErrorCode.INVALID_INPUT)

@@ -55,6 +55,10 @@ class ProtocolTests(unittest.TestCase):
             parse_request('{"requestId":5,"op":"shutdown"}'),
             {"requestId": 5, "op": "shutdown"},
         )
+        self.assertEqual(
+            parse_request('{"requestId":6,"op":"status","query":"63136"}'),
+            {"requestId": 6, "op": "status", "query": "63136"},
+        )
 
     def test_rejects_invalid_requests(self):
         invalid_lines = [

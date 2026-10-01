@@ -101,7 +101,9 @@ QByteArray snapshotBody()
         {QStringLiteral("events"),
          QJsonArray{
              QJsonObject{{QStringLiteral("slot"), 1},
-                         {QStringLiteral("name"), QStringLiteral("测试")}},
+                         {QStringLiteral("name"), QStringLiteral("测试")},
+                         {QStringLiteral("rank_mode"), QStringLiteral("sum")},
+                         {QStringLiteral("dir"), QStringLiteral("asc")}},
          }},
         {QStringLiteral("stages"),
          QJsonArray{
@@ -292,9 +294,26 @@ void MaoziRankClientTest::exposesRolesPlacementPlayValueAndLookupIndexes()
     QCOMPARE(member.value(QStringLiteral("role")).toString(), QStringLiteral("member"));
     QCOMPARE(member.value(QStringLiteral("playValue")).toDouble(), 6.4);
     QCOMPARE(member.value(QStringLiteral("playValueBombed")).toInt(), 1);
-    QCOMPARE(member.value(QStringLiteral("placementAverage")).toDouble(), 94.0);
+    QVERIFY(qAbs(member.value(QStringLiteral("placementAverage")).toDouble()
+                 - 70.8295291826) < 0.0001);
     QCOMPARE(member.value(QStringLiteral("placementScoredSessions")).toInt(), 1);
     QVERIFY(!client.entryForName(QStringLiteral("雾蒙蒙y")).isEmpty());
+    QCOMPARE(client.placementEntries().size(), 4);
+    QCOMPARE(client.placementColumns().size(), 1);
+    const QVariantMap column = client.placementColumns().value(
+        QStringLiteral("2026-09-28:1")).toMap();
+    QCOMPARE(column.value(QStringLiteral("label")).toString(), QStringLiteral("28午"));
+    QCOMPARE(column.value(QStringLiteral("title")).toString(), QStringLiteral("测试"));
+    const QVariantMap placementFirst = client.placementEntries().constFirst().toMap();
+    QCOMPARE(placementFirst.value(QStringLiteral("placementRank")).toInt(), 1);
+    QCOMPARE(placementFirst.value(QStringLiteral("name")).toString(),
+             QStringLiteral("主播阿郎"));
+    QVERIFY(placementFirst.value(QStringLiteral("placementSessions")).toMap()
+                .contains(QStringLiteral("2026-09-28:1")));
+    QCOMPARE(client.playValueEntries().size(), 1);
+    QCOMPARE(client.playValueEntries().constFirst().toMap()
+                 .value(QStringLiteral("points")).toDouble(),
+             6.4);
 }
 
 void MaoziRankClientTest::exposesPlacementScoreFormula()

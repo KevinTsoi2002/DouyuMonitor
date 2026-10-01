@@ -49,6 +49,11 @@ public:
         return client_ != nullptr ? client_->search(query) : 0;
     }
 
+    quint64 status(const QString &roomId) override
+    {
+        return client_ != nullptr ? client_->status(roomId) : 0;
+    }
+
     void cancel(quint64 requestId) override
     {
         if (client_ != nullptr) client_->cancel(requestId);
@@ -210,7 +215,7 @@ void AppController::shutdown()
     if (favoriteMonitor_ != nullptr) favoriteMonitor_->stop();
     favoriteMonitor_.reset();
     if (service_ != nullptr) {
-        service_->shutdown();
+        service_->shutdown(250);
         service_.reset();
     }
     notificationService_.reset();
@@ -322,6 +327,9 @@ QVariantList AppController::guildRoster() const
             {QStringLiteral("rankMatched"), rankMatched},
             {QStringLiteral("rankHostId"), rankEntry.value(QStringLiteral("id"))},
             {QStringLiteral("radarDimensions"), rankEntry.value(QStringLiteral("dimensions"))},
+            {QStringLiteral("score"), rankEntry.value(QStringLiteral("score"), -1.0)},
+            {QStringLiteral("grade"), rankEntry.value(QStringLiteral("grade"))},
+            {QStringLiteral("gradeColor"), rankEntry.value(QStringLiteral("gradeColor"))},
             {QStringLiteral("placementAverage"),
              rankEntry.value(QStringLiteral("placementAverage"), -1.0)},
             {QStringLiteral("placementScoredSessions"),
@@ -1085,7 +1093,7 @@ QString AppController::setNavigationVisible(bool visible)
     if (snapshot_.navigationVisible == visible && workspace_->navigationVisible() == visible) return {};
     snapshot_.navigationVisible = visible;
     workspace_->setNavigationVisible(visible);
-    if (visible && guildRoomResolver_ != nullptr) guildRoomResolver_->refreshMetadata();
+    if (visible && guildRoomResolver_ != nullptr) guildRoomResolver_->refreshMetadata(false);
     persistWorkspace();
     return {};
 }

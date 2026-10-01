@@ -462,6 +462,7 @@ bool MultiRoomCoordinator::setLayout(const QString &layoutId)
     layoutMode_ = normalized;
     layoutId_ = normalized;
     if (previousLayout != layoutId_) emit layoutChanged(layoutId_);
+    publishSnapshots();
     return previousLayout != layoutId_ || previousMode != layoutMode_;
 }
 

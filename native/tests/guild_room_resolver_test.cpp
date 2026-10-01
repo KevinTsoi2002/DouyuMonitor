@@ -1,5 +1,7 @@
 #include <QtTest/QtTest>
 
+#include <QDateTime>
+
 #include "workspace/guild_room_resolver.h"
 
 namespace {
@@ -14,14 +16,25 @@ public:
         return lastRequestId;
     }
 
+    quint64 status(const QString &roomId) override
+    {
+        ++statusRequestCount;
+        lastStatusRoomId = roomId;
+        lastStatusRequestId = nextRequestId++;
+        return lastStatusRequestId;
+    }
+
     void cancel(quint64 requestId) override
     {
         cancelledRequestId = requestId;
     }
 
     int requestCount = 0;
+    int statusRequestCount = 0;
     QString lastQuery;
+    QString lastStatusRoomId;
     quint64 lastRequestId = 0;
+    quint64 lastStatusRequestId = 0;
     quint64 cancelledRequestId = 0;
 
 private:
@@ -43,6 +56,9 @@ private slots:
     void prioritizesVerifiedRoomMetadataBeforeResolution();
     void deduplicatesRepeatedMetadataRefreshes();
     void refreshesBundledRoomMetadataWithoutResolvingAgain();
+    void checksMetadataOnceBeforeStatusOnlyRefreshes();
+    void skipsMetadataRefreshWhenCacheAlreadyComplete();
+    void reusesCachedLiveStateWhenFresh();
 };
 
 void GuildRoomResolverTest::resolvesExactAnchorMatchOnly()
@@ -166,6 +182,9 @@ void GuildRoomResolverTest::exposesFreshMetadataFromSearchResults()
              QStringLiteral("https://example.invalid/avatar.jpg"));
     QCOMPARE(resolver.liveStateFor(QStringLiteral("hamster-002")),
              QStringLiteral("online"));
+    QCOMPARE(resolver.cache().size(), 1);
+    QCOMPARE(resolver.cache().first().liveState, QStringLiteral("online"));
+    QVERIFY(resolver.cache().first().liveCheckedAtMs > 0);
 }
 
 void GuildRoomResolverTest::prioritizesVerifiedRoomMetadataBeforeResolution()
@@ -267,6 +286,114 @@ void GuildRoomResolverTest::refreshesBundledRoomMetadataWithoutResolvingAgain()
              QStringLiteral("offline"));
     QCOMPARE(resolver.cache().size(), 0);
 }
+
+void GuildRoomResolverTest::checksMetadataOnceBeforeStatusOnlyRefreshes()
+{
+    FakeSearchTransport transport;
+    GuildRoomResolver resolver(&transport);
+    resolver.setRoster({{
+        QStringLiteral("hamster-002"),
+        QStringLiteral("主播阿飞"),
+        QStringLiteral("主播阿飞"),
+        QString(),
+    }});
+    resolver.setCache({{
+        QStringLiteral("hamster-002"),
+        QStringLiteral("84452"),
+        QStringLiteral("主播阿飞"),
+        QUrl(),
+        0,
+        1,
+    }});
+    resolver.start();
+
+    QCOMPARE(transport.requestCount, 1);
+    QCOMPARE(transport.statusRequestCount, 0);
+    QCOMPARE(transport.lastQuery, QStringLiteral("84452"));
+
+    ServiceResponse response;
+    response.requestId = transport.lastRequestId;
+    response.ok = true;
+    response.search = true;
+    RoomSearchResult result;
+    result.roomId = QStringLiteral("84452");
+    result.anchorName = QStringLiteral("主播阿飞");
+    result.online = false;
+    response.results = {result};
+    QVERIFY(resolver.handleResponse(response));
+    QCOMPARE(resolver.avatarUrlFor(QStringLiteral("hamster-002")), QString());
+    QCOMPARE(resolver.liveStateFor(QStringLiteral("hamster-002")),
+             QStringLiteral("offline"));
+
+    resolver.refreshMetadata();
+    QTest::qWait(1300);
+    QCOMPARE(transport.requestCount, 1);
+    QCOMPARE(transport.statusRequestCount, 1);
+    QCOMPARE(transport.lastStatusRoomId, QStringLiteral("84452"));
+}
+
+void GuildRoomResolverTest::skipsMetadataRefreshWhenCacheAlreadyComplete()
+{
+    FakeSearchTransport transport;
+    GuildRoomResolver resolver(&transport);
+    resolver.setRoster({{
+        QStringLiteral("hamster-002"),
+        QStringLiteral("主播阿飞"),
+        QStringLiteral("主播阿飞"),
+        QString(),
+    }});
+    resolver.setCache({{
+        QStringLiteral("hamster-002"),
+        QStringLiteral("84452"),
+        QStringLiteral("主播阿飞"),
+        QUrl(),
+        1,
+        1,
+    }});
+    resolver.start();
+
+    QCOMPARE(transport.requestCount, 0);
+    QCOMPARE(transport.statusRequestCount, 1);
+    QCOMPARE(resolver.avatarUrlFor(QStringLiteral("hamster-002")),
+             QString());
+
+    resolver.refreshMetadata();
+    QTest::qWait(1300);
+    QCOMPARE(transport.statusRequestCount, 1);
+    QCOMPARE(transport.lastStatusRoomId, QStringLiteral("84452"));
+}
+
+void GuildRoomResolverTest::reusesCachedLiveStateWhenFresh()
+{
+    FakeSearchTransport transport;
+    GuildRoomResolver resolver(&transport);
+    resolver.setRoster({{
+        QStringLiteral("hamster-002"),
+        QStringLiteral("主播阿飞"),
+        QStringLiteral("主播阿飞"),
+        QString(),
+    }});
+    resolver.setCache({{
+        QStringLiteral("hamster-002"),
+        QStringLiteral("84452"),
+        QStringLiteral("主播阿飞"),
+        QUrl(),
+        1,
+        1,
+        QStringLiteral("online"),
+        QDateTime::currentMSecsSinceEpoch(),
+    }});
+    resolver.start();
+
+    QCOMPARE(transport.requestCount, 0);
+    QCOMPARE(transport.statusRequestCount, 0);
+    QCOMPARE(resolver.liveStateFor(QStringLiteral("hamster-002")),
+             QStringLiteral("online"));
+    QCOMPARE(resolver.cache().size(), 1);
+    QCOMPARE(resolver.cache().first().liveState, QStringLiteral("online"));
+    QVERIFY(resolver.cache().first().liveCheckedAtMs > 0);
+}
+
 void GuildRoomResolverTest::skipsBundledAndCachedRoomIds()
 {
     FakeSearchTransport transport;
@@ -289,6 +416,8 @@ void GuildRoomResolverTest::skipsBundledAndCachedRoomIds()
         QStringLiteral("hamster-002"),
         QStringLiteral("84452"),
         QStringLiteral("主播阿飞"),
+        QUrl(),
+        0,
         1,
     }});
     resolver.start();

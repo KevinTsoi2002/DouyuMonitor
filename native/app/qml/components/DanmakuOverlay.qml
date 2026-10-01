@@ -144,6 +144,28 @@ Item {
         pendingMessage = ({})
     }
 
+    function relayoutActiveItems() {
+        if (activeItems.length === 0) return
+        const laneList = DanmakuLaneScheduler.lanes(usableHeight, fontSize, region, density)
+        for (let index = 0; index < activeItems.length; ++index) {
+            const item = activeItems[index]
+            if (!item) continue
+            const lane = laneList.length > 0 ? laneList[index % laneList.length] : null
+            if (lane === null) continue
+            item.laneIndex = lane.index
+            item.laneTop = safeTopInset + lane.top
+            item.y = item.laneTop
+        }
+    }
+
+    onWidthChanged: relayoutActiveItems()
+    onHeightChanged: relayoutActiveItems()
+    onTopInsetChanged: relayoutActiveItems()
+    onBottomInsetChanged: relayoutActiveItems()
+    onFontSizeChanged: relayoutActiveItems()
+    onRegionChanged: relayoutActiveItems()
+    onDensityChanged: relayoutActiveItems()
+
     onEnabledChanged: {
         if (!enabled) clearRoom()
     }

@@ -21,6 +21,8 @@
 
 namespace {
 
+double resultValue(const QJsonValue &value);
+
 const QString kCloudBaseHost =
     QStringLiteral("https://dy656750-d6g192t6k4a51aa36.api.tcloudbasegateway.com");
 const QString kPosterCdn =
@@ -77,18 +79,25 @@ bool isMemberRole(const QString &role)
     return role == QStringLiteral("member");
 }
 
-struct PlacementResult {
-    QString hostId;
-    double value = 0.0;
-    bool valid = false;
-};
-
 struct PlacementStage {
     int slot = 0;
     int stage = 0;
     QString metric;
     QString direction;
-    QVector<PlacementResult> results;
+    QString name;
+};
+
+struct PlacementSession {
+    QString key;
+    QString label;
+    QString title;
+    QString rankMode;
+    QString direction;
+    int slot = 0;
+    QVector<PlacementStage> stages;
+    QHash<QString, double> rawByHost;
+    QHash<QString, bool> presentByHost;
+    QHash<QString, double> scoreByHost;
 };
 
 double resultValue(const QJsonValue &value)
@@ -117,6 +126,60 @@ QVector<int> competitionRanks(const QVector<double> &sortedValues)
         index = end;
     }
     return ranks;
+}
+
+QVariantMap placementColumns(const QVector<PlacementSession> &sessions)
+{
+    QVariantMap columns;
+    for (const PlacementSession &session : sessions) {
+        columns.insert(session.key, QVariantMap{
+            {QStringLiteral("key"), session.key},
+            {QStringLiteral("label"), session.label},
+            {QStringLiteral("title"), session.title},
+        });
+    }
+    return columns;
+}
+
+QHash<QString, int> competitionRanksForResults(const QVector<QJsonObject> &results,
+                                               const QString &direction)
+{
+    QVector<QJsonObject> sorted = results;
+    const bool descending = direction == QStringLiteral("desc");
+    std::sort(sorted.begin(), sorted.end(), [descending](const QJsonObject &left,
+                                                        const QJsonObject &right) {
+        const double leftValue = left.value(QStringLiteral("value")).toDouble();
+        const double rightValue = right.value(QStringLiteral("value")).toDouble();
+        if (leftValue != rightValue) return descending ? leftValue > rightValue
+                                                       : leftValue < rightValue;
+        return left.value(QStringLiteral("host_id")).toString()
+            < right.value(QStringLiteral("host_id")).toString();
+    });
+
+    QHash<QString, int> ranks;
+    int position = 0;
+    int rank = 1;
+    while (position < sorted.size()) {
+        int end = position + 1;
+        while (end < sorted.size()
+               && sorted.at(end).value(QStringLiteral("value")).toDouble()
+                      == sorted.at(position).value(QStringLiteral("value")).toDouble()) {
+            ++end;
+        }
+        for (int index = position; index < end; ++index) {
+            ranks.insert(sorted.at(index).value(QStringLiteral("host_id")).toString(), rank);
+        }
+        rank += end - position;
+        position = end;
+    }
+    return ranks;
+}
+
+QString placementSessionLabel(const QString &date, int slot)
+{
+    const int day = date.section(QLatin1Char('-'), 2, 2).toInt();
+    return QStringLiteral("%1%2").arg(day).arg(slot == 2 ? QStringLiteral("晚")
+                                                        : QStringLiteral("午"));
 }
 
 } // namespace
@@ -489,144 +552,243 @@ void MaoziRankClient::parseSnapshot(const QByteArray &payload)
     }
 
     const QJsonObject placementRoot = root.value(QStringLiteral("placement")).toObject();
+    QVector<PlacementSession> placementSessions;
     QHash<QString, double> placementTotals;
     QHash<QString, int> placementCounts;
+    QHash<QString, QHash<QString, double>> placementSessionScores;
     for (auto dayIt = placementRoot.constBegin(); dayIt != placementRoot.constEnd(); ++dayIt) {
+        const QString dayKey = dayIt.key();
         const QJsonObject day = dayIt.value().toObject();
-        const QJsonArray stageArray = day.value(QStringLiteral("stages")).toArray();
-        const QJsonArray resultArray = day.value(QStringLiteral("results")).toArray();
+        QHash<int, QJsonObject> eventBySlot;
+        for (const QJsonValue &value : day.value(QStringLiteral("events")).toArray()) {
+            const QJsonObject event = value.toObject();
+            eventBySlot.insert(event.value(QStringLiteral("slot")).toInt(), event);
+        }
 
-        QHash<QString, QVector<PlacementStage>> stagesBySlot;
-        for (const QJsonValue &value : stageArray) {
+        QHash<int, QVector<PlacementStage>> stagesBySlot;
+        for (const QJsonValue &value : day.value(QStringLiteral("stages")).toArray()) {
             const QJsonObject object = value.toObject();
             PlacementStage stage;
             stage.slot = object.value(QStringLiteral("slot")).toInt();
             stage.stage = object.value(QStringLiteral("stage")).toInt();
             stage.metric = object.value(QStringLiteral("metric")).toString(QStringLiteral("time"));
             stage.direction = object.value(QStringLiteral("dir")).toString(QStringLiteral("asc"));
-            stagesBySlot[QString::number(stage.slot)].push_back(stage);
+            stage.name = object.value(QStringLiteral("name")).toString();
+            stagesBySlot[stage.slot].push_back(stage);
         }
-        for (const QJsonValue &value : resultArray) {
+
+        QHash<int, QVector<QJsonObject>> resultsBySlotAndStage;
+        QHash<int, QSet<QString>> seenBySlot;
+        for (const QJsonValue &value : day.value(QStringLiteral("results")).toArray()) {
             const QJsonObject object = value.toObject();
             const int slot = object.value(QStringLiteral("slot")).toInt();
-            const int stageNumber = object.value(QStringLiteral("stage")).toInt();
-            auto stageIt = stagesBySlot.find(QString::number(slot));
-            if (stageIt == stagesBySlot.end()) continue;
-            for (PlacementStage &stage : *stageIt) {
-                if (stage.stage != stageNumber) continue;
-                const QJsonValue rawValue = object.value(QStringLiteral("value"));
-                const double numeric = resultValue(rawValue);
-                stage.results.push_back({
-                    object.value(QStringLiteral("host_id")).toString(),
-                    numeric,
-                    !object.value(QStringLiteral("invalid")).toBool()
-                        && !std::isnan(numeric),
-                });
-                break;
-            }
+            const int stage = object.value(QStringLiteral("stage")).toInt();
+            const QString hostId = object.value(QStringLiteral("host_id")).toString();
+            if (!entryIndexByHostId.contains(hostId)) continue;
+            seenBySlot[slot].insert(hostId);
+            if (object.value(QStringLiteral("invalid")).toBool()) continue;
+            const double numeric = resultValue(object.value(QStringLiteral("value")));
+            if (std::isnan(numeric)) continue;
+            QJsonObject result = object;
+            result.insert(QStringLiteral("value"), numeric);
+            resultsBySlotAndStage[slot * 100 + stage].push_back(result);
         }
 
         for (auto slotIt = stagesBySlot.constBegin(); slotIt != stagesBySlot.constEnd(); ++slotIt) {
+            const int slot = slotIt.key();
             const QVector<PlacementStage> &stages = slotIt.value();
             if (stages.isEmpty()) continue;
-            bool paperMode = true;
-            for (const PlacementStage &stage : stages) {
-                if (stage.metric != QStringLiteral("score")) {
-                    paperMode = false;
-                    break;
-                }
-            }
+            const QJsonObject event = eventBySlot.value(slot);
 
-            if (paperMode) {
-                QHash<QString, double> paperTotals;
-                QHash<QString, bool> paperSeen;
-                QHash<QString, bool> paperHasValid;
+            PlacementSession session;
+            session.key = dayKey + QLatin1Char(':') + QString::number(slot);
+            session.label = placementSessionLabel(dayKey, slot);
+            session.title = event.value(QStringLiteral("name")).toString();
+            session.rankMode = event.value(QStringLiteral("rank_mode")).toString(
+                QStringLiteral("sum"));
+            session.direction = event.value(QStringLiteral("dir")).toString(
+                QStringLiteral("asc"));
+            session.slot = slot;
+            session.stages = stages;
+
+            const bool paperMode = session.rankMode == QStringLiteral("sum")
+                && std::all_of(stages.cbegin(), stages.cend(), [](const PlacementStage &stage) {
+                       return stage.metric == QStringLiteral("score");
+                   });
+            if (session.rankMode == QStringLiteral("rank")) {
+                QHash<int, QHash<QString, int>> stageRanks;
                 for (const PlacementStage &stage : stages) {
-                    for (const PlacementResult &result : stage.results) {
-                        if (!isMemberRole(roleByHostId.value(result.hostId))) continue;
-                        paperSeen.insert(result.hostId, true);
-                        if (result.valid) {
-                            paperHasValid.insert(result.hostId, true);
-                            paperTotals[result.hostId] += result.value;
+                    const QVector<QJsonObject> results =
+                        resultsBySlotAndStage.value(slot * 100 + stage.stage);
+                    stageRanks.insert(stage.stage,
+                                      competitionRanksForResults(results, stage.direction));
+                }
+                for (const QString &hostId : seenBySlot.value(slot)) {
+                    double rankSum = 0.0;
+                    bool hasScore = false;
+                    for (const PlacementStage &stage : stages) {
+                        const int rank = stageRanks.value(stage.stage).value(hostId, 0);
+                        if (rank > 0) {
+                            rankSum += rank;
+                            hasScore = true;
                         }
                     }
+                    if (!hasScore) continue;
+                    session.rawByHost.insert(hostId, rankSum);
+                    session.presentByHost.insert(hostId, true);
                 }
-                QVector<QPair<double, QString>> totals;
-                for (auto it = paperSeen.constBegin(); it != paperSeen.constEnd(); ++it) {
-                    if (paperHasValid.value(it.key(), false)) {
-                        totals.push_back({paperTotals.value(it.key()), it.key()});
+            } else if (paperMode) {
+                for (const PlacementStage &stage : stages) {
+                    for (const QJsonObject &result :
+                         resultsBySlotAndStage.value(slot * 100 + stage.stage)) {
+                        const QString hostId =
+                            result.value(QStringLiteral("host_id")).toString();
+                        session.rawByHost[hostId] +=
+                            result.value(QStringLiteral("value")).toDouble();
+                        session.presentByHost.insert(hostId, true);
                     }
                 }
-                std::sort(totals.begin(), totals.end(), [](const auto &left, const auto &right) {
-                    if (left.first != right.first) return left.first > right.first;
-                    return left.second < right.second;
-                });
-                QVector<double> values;
-                for (const auto &item : totals) values.push_back(item.first);
-                const QVector<int> ranks = competitionRanks(values);
-                for (int index = 0; index < totals.size(); ++index) {
-                    placementTotals[totals.at(index).second] +=
-                        placementScore(totals.size(), ranks.at(index));
-                    placementCounts[totals.at(index).second] += 1;
-                }
-                for (auto it = paperSeen.constBegin(); it != paperSeen.constEnd(); ++it) {
-                    if (!paperHasValid.value(it.key(), false) && !totals.isEmpty()) {
-                        placementTotals[it.key()] += 40.0;
-                        placementCounts[it.key()] += 1;
+            } else {
+                for (const PlacementStage &stage : stages) {
+                    for (const QJsonObject &result :
+                         resultsBySlotAndStage.value(slot * 100 + stage.stage)) {
+                        const QString hostId =
+                            result.value(QStringLiteral("host_id")).toString();
+                        session.rawByHost.insert(hostId,
+                                                 result.value(QStringLiteral("value")).toDouble());
+                        session.presentByHost.insert(hostId, true);
                     }
                 }
-                continue;
             }
 
-            for (const PlacementStage &stage : stages) {
-                QVector<QPair<double, QString>> valid;
-                for (const PlacementResult &result : stage.results) {
-                    if (!result.valid) continue;
-                    if (!entryIndexByHostId.contains(result.hostId)) continue;
-                    if (!isMemberRole(roleByHostId.value(result.hostId))) continue;
-                    valid.push_back({result.value, result.hostId});
+            if (!session.rawByHost.isEmpty()) {
+                QVector<QPair<double, QString>> ranking;
+                ranking.reserve(session.rawByHost.size());
+                for (auto it = session.rawByHost.constBegin();
+                     it != session.rawByHost.constEnd(); ++it) {
+                    ranking.push_back({it.value(), it.key()});
                 }
-                std::sort(valid.begin(), valid.end(), [&stage](const auto &left, const auto &right) {
+                const bool descending =
+                    session.rankMode == QStringLiteral("rank")
+                        ? false
+                        : (paperMode || (stages.size() == 1
+                                         && stages.constFirst().direction
+                                                == QStringLiteral("desc")));
+                std::sort(ranking.begin(), ranking.end(), [descending](const auto &left,
+                                                                        const auto &right) {
                     if (left.first != right.first) {
-                        return stage.direction == QStringLiteral("desc")
-                            ? left.first > right.first
-                            : left.first < right.first;
+                        return descending ? left.first > right.first
+                                          : left.first < right.first;
                     }
                     return left.second < right.second;
                 });
                 QVector<double> values;
-                for (const auto &item : valid) values.push_back(item.first);
+                values.reserve(ranking.size());
+                for (const auto &item : ranking) values.push_back(item.first);
                 const QVector<int> ranks = competitionRanks(values);
-                QSet<QString> scoredHosts;
-                for (int index = 0; index < valid.size(); ++index) {
-                    placementTotals[valid.at(index).second] +=
-                        placementScore(valid.size(), ranks.at(index));
-                    placementCounts[valid.at(index).second] += 1;
-                    scoredHosts.insert(valid.at(index).second);
+                for (int index = 0; index < ranking.size(); ++index) {
+                    const QString hostId = ranking.at(index).second;
+                    const double score = placementScore(ranking.size(), ranks.at(index));
+                    session.scoreByHost.insert(hostId, score);
+                    placementTotals[hostId] += score;
+                    placementCounts[hostId] += 1;
+                    placementSessionScores[hostId].insert(session.key, score);
                 }
-                if (!valid.isEmpty()) {
-                    for (const PlacementResult &result : stage.results) {
-                        if (result.valid || scoredHosts.contains(result.hostId)) continue;
-                        if (!entryIndexByHostId.contains(result.hostId)) continue;
-                        if (!isMemberRole(roleByHostId.value(result.hostId))) continue;
-                        placementTotals[result.hostId] += 40.0;
-                        placementCounts[result.hostId] += 1;
-                    }
+                for (const QString &hostId : seenBySlot.value(slot)) {
+                    if (session.scoreByHost.contains(hostId)) continue;
+                    session.scoreByHost.insert(hostId, 40.0);
+                    placementTotals[hostId] += 40.0;
+                    placementCounts[hostId] += 1;
+                    placementSessionScores[hostId].insert(session.key, 40.0);
                 }
             }
+            placementSessions.push_back(session);
         }
     }
 
+    std::sort(placementSessions.begin(), placementSessions.end(),
+              [](const PlacementSession &left, const PlacementSession &right) {
+                  if (left.key != right.key) return left.key < right.key;
+                  return left.slot < right.slot;
+              });
+
+    QVariantList placementEntries;
     for (int index = 0; index < entries.size(); ++index) {
         QVariantMap entry = entries.at(index).toMap();
         const QString hostId = entry.value(QStringLiteral("id")).toString();
         const int count = placementCounts.value(hostId, 0);
         if (count > 0) {
+            QVariantMap sessionScores;
+            const QHash<QString, double> scores = placementSessionScores.value(hostId);
+            for (auto scoreIt = scores.constBegin(); scoreIt != scores.constEnd(); ++scoreIt) {
+                sessionScores.insert(scoreIt.key(), scoreIt.value());
+            }
             entry.insert(QStringLiteral("placementAverage"),
                          placementTotals.value(hostId) / count);
             entry.insert(QStringLiteral("placementScoredSessions"), count);
+            entry.insert(QStringLiteral("placementRank"), 0);
+            entry.insert(QStringLiteral("placementSessions"), sessionScores);
+            placementEntries.push_back(entry);
         }
         entries[index] = entry;
+    }
+
+    std::sort(placementEntries.begin(), placementEntries.end(),
+              [](const QVariant &left, const QVariant &right) {
+                  const QVariantMap leftMap = left.toMap();
+                  const QVariantMap rightMap = right.toMap();
+                  const double leftAverage =
+                      leftMap.value(QStringLiteral("placementAverage")).toDouble();
+                  const double rightAverage =
+                      rightMap.value(QStringLiteral("placementAverage")).toDouble();
+                  if (leftAverage != rightAverage) return leftAverage > rightAverage;
+                  return leftMap.value(QStringLiteral("name")).toString()
+                      < rightMap.value(QStringLiteral("name")).toString();
+              });
+    for (int index = 0; index < placementEntries.size(); ++index) {
+        QVariantMap entry = placementEntries.at(index).toMap();
+        entry.insert(QStringLiteral("placementRank"), index + 1);
+        placementEntries[index] = entry;
+    }
+
+    QVariantList playValueEntries;
+    QHash<QString, QVariantMap> entryByNormalizedName;
+    for (const QVariant &value : entries) {
+        const QVariantMap entry = value.toMap();
+        const QString name = entry.value(QStringLiteral("name")).toString();
+        entryByNormalizedName.insert(normalizedName(name), entry);
+    }
+    for (const QJsonValue &value : root.value(QStringLiteral("playvalue")).toArray()) {
+        const QJsonObject item = value.toObject();
+        const QString nickname = item.value(QStringLiteral("nickname")).toString();
+        const QVariantMap host = entryByNormalizedName.value(normalizedName(nickname));
+        playValueEntries.push_back(QVariantMap{
+            {QStringLiteral("name"), nickname},
+            {QStringLiteral("points"), item.value(QStringLiteral("points")).toDouble()},
+            {QStringLiteral("bombed"), item.value(QStringLiteral("bombed")).toInt()},
+            {QStringLiteral("updatedAt"), item.value(QStringLiteral("updated_at")).toString()},
+            {QStringLiteral("roomId"), host.value(QStringLiteral("roomId"))},
+            {QStringLiteral("teamName"), host.value(QStringLiteral("teamName"))},
+            {QStringLiteral("role"), host.value(QStringLiteral("role"))},
+            {QStringLiteral("posterUrl"), host.value(QStringLiteral("posterUrl"))},
+            {QStringLiteral("live"), host.value(QStringLiteral("live"), false)},
+            {QStringLiteral("rank"), 0},
+        });
+    }
+    std::sort(playValueEntries.begin(), playValueEntries.end(),
+              [](const QVariant &left, const QVariant &right) {
+                  const QVariantMap leftMap = left.toMap();
+                  const QVariantMap rightMap = right.toMap();
+                  const double leftPoints = leftMap.value(QStringLiteral("points")).toDouble();
+                  const double rightPoints = rightMap.value(QStringLiteral("points")).toDouble();
+                  if (leftPoints != rightPoints) return leftPoints > rightPoints;
+                  return leftMap.value(QStringLiteral("name")).toString()
+                      < rightMap.value(QStringLiteral("name")).toString();
+              });
+    for (int index = 0; index < playValueEntries.size(); ++index) {
+        QVariantMap entry = playValueEntries.at(index).toMap();
+        entry.insert(QStringLiteral("rank"), index + 1);
+        playValueEntries[index] = entry;
     }
 
     std::sort(entries.begin(), entries.end(), [](const QVariant &left, const QVariant &right) {
@@ -645,17 +807,26 @@ void MaoziRankClient::parseSnapshot(const QByteArray &payload)
     }
 
     applyEntries(entries,
+                 placementEntries,
+                 ::placementColumns(placementSessions),
+                 playValueEntries,
                  agg.value(QStringLiteral("voters")).toInt(),
                  agg.value(QStringLiteral("updated")).toString(),
                  root.value(QStringLiteral("v")).toString());
 }
 
 void MaoziRankClient::applyEntries(QVariantList entries,
+                                   QVariantList placementEntries,
+                                   QVariantMap placementColumns,
+                                   QVariantList playValueEntries,
                                    int totalVoters,
                                    const QString &updatedAt,
                                    const QString &version)
 {
     entries_ = std::move(entries);
+    placementEntries_ = std::move(placementEntries);
+    placementColumns_ = std::move(placementColumns);
+    playValueEntries_ = std::move(playValueEntries);
     totalVoters_ = totalVoters;
     updatedAt_ = updatedAt;
     snapshotVersion_ = version;
@@ -686,6 +857,9 @@ void MaoziRankClient::finishError(const QString &message, bool preserveEntries)
         errorMessage_ = message;
         lastSyncError_.clear();
         entries_.clear();
+        placementEntries_.clear();
+        placementColumns_.clear();
+        playValueEntries_.clear();
         entryIndexByRoomId_.clear();
         entryIndexByName_.clear();
         totalVoters_ = 0;

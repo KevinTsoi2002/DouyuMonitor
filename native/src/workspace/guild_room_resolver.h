@@ -20,6 +20,7 @@ public:
     ~SearchTransport() override = default;
 
     virtual quint64 search(const QString &query) = 0;
+    virtual quint64 status(const QString &roomId) = 0;
     virtual void cancel(quint64 requestId) = 0;
 
 signals:
@@ -39,7 +40,7 @@ public:
     QVector<GuildRoomCacheEntry> cache() const;
     void start();
     void stop();
-    void refreshMetadata();
+    void refreshMetadata(bool forceFullMetadata = false);
 
     QString roomIdFor(const QString &memberId) const;
     QString avatarUrlFor(const QString &memberId) const;
@@ -55,14 +56,26 @@ signals:
     void cacheChanged();
 
 private:
+    struct MetadataRefreshTask {
+        QString memberId;
+        bool statusOnly = false;
+    };
+
     static bool isValidRoomId(const QString &roomId);
     void scheduleNextRequest(int delayMs);
     void sendNextRequest();
     void completeWithoutRoom(const QString &memberId, const QString &status);
     void scheduleRetry(const QString &memberId);
     void removeQueuedMember(const QString &memberId);
-    void enqueueMetadataRefresh(const QString &memberId);
+    void enqueueMetadataRefresh(const QString &memberId, bool forceFullMetadata = false);
+    void refreshMemberMetadata(const QString &memberId, bool forceFullMetadata = false);
     void applyMetadata(const QString &memberId, const RoomSearchResult &result);
+    void applyLiveStatus(const QString &memberId, const ServiceResponse &response);
+    void updateCacheLiveState(const QString &memberId, const QString &liveState);
+    bool storeCacheEntry(const QString &memberId,
+                         const QString &roomId,
+                         const QUrl &avatarUrl = {},
+                         bool metadataChecked = false);
     bool isExactMatch(const GuildMember &member, const RoomSearchResult &result) const;
 
     SearchTransport *transport_ = nullptr;
@@ -74,12 +87,14 @@ private:
     QHash<QString, QString> liveStates_;
     QHash<QString, int> failures_;
     QVector<GuildRoomCacheEntry> cache_;
+    QSet<QString> cachedMemberIds_;
     QVector<QString> queue_;
     QSet<QString> queuedMembers_;
-    QVector<QString> metadataQueue_;
+    QVector<MetadataRefreshTask> metadataQueue_;
     QSet<QString> queuedMetadataMembers_;
     QString activeMemberId_;
     bool activeRequestIsMetadataRefresh_ = false;
+    bool activeRequestStatusOnly_ = false;
     quint64 activeRequestId_ = 0;
     int nextRetryDelayMs_ = 3000;
     bool started_ = false;

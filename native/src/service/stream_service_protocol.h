@@ -19,6 +19,7 @@ enum class ServiceOperation {
     Ping,
     Resolve,
     Search,
+    Status,
     Cancel,
     Shutdown,
 };
@@ -65,6 +66,7 @@ struct ServiceResponse {
     bool shutdown = false;
     quint64 cancelledRequestId = 0;
     bool search = false;
+    bool status = false;
     QVector<RoomSearchResult> results;
     QString roomId;
     bool isLive = false;

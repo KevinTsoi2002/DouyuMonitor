@@ -107,6 +107,18 @@ void verifyBaseline(const QImage &image, const QString &name)
     QVERIFY2(result.ok, qPrintable(result.message));
 }
 
+void verifyNoOverlapByName(QQuickItem *root,
+                           const QString &firstName,
+                           const QString &secondName)
+{
+    QQuickItem *first = visualItemByObjectName(root, firstName);
+    QQuickItem *second = visualItemByObjectName(root, secondName);
+    QVERIFY2(first != nullptr, qPrintable(QStringLiteral("Missing item: %1").arg(firstName)));
+    QVERIFY2(second != nullptr, qPrintable(QStringLiteral("Missing item: %1").arg(secondName)));
+    QVERIFY2(!visualRectsOverlap(visualSceneRect(first), visualSceneRect(second)),
+             qPrintable(QStringLiteral("%1 overlaps %2").arg(firstName).arg(secondName)));
+}
+
 class FakeRooms final : public QObject {
     Q_OBJECT
     Q_PROPERTY(int roomCount READ roomCount NOTIFY roomCountChanged)
@@ -153,6 +165,7 @@ QVariantList guildFixtures()
                     {QStringLiteral("roomId"), QStringLiteral("71415")},
                     {QStringLiteral("role"), QStringLiteral("member")},
                     {QStringLiteral("rankMatched"), true},
+                    {QStringLiteral("score"), 15.36},
                     {QStringLiteral("placementAverage"), 88.5},
                     {QStringLiteral("placementScoredSessions"), 3},
                     {QStringLiteral("playValue"), 6.4},
@@ -223,6 +236,9 @@ private:
 class FakeMaoziRankClient final : public QObject {
     Q_OBJECT
     Q_PROPERTY(QVariantList entries READ entries CONSTANT)
+    Q_PROPERTY(QVariantList placementEntries READ placementEntries CONSTANT)
+    Q_PROPERTY(QVariantMap placementColumns READ placementColumns CONSTANT)
+    Q_PROPERTY(QVariantList playValueEntries READ playValueEntries CONSTANT)
 
 public:
     QVariantList entries() const
@@ -279,6 +295,68 @@ public:
         }
         return result;
     }
+
+    QVariantList placementEntries() const
+    {
+        return {
+            QVariantMap{
+                {QStringLiteral("id"), QStringLiteral("host-1")},
+                {QStringLiteral("name"), QStringLiteral("尐表哥")},
+                {QStringLiteral("roomId"), QStringLiteral("217331")},
+                {QStringLiteral("posterUrl"), QString()},
+                {QStringLiteral("placementRank"), 1},
+                {QStringLiteral("placementAverage"), 87.0},
+                {QStringLiteral("placementScoredSessions"), 6},
+                {QStringLiteral("placementSessions"),
+                 QVariantMap{{QStringLiteral("2026-09-28:1"), 93.0},
+                             {QStringLiteral("2026-09-28:2"), 85.4},
+                             {QStringLiteral("2026-09-29:1"), 92.3},
+                             {QStringLiteral("2026-09-29:2"), 90.6},
+                             {QStringLiteral("2026-09-30:1"), 88.0},
+                             {QStringLiteral("2026-09-30:2"), 72.6}}},
+            },
+        };
+    }
+
+    QVariantMap placementColumns() const
+    {
+        return {
+            {QStringLiteral("2026-09-28:1"),
+             QVariantMap{{QStringLiteral("key"), QStringLiteral("2026-09-28:1")},
+                         {QStringLiteral("label"), QStringLiteral("28午")}}},
+            {QStringLiteral("2026-09-28:2"),
+             QVariantMap{{QStringLiteral("key"), QStringLiteral("2026-09-28:2")},
+                         {QStringLiteral("label"), QStringLiteral("28晚")}}},
+            {QStringLiteral("2026-09-29:1"),
+             QVariantMap{{QStringLiteral("key"), QStringLiteral("2026-09-29:1")},
+                         {QStringLiteral("label"), QStringLiteral("29午")}}},
+            {QStringLiteral("2026-09-29:2"),
+             QVariantMap{{QStringLiteral("key"), QStringLiteral("2026-09-29:2")},
+                         {QStringLiteral("label"), QStringLiteral("29晚")}}},
+            {QStringLiteral("2026-09-30:1"),
+             QVariantMap{{QStringLiteral("key"), QStringLiteral("2026-09-30:1")},
+                         {QStringLiteral("label"), QStringLiteral("30午")}}},
+            {QStringLiteral("2026-09-30:2"),
+             QVariantMap{{QStringLiteral("key"), QStringLiteral("2026-09-30:2")},
+                         {QStringLiteral("label"), QStringLiteral("30晚")}}},
+        };
+    }
+
+    QVariantList playValueEntries() const
+    {
+        return {
+            QVariantMap{
+                {QStringLiteral("name"), QStringLiteral("尐表哥")},
+                {QStringLiteral("points"), 10600.0},
+                {QStringLiteral("roomId"), QStringLiteral("217331")},
+                {QStringLiteral("teamName"), QStringLiteral("未分队")},
+                {QStringLiteral("role"), QStringLiteral("captain")},
+                {QStringLiteral("posterUrl"), QString()},
+                {QStringLiteral("live"), true},
+                {QStringLiteral("rank"), 1},
+            },
+        };
+    }
 };
 
 class FakeMaoziController final : public QObject {
@@ -287,6 +365,7 @@ class FakeMaoziController final : public QObject {
 
 public:
     FakeMaoziRankClient *maoziRank() noexcept { return &client; }
+    Q_INVOKABLE bool openExternalUrl(const QString &) { return true; }
     FakeMaoziRankClient client;
 };
 
@@ -544,7 +623,11 @@ void QmlVisualRegressionTest::keepsMaoziToolbarVisibleAndColumnsAligned()
     const QStringList controls{
         QStringLiteral("maoziSearchField"),
         QStringLiteral("maoziLiveFilter"),
+        QStringLiteral("maoziOpenSiteButton"),
         QStringLiteral("maoziRefreshButton"),
+        QStringLiteral("maoziRankingTab"),
+        QStringLiteral("maoziPlacementTab"),
+        QStringLiteral("maoziPlayValueTab"),
         QStringLiteral("maoziTitle"),
         QStringLiteral("maoziSubtitle"),
     };
@@ -563,9 +646,11 @@ void QmlVisualRegressionTest::keepsMaoziToolbarVisibleAndColumnsAligned()
     }
 
     QQuickItem *toolbar = visualItemByObjectName(window->contentItem(), QStringLiteral("maoziToolbar"));
+    QQuickItem *backButton = visualItemByObjectName(window->contentItem(), QStringLiteral("maoziBackButton"));
     QQuickItem *title = visualItemByObjectName(window->contentItem(), QStringLiteral("maoziTitle"));
     QQuickItem *subtitle = visualItemByObjectName(window->contentItem(), QStringLiteral("maoziSubtitle"));
     QVERIFY(toolbar != nullptr);
+    QVERIFY(backButton != nullptr);
     QVERIFY(title != nullptr);
     QVERIFY(subtitle != nullptr);
     QVERIFY(visualSceneRect(toolbar).contains(visualSceneRect(title)));
@@ -573,6 +658,31 @@ void QmlVisualRegressionTest::keepsMaoziToolbarVisibleAndColumnsAligned()
     QVERIFY(title->height() > 0);
     QVERIFY(subtitle->height() > 0);
     QVERIFY(!visualRectsOverlap(visualSceneRect(title), visualSceneRect(subtitle)));
+    QVERIFY(visualSceneRect(title).left() >= visualSceneRect(backButton).right() + 8.0);
+    verifyNoOverlapByName(window->contentItem(),
+                          QStringLiteral("maoziBackButton"),
+                          QStringLiteral("maoziTitle"));
+    verifyNoOverlapByName(window->contentItem(),
+                          QStringLiteral("maoziBackButton"),
+                          QStringLiteral("maoziSubtitle"));
+
+    QQuickItem *rankHeader = visualItemByObjectName(window->contentItem(), QStringLiteral("maoziHeaderRank"));
+    QQuickItem *rankList = visualItemByObjectName(window->contentItem(), QStringLiteral("maoziRankList"));
+    QVERIFY(rankHeader != nullptr);
+    QVERIFY(rankList != nullptr);
+    QVERIFY(!visualRectsOverlap(visualSceneRect(rankHeader),
+                                visualSceneRect(rankList)));
+
+    QQuickItem *headerBar = visualItemByObjectName(window->contentItem(), QStringLiteral("maoziHeaderRank"));
+    QVERIFY(headerBar != nullptr);
+    QCOMPARE(qRound(headerBar->height()), 32);
+    QVERIFY(qAbs(visualSceneRect(headerBar).center().y()
+                 - visualSceneRect(headerBar->parentItem()).center().y()) <= 1.0);
+    QQuickItem *widthProbe =
+        visualItemByObjectName(window->contentItem(), QStringLiteral("maoziListWidthProbe"));
+    QVERIFY(widthProbe != nullptr);
+    QVERIFY(widthProbe->property("tableWidth").toDouble()
+            <= widthProbe->property("contentWidth").toDouble());
 
     QQuickItem *avatar = visualItemByObjectName(window->contentItem(), QStringLiteral("maoziAvatarImage"));
     QVERIFY(avatar != nullptr);
@@ -613,6 +723,30 @@ void QmlVisualRegressionTest::keepsMaoziToolbarVisibleAndColumnsAligned()
     const QImage image = visualCapture(window.get(), QStringLiteral("maozi-rank-1920x1080"));
     QVERIFY(!image.isNull());
     verifyBaseline(image, QStringLiteral("maozi-rank-1920x1080"));
+
+    QObject *placementTab =
+        page->findChild<QObject *>(QStringLiteral("maoziPlacementTab"));
+    QObject *placementList =
+        page->findChild<QObject *>(QStringLiteral("maoziPlacementList"));
+    QVERIFY(QMetaObject::invokeMethod(placementTab, "clicked"));
+    QTRY_VERIFY(placementList->property("visible").toBool());
+    QTRY_COMPARE(placementList->property("count").toInt(), 1);
+    const QImage placementImage =
+        visualCapture(window.get(), QStringLiteral("maozi-placement-1920x1080"));
+    QVERIFY(!placementImage.isNull());
+    verifyBaseline(placementImage, QStringLiteral("maozi-placement-1920x1080"));
+
+    QObject *playValueTab =
+        page->findChild<QObject *>(QStringLiteral("maoziPlayValueTab"));
+    QObject *playValueList =
+        page->findChild<QObject *>(QStringLiteral("maoziPlayValueList"));
+    QVERIFY(QMetaObject::invokeMethod(playValueTab, "clicked"));
+    QTRY_VERIFY(playValueList->property("visible").toBool());
+    QTRY_COMPARE(playValueList->property("count").toInt(), 1);
+    const QImage playValueImage =
+        visualCapture(window.get(), QStringLiteral("maozi-play-value-1920x1080"));
+    QVERIFY(!playValueImage.isNull());
+    verifyBaseline(playValueImage, QStringLiteral("maozi-play-value-1920x1080"));
 }
 
 QTEST_MAIN(QmlVisualRegressionTest)

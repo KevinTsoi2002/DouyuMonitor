@@ -312,6 +312,11 @@ class DouyuBackend:
             result["avatarUrl"] = avatar_url
         return result
 
+    def room_status(self, room_id: str) -> bool:
+        if not ROOM_ID_RE.fullmatch(room_id):
+            raise BackendError(ErrorCode.INVALID_RESPONSE)
+        return bool(self._fetch_room(room_id)["online"])
+
     async def resolve(
         self,
         room_id: str,

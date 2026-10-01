@@ -10,6 +10,7 @@ private slots:
     void encodesResolveRequest();
     void encodesResolveRequestWithQualityRate();
     void encodesSearchCancelAndShutdownRequests();
+    void encodesStatusRequestAndResponse();
     void decodesControlResponsesAndSearchResults();
     void decodesSearchResultWithOptionalPresentationFields();
     void decodesValidSuccessResponse();
@@ -82,6 +83,25 @@ void StreamServiceProtocolTest::encodesResolveRequestWithQualityRate()
     QVERIFY(decoded.has_value());
     QCOMPARE(decoded->quality, StreamQuality::Auto);
     QCOMPARE(decoded->qualityRate, 8);
+}
+
+void StreamServiceProtocolTest::encodesStatusRequestAndResponse()
+{
+    ServiceRequest request;
+    request.requestId = 10;
+    request.operation = ServiceOperation::Status;
+    request.query = QStringLiteral("63136");
+
+    const auto decoded = decodeRequest(encodeRequest(request));
+    QVERIFY(decoded.has_value());
+    QCOMPARE(decoded->operation, ServiceOperation::Status);
+    QCOMPARE(decoded->query, QStringLiteral("63136"));
+
+    const auto response = decodeResponse(
+        QByteArray(R"({"requestId":10,"ok":true,"status":true,"isLive":false})"));
+    QVERIFY(response.has_value());
+    QVERIFY(response->status);
+    QVERIFY(!response->isLive);
 }
 
 void StreamServiceProtocolTest::decodesControlResponsesAndSearchResults()

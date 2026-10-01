@@ -23,6 +23,7 @@ struct Options {
     int delayMs = 0;
     bool malformed = false;
     bool ignoreCancel = false;
+    bool ignoreShutdown = false;
     int crashAfter = 0;
     QString crashOnceFile;
     int offlineAfter = 0;
@@ -41,6 +42,8 @@ Options parseOptions(const QStringList &arguments)
             options.malformed = true;
         } else if (argument == QStringLiteral("--ignore-cancel")) {
             options.ignoreCancel = true;
+        } else if (argument == QStringLiteral("--ignore-shutdown")) {
+            options.ignoreShutdown = true;
         } else if (argument == QStringLiteral("--crash-after") && index + 1 < arguments.size()) {
             options.crashAfter = qMax(0, arguments.at(++index).toInt());
         } else if (argument == QStringLiteral("--crash-once-file") && index + 1 < arguments.size()) {
@@ -147,6 +150,7 @@ int main(int argc, char **argv)
                 response.insert(QStringLiteral("pong"), true);
                 emitObject(response);
             } else if (request->operation == ServiceOperation::Shutdown) {
+                if (options.ignoreShutdown) continue;
                 QJsonObject response;
                 response.insert(QStringLiteral("requestId"), static_cast<qint64>(request->requestId));
                 response.insert(QStringLiteral("ok"), true);
@@ -226,6 +230,21 @@ int main(int argc, char **argv)
                                      emitObject(response);
                                  });
                 timer->start(options.delayMs);
+            } else if (request->operation == ServiceOperation::Status) {
+                const int scriptIndex = options.searchScript.isEmpty()
+                    ? 0
+                    : qMin(searchCount, options.searchScript.size() - 1);
+                const bool online = options.searchScript.isEmpty()
+                    ? true
+                    : options.searchScript.at(scriptIndex);
+                ++searchCount;
+
+                QJsonObject response;
+                response.insert(QStringLiteral("requestId"), static_cast<qint64>(request->requestId));
+                response.insert(QStringLiteral("ok"), true);
+                response.insert(QStringLiteral("status"), true);
+                response.insert(QStringLiteral("isLive"), online);
+                emitObject(response);
             } else if (request->operation == ServiceOperation::Search) {
                 QJsonObject response;
                 response.insert(QStringLiteral("requestId"), static_cast<qint64>(request->requestId));

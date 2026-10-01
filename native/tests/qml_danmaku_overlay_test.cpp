@@ -114,6 +114,8 @@ class QmlDanmakuOverlayTest final : public QObject {
 private slots:
     void launchesAQueuedMessageIntoTheConfiguredRegion();
     void doesNotReuseAnUnsafeLane();
+    void keepsLaneSpacingSafeForOutlinedText();
+    void relayoutsActiveDanmakuWhenContainerHeightChanges();
     void clearsActiveAndQueuedMessagesWhenDisabled();
 };
 
@@ -153,6 +155,64 @@ void QmlDanmakuOverlayTest::doesNotReuseAnUnsafeLane()
     QTRY_VERIFY_WITH_TIMEOUT(activeLines(overlay.get()).size() == 2, 2000);
     const QList<QObject *> lines = activeLines(overlay.get());
     QVERIFY(lines.at(0)->property("y").toDouble() != lines.at(1)->property("y").toDouble());
+}
+
+void QmlDanmakuOverlayTest::keepsLaneSpacingSafeForOutlinedText()
+{
+    QQmlEngine engine;
+    QQuickWindow window;
+    window.resize(320, 180);
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+
+    FakeDanmakuQmlController controller;
+    controller.enqueue(message(QStringLiteral("1"), QStringLiteral("first")));
+    controller.enqueue(message(QStringLiteral("2"), QStringLiteral("second")));
+    std::unique_ptr<QQuickItem> overlay(createOverlay(engine, window, controller));
+    QVERIFY(overlay != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(activeLines(overlay.get()).size() == 2, 2000);
+
+    const QList<QObject *> lines = activeLines(overlay.get());
+    const qreal fontSize = lines.constFirst()->property("fontSize").toDouble();
+    const qreal firstTop = lines.at(0)->property("y").toDouble();
+    const qreal secondTop = lines.at(1)->property("y").toDouble();
+    const qreal laneGap = qAbs(secondTop - firstTop);
+    const qreal minimumSafeGap = fontSize * 1.6;
+    QVERIFY2(laneGap >= minimumSafeGap,
+             qPrintable(QStringLiteral("danmaku lane gap %1 is smaller than safe gap %2")
+                            .arg(laneGap)
+                            .arg(minimumSafeGap)));
+}
+
+void QmlDanmakuOverlayTest::relayoutsActiveDanmakuWhenContainerHeightChanges()
+{
+    QQmlEngine engine;
+    QQuickWindow window;
+    window.resize(320, 180);
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+
+    FakeDanmakuQmlController controller;
+    controller.enqueue(message(QStringLiteral("1"), QStringLiteral("first")));
+    controller.enqueue(message(QStringLiteral("2"), QStringLiteral("second")));
+    std::unique_ptr<QQuickItem> overlay(createOverlay(engine, window, controller));
+    QVERIFY(overlay != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(activeLines(overlay.get()).size() == 2, 2000);
+
+    const QList<QObject *> before = activeLines(overlay.get());
+    QVERIFY(before.at(0)->property("laneIndex").toInt()
+            != before.at(1)->property("laneIndex").toInt());
+    overlay->setHeight(140);
+    QTRY_VERIFY_WITH_TIMEOUT(activeLines(overlay.get()).size() == 2, 2000);
+    const QList<QObject *> after = activeLines(overlay.get());
+    for (QObject *line : after) {
+        QVERIFY(line->property("laneIndex").toInt() >= 0);
+        QVERIFY(line->property("y").toDouble() >= 0);
+        QVERIFY(line->property("y").toDouble() + line->property("height").toDouble()
+                <= overlay->height());
+    }
+    QVERIFY(after.at(0)->property("laneIndex").toInt()
+            != after.at(1)->property("laneIndex").toInt());
 }
 
 void QmlDanmakuOverlayTest::clearsActiveAndQueuedMessagesWhenDisabled()

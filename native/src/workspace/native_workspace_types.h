@@ -67,7 +67,11 @@ struct GuildRoomCacheEntry {
     QString memberId;
     QString roomId;
     QString anchorName;
+    QUrl avatarUrl;
+    qint64 metadataCheckedAtMs = 0;
     qint64 verifiedAtMs = 0;
+    QString liveState = QStringLiteral("unknown");
+    qint64 liveCheckedAtMs = 0;
 
     bool operator==(const GuildRoomCacheEntry &) const = default;
 };
@@ -100,7 +104,7 @@ struct NativeWorkspacePreset {
 };
 
 struct NativeWorkspaceSnapshot {
-    int version = 6;
+    int version = 8;
     QVector<NativeRoomRecord> library;
     QVector<NativeRoomGroup> groups;
     QVector<NativeTeam> teams;

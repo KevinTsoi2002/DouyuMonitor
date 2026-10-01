@@ -8,6 +8,8 @@
 
 导航页展示内置名单、主播头像、开播状态、房间号及加入状态，不显示团长、队长、队员或 OB 等角色标签。已确认房间号可直接加入当前工作区；无法自动确认的成员显示“待确认”，需要在成员行手工输入房间号。快捷加入受当前构建的布局容量限制，并会接受控制器返回的重复房间或容量错误。
 
+开播状态会写入工作区缓存，并记录检查时间。15 分钟内的重复打开导航页直接复用缓存，不再为全部主播重新排队发送状态请求。
+
 ## 目录职责
 
 | 目录 | 职责 |
@@ -100,10 +102,10 @@ native/out/build/windows-x64-release/douyu_monitor_native.exe
 输出文件：
 
 ```text
-native/out/installer/DouyuMonitor-Setup-V0.2.13.exe
+native/out/installer/DouyuMonitor-Setup-V0.2.14.exe
 ```
 
-安装器使用 Inno Setup 6。正式版安装包名为 `DouyuMonitor-Setup-V0.2.13.exe`；24 路全解码测试版使用 `-Version 0.2.13-beta.24` 生成独立文件名。安装时可选择目标目录；选择 `D:\` 等磁盘根目录时会自动归一化到 `D:\DouyuMonitor`。安装完成后创建开始菜单和可选的桌面快捷方式，并登记到 Windows 设置的“已安装的应用”。安装目录中的 `unins000.exe` 是标准卸载入口。运行时载荷校验会拒绝测试程序、构建残留以及 Electron、Chromium、Node、Qt WebEngine 文件。
+安装器使用 Inno Setup 6。正式版安装包名为 `DouyuMonitor-Setup-V0.2.14.exe`；24 路全解码测试版使用 `-Version 0.2.14-beta.24` 生成独立文件名。安装时可选择目标目录；选择 `D:\` 等磁盘根目录时会自动归一化到 `D:\DouyuMonitor`。安装完成后创建开始菜单和可选的桌面快捷方式，并登记到 Windows 设置的“已安装的应用”。安装目录中的 `unins000.exe` 是标准卸载入口。运行时载荷校验会拒绝测试程序、构建残留以及 Electron、Chromium、Node、Qt WebEngine 文件。
 
 安装器脚本回归检查：
 

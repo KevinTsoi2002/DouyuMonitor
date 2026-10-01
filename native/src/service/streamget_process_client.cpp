@@ -85,6 +85,14 @@ quint64 StreamgetProcessClient::search(const QString &query, int timeoutMs)
     return enqueue(request, timeoutMs);
 }
 
+quint64 StreamgetProcessClient::status(const QString &roomId, int timeoutMs)
+{
+    ServiceRequest request;
+    request.operation = ServiceOperation::Status;
+    request.query = roomId;
+    return enqueue(request, timeoutMs);
+}
+
 bool StreamgetProcessClient::cancel(quint64 requestId)
 {
     if (requestId == 0) return false;
@@ -132,7 +140,7 @@ void StreamgetProcessClient::shutdown(int timeoutMs)
         process_->closeWriteChannel();
     }
 
-    const int boundedTimeout = qBound(0, timeoutMs, 5000);
+    const int boundedTimeout = qBound(0, timeoutMs, 1500);
     if (!process_->waitForFinished(boundedTimeout)) {
 #ifdef Q_OS_WIN
         terminateJob();
@@ -140,7 +148,7 @@ void StreamgetProcessClient::shutdown(int timeoutMs)
         process_->kill();
         process_->waitForFinished(250);
     }
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
     outputBuffer_.clear();
     shuttingDown_ = false;
 }
