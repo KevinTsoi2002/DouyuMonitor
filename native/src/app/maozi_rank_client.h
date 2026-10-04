@@ -48,10 +48,13 @@ public:
     Q_INVOKABLE void checkForChanges();
     Q_INVOKABLE QVariantMap entryForRoomId(const QString &roomId) const;
     Q_INVOKABLE QVariantMap entryForName(const QString &name) const;
+    QByteArray eventMapping() const;
+    Q_INVOKABLE QString setEventMapping(const QByteArray &mapping);
 
     static double placementScore(int competitorCount, int rank);
 
 signals:
+    void snapshotRefreshFinished(bool success);
     void entriesChanged();
     void loadingChanged();
     void syncStateChanged();
@@ -82,7 +85,7 @@ private:
     void setSyncPending(bool pending);
     static QString posterUrl(const QString &cloudPath);
     static QString teamName(const QJsonValue &team);
-    static QString roleForRoomId(const QString &roomId);
+    QVariantMap mappingForIdentity(const QString &roomId, const QString &name) const;
     static QString canonicalLookupName(const QString &name);
 
     QNetworkAccessManager *manager_ = nullptr;
@@ -102,9 +105,12 @@ private:
     QHash<QString, int> entryIndexByName_;
     bool loading_ = false;
     bool syncPending_ = false;
+    bool snapshotRefreshActive_ = false;
     QString errorMessage_;
     QString lastSyncError_;
     int totalVoters_ = 0;
     QString updatedAt_;
     QString snapshotVersion_;
+    QVariantMap eventMapping_;
+    QByteArray lastSnapshot_;
 };

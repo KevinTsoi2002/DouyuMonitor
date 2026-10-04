@@ -27,6 +27,7 @@ private slots:
     void appliesRateBasedQualityOptions();
     void mapsOfflineResolveToLiveOfflineWithoutPlaybackFailure();
     void appliesValidatedMetadataAndLiveState();
+    void preservesLiveStateWhenMetadataStatusIsUnknown();
     void acceptsMetadataWithOptionalEmptyPresentationFields();
     void dropsUnsafeAvatarUrlFromMetadata();
     void mapsQuickPlayerFailureToPlaybackError();
@@ -38,6 +39,22 @@ private slots:
     void releasesSessionWithQuickPlayer();
     void mapsControllerErrorsWithoutRawDiagnostics();
 };
+
+void RoomSessionTest::preservesLiveStateWhenMetadataStatusIsUnknown()
+{
+    StreamgetProcessClient client(fakeServicePath());
+    RoomSession session(&client, "123", StreamQuality::Auto);
+    RoomSearchResult metadata;
+    metadata.roomId = "123";
+    metadata.anchorName = "Anchor";
+    metadata.online = true;
+    session.applyMetadata(metadata);
+    QCOMPARE(session.liveStatus(), RoomLiveStatus::Online);
+    metadata.online = false;
+    metadata.statusKnown = false;
+    session.applyMetadata(metadata);
+    QCOMPARE(session.liveStatus(), RoomLiveStatus::Online);
+}
 
 void RoomSessionTest::startsResolvingWithUserAndEffectiveQuality()
 {

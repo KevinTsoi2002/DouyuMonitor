@@ -81,7 +81,8 @@ void RoomSession::applyMetadata(const RoomSearchResult &result)
     if (!result.avatarUrl.isEmpty()) {
         metadata_.avatarUrl = isSafeHttpUrl(result.avatarUrl) ? result.avatarUrl : QUrl();
     }
-    setLiveStatus(result.online ? RoomLiveStatus::Online : RoomLiveStatus::Offline);
+    if (result.statusKnown)
+        setLiveStatus(result.online ? RoomLiveStatus::Online : RoomLiveStatus::Offline);
 }
 
 StreamQuality RoomSession::userQuality() const noexcept

@@ -87,13 +87,65 @@ QString normalizedSearchQuery(const QString &raw)
     return value;
 }
 
+void sortImportIdentities(QVector<QStringList> &identities)
+{
+    std::sort(identities.begin(), identities.end(),
+              [](const QStringList &left, const QStringList &right) {
+        return std::lexicographical_compare(left.cbegin(), left.cend(),
+                                            right.cbegin(), right.cend());
+    });
+}
+
+QVector<QStringList> importRoomIdentities(const QVector<GuildRoomCacheEntry> &cache)
+{
+    QVector<QStringList> identities;
+    for (const auto &member : GuildRoster::bundled())
+        if (!member.roomId.isEmpty()) identities.append({member.id, member.roomId});
+    for (const auto &entry : cache) {
+        if (entry.verifiedAtMs > 0 && !entry.roomId.isEmpty()
+            && GuildRoster::findById(entry.memberId) != nullptr)
+            identities.append({entry.memberId, entry.roomId});
+    }
+    sortImportIdentities(identities);
+    identities.erase(std::unique(identities.begin(), identities.end()), identities.end());
+    return identities;
+}
+
+QVector<QStringList> importRankIdentities(const QVariantList &entries)
+{
+    QVector<QStringList> identities;
+    for (const auto &value : entries) {
+        const auto entry = value.toMap();
+        identities.append({entry.value(QStringLiteral("id")).toString(),
+                           entry.value(QStringLiteral("name")).toString(),
+                           entry.value(QStringLiteral("roomId")).toString(),
+                           entry.value(QStringLiteral("teamId")).toString(),
+                           entry.value(QStringLiteral("teamName")).toString(),
+                           entry.value(QStringLiteral("role")).toString(),
+                           entry.value(QStringLiteral("teamValid")).toBool()
+                               ? QStringLiteral("valid") : QStringLiteral("invalid")});
+    }
+    // Score refreshes can reorder entries without changing import ownership.
+    sortImportIdentities(identities);
+    return identities;
+}
+
 } // namespace
+
+AppController::AppController(QString serviceProgram, QSettings *settings,
+                             SystemNotificationSink *notificationSink,
+                             DanmakuClientFactory danmakuFactory, QObject *parent)
+    : AppController(std::move(serviceProgram), settings, notificationSink,
+                    std::move(danmakuFactory), parent, {})
+{
+}
 
 AppController::AppController(QString serviceProgram,
                              QSettings *settings,
                              SystemNotificationSink *notificationSink,
                              DanmakuClientFactory danmakuFactory,
-                             QObject *parent)
+                             QObject *parent,
+                             std::unique_ptr<MaoziRankClient> rankClient)
     : QObject(parent)
     , settings_(settings)
     , workspaceStore_(settings)
@@ -124,6 +176,7 @@ AppController::AppController(QString serviceProgram,
         snapshot_.guildRoomCache = guildRoomResolver_->cache();
         if (!restoring_) persistWorkspace();
         emit guildRosterChanged();
+        emit maoziTeamImportChanged();
     });
     connect(guildRoomResolver_, &GuildRoomResolver::memberChanged, this,
             [this](const QString &) { emit guildRosterChanged(); });
@@ -131,16 +184,58 @@ AppController::AppController(QString serviceProgram,
     trayService_ = std::make_unique<WindowsTrayService>(this);
     rooms_ = std::make_unique<RoomListModel>(this);
     workspace_ = std::make_unique<WorkspaceModel>(this, this);
+    connect(workspace_.get(), &WorkspaceModel::workspaceDataChanged,
+            this, &AppController::maoziTeamImportChanged);
     monitoring_ = std::make_unique<MonitoringModel>(this);
     danmaku_ = std::make_unique<DanmakuController>(std::move(danmakuFactory), this);
     updateChecker_ = std::make_unique<UpdateChecker>(QStringLiteral(DOUYU_APP_VERSION), QUrl{}, 8000, this);
-    maoziRank_ = std::make_unique<MaoziRankClient>(QUrl{}, QUrl{}, 15000, this);
+    maoziRank_ = rankClient ? std::move(rankClient)
+                           : std::make_unique<MaoziRankClient>(QUrl{}, QUrl{}, 15000, this);
+    if (settings_ && settings_->contains(QStringLiteral("DouyuMonitor/eventMappingV1")))
+        maoziRank_->setEventMapping(settings_->value(QStringLiteral("DouyuMonitor/eventMappingV1")).toByteArray());
     connect(maoziRank_.get(), &MaoziRankClient::entriesChanged,
             this, &AppController::guildRosterChanged);
     connect(maoziRank_.get(), &MaoziRankClient::syncStateChanged,
             this, &AppController::rankSyncStateChanged);
     connect(maoziRank_.get(), &MaoziRankClient::syncStateChanged,
             this, &AppController::guildRosterChanged);
+    connect(maoziRank_.get(), &MaoziRankClient::entriesChanged,
+            this, &AppController::maoziTeamImportChanged);
+    connect(maoziRank_.get(), &MaoziRankClient::syncStateChanged,
+            this, &AppController::maoziTeamImportChanged);
+    connect(maoziRank_.get(), &MaoziRankClient::loadingChanged,
+            this, &AppController::maoziTeamImportChanged);
+    connect(maoziRank_.get(), &MaoziRankClient::snapshotRefreshFinished, this,
+            [this](bool success) {
+        if (shuttingDown_
+            || maoziTeamImport_.value(QStringLiteral("state")) != QStringLiteral("loading"))
+            return;
+        if (!success) {
+            maoziTeamImport_ = {{QStringLiteral("state"), QStringLiteral("error")},
+                                {QStringLiteral("canConfirm"), false},
+                                {QStringLiteral("error"), QStringLiteral("野榜刷新失败，请重试")}};
+        } else {
+            maoziTeamImportSourceTeams_ = snapshot_.teams;
+            maoziTeamImportSourceCache_ = snapshot_.guildRoomCache;
+            maoziTeamImportSourceEntries_ = maoziRank_->entries();
+            maoziTeamImportPlan_ = MaoziTeamImport::build(
+                snapshot_.teams, GuildRoster::bundled(), snapshot_.guildRoomCache,
+                maoziTeamImportSourceEntries_);
+            const auto &plan = maoziTeamImportPlan_;
+            maoziTeamImport_ = {
+                {QStringLiteral("state"), plan.error.isEmpty()
+                    ? QStringLiteral("preview") : QStringLiteral("error")},
+                {QStringLiteral("error"), plan.error},
+                {QStringLiteral("teams"), plan.previewTeams},
+                {QStringLiteral("createdTeams"), plan.createdTeams},
+                {QStringLiteral("changedMembers"), plan.changedMembers},
+                {QStringLiteral("unchangedMembers"), plan.unchangedMembers},
+                {QStringLiteral("unmatchedNames"), plan.unmatchedNames},
+                {QStringLiteral("unassignedNames"), plan.unassignedNames},
+                {QStringLiteral("conflictNames"), plan.conflictNames}};
+        }
+        emit maoziTeamImportChanged();
+    });
     connect(updateChecker_.get(), &UpdateChecker::stateChanged, this, &AppController::updateStateChanged);
     connect(updateChecker_.get(), &UpdateChecker::resultChanged, this, &AppController::updateStateChanged);
 
@@ -197,6 +292,86 @@ AppController::AppController(QString serviceProgram,
 AppController::~AppController()
 {
     shutdown();
+}
+
+QVariantMap AppController::maoziTeamImport() const
+{
+    auto state = maoziTeamImport_;
+    state.insert(QStringLiteral("canConfirm"),
+        !shuttingDown_
+        && state.value(QStringLiteral("state")) == QStringLiteral("preview")
+        && maoziRank_ && !maoziRank_->loading() && !maoziRank_->syncPending()
+        && maoziRank_->lastSyncError().isEmpty()
+        && snapshot_.teams == maoziTeamImportSourceTeams_
+        && importRoomIdentities(snapshot_.guildRoomCache)
+            == importRoomIdentities(maoziTeamImportSourceCache_)
+        && importRankIdentities(maoziRank_->entries())
+            == importRankIdentities(maoziTeamImportSourceEntries_)
+        && !maoziTeamImportPlan_.previewTeams.isEmpty());
+    return state;
+}
+
+void AppController::previewMaoziTeamImport()
+{
+    if (shuttingDown_ || !maoziRank_) return;
+    if (maoziTeamImport_.value(QStringLiteral("state")) == QStringLiteral("loading")) return;
+    if (maoziRank_->loading() || maoziRank_->syncPending()) {
+        maoziTeamImport_ = {{QStringLiteral("state"), QStringLiteral("error")},
+                            {QStringLiteral("error"), QStringLiteral("野榜正在刷新，请稍后重试")}};
+        emit maoziTeamImportChanged();
+        return;
+    }
+    maoziTeamImportPlan_ = {};
+    maoziTeamImport_ = {{QStringLiteral("state"), QStringLiteral("loading")}};
+    emit maoziTeamImportChanged();
+    maoziRank_->refresh();
+}
+
+QString AppController::confirmMaoziTeamImport()
+{
+    if (!maoziTeamImport().value(QStringLiteral("canConfirm")).toBool()) {
+        const auto error = QStringLiteral("预览已变化或不可用，请重新刷新");
+        maoziTeamImport_ = {{QStringLiteral("state"), QStringLiteral("error")},
+                            {QStringLiteral("error"), error}};
+        emit maoziTeamImportChanged();
+        return error;
+    }
+    auto candidate = snapshot_;
+    candidate.teams = maoziTeamImportPlan_.teams;
+    const QString workspaceKey = QStringLiteral("DouyuMonitor/nativeWorkspaceV1");
+    const bool hadWorkspace = settings_ && settings_->contains(workspaceKey);
+    const auto previousValue = settings_ ? settings_->value(workspaceKey) : QVariant{};
+    if (!workspaceStore_.save(candidate)) {
+        // Discard QSettings' pending candidate as well as the application copy.
+        if (settings_) {
+            if (hadWorkspace) settings_->setValue(workspaceKey, previousValue);
+            else settings_->remove(workspaceKey);
+        }
+        const auto error = QStringLiteral("队伍保存失败，本地队伍未更改");
+        maoziTeamImport_ = {{QStringLiteral("state"), QStringLiteral("error")},
+                            {QStringLiteral("error"), error}};
+        emit maoziTeamImportChanged();
+        return error;
+    }
+    snapshot_ = std::move(candidate);
+    if (workspaceUnsaved_) {
+        workspaceUnsaved_ = false;
+        emit workspaceSaveStateChanged();
+    }
+    cancelMaoziTeamImport();
+    refreshPresentation();
+    emit guildRosterChanged();
+    return {};
+}
+
+void AppController::cancelMaoziTeamImport()
+{
+    maoziTeamImport_ = {{QStringLiteral("state"), QStringLiteral("idle")}};
+    maoziTeamImportPlan_ = {};
+    maoziTeamImportSourceTeams_.clear();
+    maoziTeamImportSourceCache_.clear();
+    maoziTeamImportSourceEntries_.clear();
+    emit maoziTeamImportChanged();
 }
 
 void AppController::shutdown()
@@ -1093,7 +1268,10 @@ QString AppController::setNavigationVisible(bool visible)
     if (snapshot_.navigationVisible == visible && workspace_->navigationVisible() == visible) return {};
     snapshot_.navigationVisible = visible;
     workspace_->setNavigationVisible(visible);
-    if (visible && guildRoomResolver_ != nullptr) guildRoomResolver_->refreshMetadata(false);
+    if (visible && guildRoomResolver_ != nullptr) {
+        guildRoomResolver_->start();
+        guildRoomResolver_->refreshMetadata(false);
+    }
     persistWorkspace();
     return {};
 }
@@ -1440,7 +1618,7 @@ void AppController::restoreWorkspace()
     if (guildRoomResolver_ != nullptr) {
         guildRoomResolver_->setRoster(GuildRoster::bundled());
         guildRoomResolver_->setCache(snapshot_.guildRoomCache);
-        guildRoomResolver_->start();
+        if (snapshot_.navigationVisible) guildRoomResolver_->start();
     }
     danmaku_->setConfiguration(snapshot_.danmaku);
     const NativeRoomGroup *activeGroup = nullptr;
@@ -1526,6 +1704,7 @@ void AppController::onServiceResponse(const ServiceResponse &response)
             {QStringLiteral("title"), result.title},
             {QStringLiteral("category"), result.category},
             {QStringLiteral("online"), result.online},
+            {QStringLiteral("statusKnown"), result.statusKnown},
             {QStringLiteral("viewerLabel"), result.viewerLabel},
             {QStringLiteral("avatarUrl"), result.avatarUrl},
         });
@@ -1588,7 +1767,37 @@ void AppController::onFavoriteRoomUpdated(const QString &roomId,
 
 void AppController::persistWorkspace()
 {
-    if (!restoring_) workspaceStore_.save(snapshot_);
+    if (restoring_) return;
+    const bool unsaved = !workspaceStore_.save(snapshot_);
+    if (workspaceUnsaved_ == unsaved) return;
+    workspaceUnsaved_ = unsaved;
+    emit workspaceSaveStateChanged();
+}
+
+void AppController::retryWorkspaceSave()
+{
+    persistWorkspace();
+}
+
+QString AppController::eventMappingJson() const
+{
+    return QString::fromUtf8(maoziRank_->eventMapping());
+}
+
+QString AppController::saveEventMapping(const QString &mapping)
+{
+    const auto error = maoziRank_->setEventMapping(mapping.toUtf8());
+    if (!error.isEmpty()) return error;
+    if (settings_) settings_->setValue(QStringLiteral("DouyuMonitor/eventMappingV1"), maoziRank_->eventMapping());
+    persistWorkspace();
+    emit eventMappingChanged();
+    return {};
+}
+
+void AppController::refreshGuildLiveStatus()
+{
+    if (!shuttingDown_ && workspace_->navigationVisible() && guildRoomResolver_)
+        guildRoomResolver_->refreshLiveStatus();
 }
 
 void AppController::onSnapshotsChanged(const RoomSnapshots &snapshots)

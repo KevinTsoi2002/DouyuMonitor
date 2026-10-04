@@ -127,6 +127,16 @@ def success_resolve(
     return response
 
 
+def success_search(request_id: int, results: list[dict[str, Any]]) -> dict[str, Any]:
+    for result in results:
+        if (not isinstance(result, dict) or not _valid_room_id(result.get("roomId"))
+                or not isinstance(result.get("anchorName"), str) or not result["anchorName"]
+                or not isinstance(result.get("online"), bool)
+                or not isinstance(result.get("statusKnown", True), bool)):
+            raise ProtocolError(ErrorCode.INVALID_RESPONSE)
+    return {"requestId": request_id, "ok": True, "results": list(results)}
+
+
 def error_response(request_id: int, code: ErrorCode) -> dict[str, Any]:
     return {
         "requestId": request_id,

@@ -171,7 +171,7 @@ void DouyuDanmakuClient::handleClosed(int code, const QString &reason)
         handleAuthenticationRequested();
         return;
     }
-    if (!handshakeComplete_) scheduleRetry(DanmakuErrorCode::NetworkUnavailable);
+    scheduleRetry(DanmakuErrorCode::NetworkUnavailable);
 }
 
 void DouyuDanmakuClient::handleAuthenticationRequested()

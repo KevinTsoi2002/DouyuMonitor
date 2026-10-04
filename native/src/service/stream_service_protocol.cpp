@@ -261,6 +261,10 @@ std::optional<ServiceResponse> decodeResponse(const QByteArray &line)
                 return std::nullopt;
             }
             item.online = result.value(QStringLiteral("online")).toBool();
+            if (result.contains(QStringLiteral("statusKnown"))) {
+                if (!result.value(QStringLiteral("statusKnown")).isBool()) return std::nullopt;
+                item.statusKnown = result.value(QStringLiteral("statusKnown")).toBool();
+            }
             if (result.contains(QStringLiteral("avatarUrl"))) {
                 item.avatarUrl = QUrl(result.value(QStringLiteral("avatarUrl")).toString());
                 if (!isSafeHttpUrl(item.avatarUrl)) return std::nullopt;

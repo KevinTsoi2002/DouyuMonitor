@@ -1,5 +1,5 @@
 import QtQuick
-import QtQuick.Controls
+import QtQuick.Controls.Basic
 import ".."
 
 Dialog {
@@ -15,6 +15,9 @@ Dialog {
     readonly property bool validName: teamNameInput.text.trim().length > 0
                                      && teamNameInput.text.trim().length <= 30
     readonly property var selectedTeam: root.findTeam(root.selectedTeamId)
+    readonly property var importData: controller && controller.maoziTeamImport !== undefined
+                                      ? controller.maoziTeamImport : ({state: "idle"})
+    readonly property bool importing: importData.state !== "idle"
 
     modal: true
     title: "队伍管理"
@@ -30,6 +33,10 @@ Dialog {
     palette.windowText: Theme.text
     palette.highlight: Theme.accent
     palette.highlightedText: Theme.text
+    onClosed: {
+        if (root.controller && root.importing)
+            root.controller.cancelMaoziTeamImport()
+    }
 
     background: Rectangle {
         color: Theme.controlSurface
@@ -144,15 +151,31 @@ Dialog {
         onTriggered: root.statusMessage = ""
     }
 
-    contentItem: Column {
+    contentItem: Item {
+      Column {
+        anchors.fill: parent
+        visible: !root.importing
         spacing: 10
 
-        Text {
+        Row {
             width: parent.width
-            text: "队伍用于组织公会主播，最多可创建 20 个队伍。"
-            color: Theme.mutedText
-            font.pixelSize: 11
-            wrapMode: Text.WordWrap
+            spacing: 8
+            Text {
+                width: parent.width - importMaoziTeamsButton.width - 8
+                anchors.verticalCenter: parent.verticalCenter
+                text: "队伍 " + root.teams.length + "/20"
+                color: Theme.mutedText
+                font.pixelSize: 11
+            }
+            Button {
+                id: importMaoziTeamsButton
+                objectName: "importMaoziTeamsButton"
+                text: qsTr("从野榜导入")
+                palette.button: Theme.well
+                palette.buttonText: Theme.text
+                enabled: root.controller !== null && !root.importing
+                onClicked: root.controller.previewMaoziTeamImport()
+            }
         }
 
         Row {
@@ -200,7 +223,8 @@ Dialog {
             }
 
             Item {
-                width: Math.max(0, parent.width - parent.children[0].width - 34)
+                width: Math.max(0, parent.width - parent.children[0].width
+                               - 3 * Theme.controlHeight - 4 * parent.spacing)
                 height: 1
             }
 
@@ -432,6 +456,83 @@ Dialog {
             elide: Text.ElideRight
             font.pixelSize: 10
         }
+      }
+
+      Column {
+        anchors.fill: parent
+        visible: root.importing
+        spacing: 12
+        Text {
+            width: parent.width
+            text: root.importData.state === "loading" ? qsTr("正在刷新野榜…")
+                  : root.importData.state === "error" ? (root.importData.error || "")
+                  : qsTr("新增 %1 队 · 归属变更 %2 人 · 无变化 %3 人")
+                    .arg(root.importData.createdTeams || 0)
+                    .arg(root.importData.changedMembers || 0)
+                    .arg(root.importData.unchangedMembers || 0)
+            color: root.importData.state === "error" ? Theme.warning : Theme.text
+            wrapMode: Text.Wrap
+            font.pixelSize: 13
+        }
+        ListView {
+            id: importPreview
+            objectName: "maoziTeamImportPreviewList"
+            width: parent.width
+            height: Math.max(100, parent.height - importIssues.height - 65)
+            clip: true
+            spacing: 12
+            model: root.importData.teams || []
+            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+            delegate: Column {
+                required property var modelData
+                width: importPreview.width
+                spacing: 6
+                Text {
+                    width: parent.width
+                    text: qsTr("%1 · 来源 %2 人 · 匹配 %3 人 · 本地保留 %4 人")
+                        .arg(modelData.name).arg(modelData.sourceCount)
+                        .arg(modelData.matchedCount).arg(modelData.retainedCount)
+                    color: Theme.text
+                    font.bold: true
+                    wrapMode: Text.Wrap
+                }
+                Text {
+                    width: parent.width
+                    text: (modelData.members || []).join("、")
+                    color: Theme.mutedText
+                    wrapMode: Text.Wrap
+                    font.pixelSize: 12
+                }
+                Text {
+                    width: parent.width
+                    visible: modelData.retainedCount > 0
+                    text: qsTr("保留：%1").arg((modelData.retainedMembers || []).join("、"))
+                    color: Theme.mutedText
+                    wrapMode: Text.Wrap
+                    font.pixelSize: 11
+                }
+            }
+        }
+        ScrollView {
+            id: importIssues
+            width: parent.width
+            height: Math.min(100, issuesText.implicitHeight)
+            clip: true
+            Text {
+                id: issuesText
+                width: importIssues.availableWidth
+                text: ((root.importData.unmatchedNames || []).length > 0
+                    ? qsTr("未匹配：%1").arg(root.importData.unmatchedNames.join("、")) : "")
+                    + ((root.importData.conflictNames || []).length > 0
+                    ? qsTr("\n冲突（保留原归属）：%1").arg(root.importData.conflictNames.join("、")) : "")
+                    + ((root.importData.unassignedNames || []).length > 0
+                    ? qsTr("\n未分队（保留原归属）：%1").arg(root.importData.unassignedNames.join("、")) : "")
+                color: Theme.warning
+                wrapMode: Text.Wrap
+                font.pixelSize: 11
+            }
+        }
+      }
     }
 
     footer: Rectangle {
@@ -439,6 +540,52 @@ Dialog {
         color: Theme.controlSurface
         border.color: Theme.border
 
+        Row {
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 8
+            visible: root.importing
+            Button {
+                objectName: "confirmMaoziTeamImportButton"
+                text: qsTr("确认导入")
+                width: 100
+                height: 34
+                contentItem: Text {
+                    text: parent.text
+                    color: parent.enabled ? Theme.text : Theme.mutedText
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
+                background: Rectangle {
+                    color: parent.enabled ? Theme.accent : Theme.well
+                    border.color: Theme.border
+                    radius: Theme.radiusSmall
+                }
+                enabled: root.importData.canConfirm === true
+                onClicked: {
+                    const message = root.controller.confirmMaoziTeamImport()
+                    if (!message) root.showStatus(qsTr("队伍已导入"))
+                }
+            }
+            Button {
+                objectName: "cancelMaoziTeamImportButton"
+                text: qsTr("取消")
+                width: 76
+                height: 34
+                contentItem: Text {
+                    text: parent.text
+                    color: Theme.text
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
+                background: Rectangle {
+                    color: parent.hovered ? Theme.well : Theme.controlSurface
+                    border.color: Theme.border
+                    radius: Theme.radiusSmall
+                }
+                onClicked: root.controller.cancelMaoziTeamImport()
+            }
+        }
         Button {
             anchors.right: parent.right
             anchors.rightMargin: 0
@@ -446,6 +593,17 @@ Dialog {
             width: 92
             height: 34
             text: "关闭"
+            contentItem: Text {
+                text: parent.text
+                color: Theme.text
+                horizontalAlignment: Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
+            }
+            background: Rectangle {
+                color: parent.hovered ? Theme.well : Theme.controlSurface
+                border.color: Theme.border
+                radius: Theme.radiusSmall
+            }
             onClicked: root.close()
         }
     }

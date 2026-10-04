@@ -19,7 +19,18 @@ private slots:
     void decodesFixedErrorWithoutMessage();
     void rejectsMalformedAndInvalidResponses();
     void rejectsDuplicateVariantsAndCredentialUrls();
+    void preservesUnknownSearchStatus();
 };
+
+void StreamServiceProtocolTest::preservesUnknownSearchStatus()
+{
+    const auto response = decodeResponse(QByteArray(R"({"requestId":1,"ok":true,"results":[{"roomId":"123","anchorName":"Hint","online":false,"statusKnown":false}]})"));
+    QVERIFY(response.has_value());
+    QVERIFY(!response->results.first().statusKnown);
+    // Unknown is projected separately, not confused with an authoritative offline result.
+    const auto invalid = decodeResponse(QByteArray(R"({"requestId":1,"ok":true,"results":[{"roomId":"123","anchorName":"Hint","online":false,"statusKnown":"false"}]})"));
+    QVERIFY(!invalid.has_value());
+}
 
 void StreamServiceProtocolTest::encodesPingRequest()
 {

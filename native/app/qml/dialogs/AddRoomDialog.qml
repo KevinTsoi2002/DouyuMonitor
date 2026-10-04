@@ -230,7 +230,8 @@ Dialog {
                         color: resultRow.modelData.online ? "#65d391" : "#9ba5b1"
                         font.pixelSize: 9
                         elide: Text.ElideRight
-                        text: (resultRow.modelData.online ? "直播中" : "未开播")
+                        text: (resultRow.modelData.statusKnown === false ? "状态未知"
+                               : (resultRow.modelData.online ? "直播中" : "未开播"))
                               + "  ·  " + resultRow.modelData.roomId
                               + "  ·  " + resultRow.modelData.category
                     }

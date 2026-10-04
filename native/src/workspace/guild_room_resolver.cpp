@@ -183,6 +183,14 @@ void GuildRoomResolver::stop()
     if (requestId != 0 && transport_ != nullptr) transport_->cancel(requestId);
 }
 
+void GuildRoomResolver::refreshLiveStatus()
+{
+    if (!started_) return;
+    QStringList memberIds = roomIds_.keys();
+    std::sort(memberIds.begin(), memberIds.end());
+    for (const auto &memberId : memberIds) refreshMemberMetadata(memberId, false, true);
+}
+
 QString GuildRoomResolver::roomIdFor(const QString &memberId) const
 {
     return roomIds_.value(memberId);
@@ -240,6 +248,10 @@ bool GuildRoomResolver::isExactMatch(const GuildMember &member, const RoomSearch
 
 void GuildRoomResolver::applyMetadata(const QString &memberId, const RoomSearchResult &result)
 {
+    if (!result.statusKnown) {
+        liveStates_.insert(memberId, QStringLiteral("unknown"));
+        return;
+    }
     if (result.avatarUrl.isValid() && !result.avatarUrl.isEmpty()) {
         avatarUrls_.insert(memberId, result.avatarUrl.toString());
     } else {
@@ -300,7 +312,8 @@ void GuildRoomResolver::enqueueMetadataRefresh(const QString &memberId, bool for
     refreshMemberMetadata(memberId, forceFullMetadata);
 }
 
-void GuildRoomResolver::refreshMemberMetadata(const QString &memberId, bool forceFullMetadata)
+void GuildRoomResolver::refreshMemberMetadata(const QString &memberId, bool forceFullMetadata,
+                                             bool forceLiveStatus)
 {
     if (!started_ || !members_.contains(memberId) || !roomIds_.contains(memberId)
         || queuedMetadataMembers_.contains(memberId) || activeMemberId_ == memberId) {
@@ -315,7 +328,7 @@ void GuildRoomResolver::refreshMemberMetadata(const QString &memberId, bool forc
     const bool liveStateIsFresh = cacheIt != cache_.end()
         && cacheIt->liveCheckedAtMs > 0
         && QDateTime::currentMSecsSinceEpoch() - cacheIt->liveCheckedAtMs < kLiveStatusFreshMs;
-    if (liveStateIsFresh && !forceFullMetadata) return;
+    if (liveStateIsFresh && !forceFullMetadata && !forceLiveStatus) return;
     metadataQueue_.push_back({
         memberId,
         hasCheckedMetadata && !forceFullMetadata,
@@ -366,14 +379,14 @@ bool GuildRoomResolver::handleResponse(const ServiceResponse &response)
                         return entry.memberId == memberId;
                     });
                 if (cacheIt != cache_.end()) {
-                    cacheIt->avatarUrl = result.avatarUrl;
-                    cacheIt->metadataCheckedAtMs = QDateTime::currentMSecsSinceEpoch();
-                    if (!liveState.isEmpty()) {
+                    if (result.statusKnown) cacheIt->avatarUrl = result.avatarUrl;
+                    if (result.statusKnown) cacheIt->metadataCheckedAtMs = QDateTime::currentMSecsSinceEpoch();
+                    if (!liveState.isEmpty() && liveState != QStringLiteral("unknown")) {
                         cacheIt->liveState = liveState;
                         cacheIt->liveCheckedAtMs = QDateTime::currentMSecsSinceEpoch();
                     }
                 } else {
-                    storeCacheEntry(memberId, expectedRoomId, result.avatarUrl, true);
+                    storeCacheEntry(memberId, expectedRoomId, result.avatarUrl, result.statusKnown);
                 }
                 emit cacheChanged();
                 emit memberChanged(memberId);
@@ -397,10 +410,10 @@ bool GuildRoomResolver::handleResponse(const ServiceResponse &response)
         statuses_.insert(memberId, QStringLiteral("resolved"));
         failures_.remove(memberId);
         applyMetadata(memberId, *matchedResult);
-        updateCacheLiveState(memberId,
+        if (matchedResult->statusKnown) updateCacheLiveState(memberId,
                              matchedResult->online ? QStringLiteral("online")
                                                    : QStringLiteral("offline"));
-        storeCacheEntry(memberId, roomId, matchedResult->avatarUrl, true);
+        storeCacheEntry(memberId, roomId, matchedResult->avatarUrl, matchedResult->statusKnown);
         emit memberChanged(memberId);
         emit cacheChanged();
     } else if (!matches.isEmpty()) {
@@ -423,6 +436,8 @@ bool GuildRoomResolver::handleFailure(quint64 requestId, const QString &)
     activeRequestIsMetadataRefresh_ = false;
     activeRequestStatusOnly_ = false;
     if (metadataRefresh) {
+        liveStates_.insert(memberId, QStringLiteral("unknown"));
+        emit memberChanged(memberId);
         scheduleNextRequest(kRequestSpacingMs);
         return true;
     }

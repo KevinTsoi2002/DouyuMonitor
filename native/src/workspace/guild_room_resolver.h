@@ -41,6 +41,7 @@ public:
     void start();
     void stop();
     void refreshMetadata(bool forceFullMetadata = false);
+    Q_INVOKABLE void refreshLiveStatus();
 
     QString roomIdFor(const QString &memberId) const;
     QString avatarUrlFor(const QString &memberId) const;
@@ -68,7 +69,8 @@ private:
     void scheduleRetry(const QString &memberId);
     void removeQueuedMember(const QString &memberId);
     void enqueueMetadataRefresh(const QString &memberId, bool forceFullMetadata = false);
-    void refreshMemberMetadata(const QString &memberId, bool forceFullMetadata = false);
+    void refreshMemberMetadata(const QString &memberId, bool forceFullMetadata = false,
+                               bool forceLiveStatus = false);
     void applyMetadata(const QString &memberId, const RoomSearchResult &result);
     void applyLiveStatus(const QString &memberId, const ServiceResponse &response);
     void updateCacheLiveState(const QString &memberId, const QString &liveState);

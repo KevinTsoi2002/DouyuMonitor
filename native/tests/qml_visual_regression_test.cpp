@@ -591,6 +591,16 @@ void QmlVisualRegressionTest::capturesNavigationAndTeamStates()
     QVERIFY2(dialog != nullptr, qPrintable(error));
     QVERIFY(QMetaObject::invokeMethod(dialog.get(), "open"));
     QTRY_VERIFY(dialog->property("visible").toBool());
+    QTest::qWait(100);
+    const auto *content = qvariant_cast<QQuickItem *>(dialog->property("contentItem"));
+    QVERIFY(content != nullptr);
+    const QRectF dialogRect(dialog->property("x").toDouble(), dialog->property("y").toDouble(),
+                            dialog->property("width").toDouble(), dialog->property("height").toDouble());
+    for (const auto &name : {"moveTeamUpButton", "moveTeamDownButton", "deleteTeamButton"}) {
+        auto *button = dialog->findChild<QQuickItem *>(QString::fromLatin1(name));
+        QVERIFY(button != nullptr);
+        QVERIFY2(dialogRect.contains(visualSceneRect(button)), name);
+    }
 
     const QImage dialogImage =
         visualCapture(dialogWindow.get(), QStringLiteral("team-manager-720x760"));

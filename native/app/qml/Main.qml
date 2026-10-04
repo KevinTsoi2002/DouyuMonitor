@@ -62,11 +62,27 @@ ApplicationWindow {
         return null
     }
 
+    function clearGuildHover()
+    {
+        guildHoverTimer.stop()
+        guildRankHoverCard.close()
+        root.hoveredGuildMemberId = ""
+        root.hoveredGuildMember = null
+        guildRankHoverCard.member = null
+    }
+
+    onNavigationVisibleChanged: if (!navigationVisible) root.clearGuildHover()
+    onCurrentViewChanged: root.clearGuildHover()
+    onActiveChanged: if (!active) root.clearGuildHover()
+    onVisibleChanged: if (!visible) root.clearGuildHover()
+
     Timer {
         id: guildHoverTimer
         interval: 450
         repeat: false
         onTriggered: {
+            if (!root.navigationVisible || root.currentView !== "monitoring"
+                    || root.hoveredGuildMemberId.length === 0) return
             root.hoveredGuildMember = root.guildMemberById(root.hoveredGuildMemberId)
             guildRankHoverCard.member = root.hoveredGuildMember
             guildRankHoverCard.visible = root.hoveredGuildMember !== null
@@ -350,10 +366,7 @@ ApplicationWindow {
             root.guildHoverY = y
             guildHoverTimer.restart()
         }
-        onMemberHoverExited: {
-            guildHoverTimer.stop()
-            guildRankHoverCard.visible = false
-        }
+        onMemberHoverExited: root.clearGuildHover()
     }
 
     Item {
@@ -435,6 +448,37 @@ ApplicationWindow {
         z: 20
         controller: root.appController
         onBackRequested: root.currentView = "monitoring"
+    }
+
+    Rectangle {
+        id: workspaceSaveWarning
+        objectName: "workspaceUnsavedWarning"
+        anchors.bottom: parent.bottom
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottomMargin: 42
+        width: workspaceSaveWarningContent.width + 12
+        height: workspaceSaveWarningContent.height + 12
+        color: Theme.controlSurface
+        border.color: Theme.warning
+        z: 150
+        visible: !!root.appController && root.appController.workspaceUnsaved === true
+        Row {
+            id: workspaceSaveWarningContent
+            x: 6
+            y: 6
+            spacing: 12
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: "更改尚未保存，退出可能丢失"
+                color: Theme.text
+                font.pixelSize: 12
+            }
+            Button {
+                objectName: "retryWorkspaceSaveButton"
+                text: "重试保存"
+                onClicked: if (root.appController) root.appController.retryWorkspaceSave()
+            }
+        }
     }
 
     ToastViewport {

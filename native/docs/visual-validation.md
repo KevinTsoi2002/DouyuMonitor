@@ -109,7 +109,7 @@ The current state matrix is:
 Pixel comparison converts both images to `Format_ARGB32`. A pixel counts as
 different when any color channel differs by more than `16`. The test fails when
 more than `1%` of the image pixels differ. Failed captures and red diff masks
-are written under `out/verification/qml-regression`. The comparison helper also
+are written under each build profile's `verification/qml-regression` directory. The comparison helper also
 accepts ignored rectangles for known dynamic regions, but the current state
 matrix does not use that mechanism because the fixtures are deterministic.
 
@@ -123,7 +123,8 @@ update baselines explicitly:
 
 The script sets `DOUYU_UPDATE_VISUAL_BASELINES=1`, reruns the test, and writes
 the current captures to `tests/visual/baselines`. Review every changed PNG
-before committing it. The script does not build the target first.
+before committing it. The script builds the visual test target before updating
+the baselines and stops if that build fails.
 
 The suite runs with `QT_QPA_PLATFORM=offscreen` and the Basic Qt Quick Controls
 style for repeatable automation. This is not a replacement for real Windows

@@ -1,5 +1,6 @@
 import json
 import unittest
+from native.service import protocol
 
 from native.service.protocol import (
     ErrorCode,
@@ -11,6 +12,15 @@ from native.service.protocol import (
 
 
 class ProtocolTests(unittest.TestCase):
+    def test_search_response_preserves_unknown_and_validates_status(self):
+        builder = getattr(protocol, "success_search", None)
+        self.assertIsNotNone(builder)
+        hint = {"roomId": "123", "anchorName": "Hint", "online": False, "statusKnown": False}
+        response = builder(1, [hint])
+        self.assertFalse(response["results"][0]["statusKnown"])
+        with self.assertRaises(ProtocolError):
+            builder(1, [{**hint, "statusKnown": "false"}])
+
     def test_parses_ping_request(self):
         self.assertEqual(
             parse_request('{"requestId":1,"op":"ping"}'),

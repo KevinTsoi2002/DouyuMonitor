@@ -89,6 +89,7 @@ void FavoriteMonitor::processResult(const QString &roomId, const RoomSearchResul
     it->room.metadata.category = result.category;
     it->room.metadata.viewerLabel = result.viewerLabel;
     it->room.metadata.avatarUrl = result.avatarUrl;
+    if (!result.statusKnown) return;
     it->room.liveStatus = result.online ? RoomLiveStatus::Online : RoomLiveStatus::Offline;
 
     RoomSnapshot snapshot;

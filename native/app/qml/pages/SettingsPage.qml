@@ -1,5 +1,5 @@
 import QtQuick
-import QtQuick.Controls
+import QtQuick.Controls.Basic
 import ".."
 
 Item {
@@ -11,6 +11,15 @@ Item {
     signal teamManagerRequested()
 
     readonly property string closeBehavior: controller ? controller.closeBehavior : "ask"
+    property var eventMapping: ({ version: 1, event: "", members: [] })
+    property string mappingError: ""
+    function loadEventMapping() {
+        if (!root.controller || !root.controller.eventMappingJson) return
+        root.eventMapping = JSON.parse(root.controller.eventMappingJson)
+    }
+    onControllerChanged: root.loadEventMapping()
+    Component.onCompleted: root.loadEventMapping()
+    onVisibleChanged: if (visible) root.loadEventMapping()
     function chooseCloseBehavior(behavior) {
         if (!controller) return
         if (behavior === "ask") controller.clearCloseBehavior()
@@ -198,6 +207,139 @@ Item {
                         enabled: root.controller !== null
                         onClicked: root.teamManagerRequested()
                     }
+                }
+            }
+
+            Column {
+                width: parent.width
+                spacing: 8
+                Text {
+                    text: "活动角色（本地配置）"
+                    color: Theme.text
+                    font.bold: true
+                    font.pixelSize: 14
+                }
+                TextField {
+                    objectName: "eventMappingName"
+                    width: parent.width
+                    color: Theme.text
+                    palette.base: Theme.well
+                    palette.text: Theme.text
+                    palette.highlight: Theme.accent
+                    text: root.eventMapping.event
+                    placeholderText: "活动名称"
+                    maximumLength: 80
+                    onTextEdited: root.eventMapping.event = text
+                }
+                Repeater {
+                    objectName: "eventMappingRows"
+                    model: root.eventMapping.members
+                    delegate: Row {
+                        required property var modelData
+                        required property int index
+                        width: settingsContent.width
+                        height: 36
+                        spacing: 8
+                        Text {
+                            width: Math.max(100, parent.width - 256)
+                            height: parent.height
+                            verticalAlignment: Text.AlignVCenter
+                            elide: Text.ElideRight
+                            text: modelData.name
+                            color: Theme.text
+                            font.pixelSize: 12
+                        }
+                        ComboBox {
+                            objectName: "eventMappingRole_" + parent.index
+                            palette.button: Theme.controlSurface
+                            palette.buttonText: Theme.text
+                            palette.base: Theme.well
+                            palette.window: Theme.well
+                            palette.light: Theme.controlSurface
+                            palette.midlight: Theme.borderStrong
+                            palette.mid: Theme.border
+                            palette.dark: Theme.mutedText
+                            palette.text: Theme.text
+                            palette.highlight: Theme.accent
+                            palette.highlightedText: Theme.text
+                            width: 112
+                            height: 32
+                            model: ["团长", "队长", "队员"]
+                            currentIndex: ["leader", "captain", "member"].indexOf(modelData.role)
+                            onActivated: root.eventMapping.members[parent.index].role = ["leader", "captain", "member"][currentIndex]
+                        }
+                        ComboBox {
+                            objectName: "eventMappingTeam_" + parent.index
+                            palette.button: Theme.controlSurface
+                            palette.buttonText: Theme.text
+                            palette.base: Theme.well
+                            palette.window: Theme.well
+                            palette.light: Theme.controlSurface
+                            palette.midlight: Theme.borderStrong
+                            palette.mid: Theme.border
+                            palette.dark: Theme.mutedText
+                            palette.text: Theme.text
+                            palette.highlight: Theme.accent
+                            palette.highlightedText: Theme.text
+                            width: 112
+                            height: 32
+                            model: ["无回退队伍", "红队", "黑队", "紫队", "蓝队"]
+                            currentIndex: modelData.team === null || modelData.team === undefined ? 0 : modelData.team + 1
+                            onActivated: root.eventMapping.members[parent.index].team = currentIndex === 0 ? null : currentIndex - 1
+                        }
+                    }
+                }
+                ComboBox {
+                    id: mappingMemberPicker
+                    objectName: "eventMappingMemberPicker"
+                    palette.button: Theme.controlSurface
+                    palette.buttonText: Theme.text
+                    palette.base: Theme.well
+                    palette.window: Theme.well
+                    palette.light: Theme.controlSurface
+                    palette.midlight: Theme.borderStrong
+                    palette.mid: Theme.border
+                    palette.dark: Theme.mutedText
+                    palette.text: Theme.text
+                    palette.highlight: Theme.accent
+                    palette.highlightedText: Theme.text
+                    width: parent.width
+                    model: root.controller ? root.controller.guildRoster : []
+                    textRole: "anchorName"
+                }
+                Row {
+                    spacing: 8
+                    Button {
+                        text: "添加主播"
+                        palette.button: Theme.controlSurface
+                        palette.buttonText: Theme.text
+                        enabled: mappingMemberPicker.currentIndex >= 0
+                        onClicked: {
+                            const member = mappingMemberPicker.model[mappingMemberPicker.currentIndex]
+                            if (!member.roomId) { root.mappingError = "该主播尚未确认房间号"; return }
+                            const entries = root.eventMapping.members.slice()
+                            for (let i = 0; i < entries.length; ++i) {
+                                if (entries[i].roomId === member.roomId) return
+                            }
+                            entries.push({ roomId: member.roomId, name: member.anchorName, role: "member", team: null })
+                            root.eventMapping = { version: 1, event: root.eventMapping.event, members: entries }
+                        }
+                    }
+                    Button {
+                        objectName: "saveEventMappingButton"
+                        text: "保存角色配置"
+                        palette.button: Theme.controlSurface
+                        palette.buttonText: Theme.text
+                        enabled: !!root.controller && !!root.controller.saveEventMapping
+                        onClicked: root.mappingError = root.controller.saveEventMapping(JSON.stringify(root.eventMapping))
+                    }
+                }
+                Text {
+                    width: parent.width
+                    visible: text.length > 0
+                    text: root.mappingError
+                    color: Theme.text
+                    wrapMode: Text.WordWrap
                 }
             }
 

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(DouyuMonitorNative VERSION 0.2.14 LANGUAGES CXX)
+project(DouyuMonitorNative VERSION 0.2.15 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -84,9 +84,19 @@ set(DOUYU_QML_ICON_ASSETS
 
 add_library(douyu_guild STATIC
     src/workspace/guild_roster.cpp
+    src/workspace/maozi_team_import.cpp
 )
 target_link_libraries(douyu_guild PUBLIC Qt6::Core)
 target_include_directories(douyu_guild PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+qt_add_executable(maozi_team_import_test
+    tests/maozi_team_import_test.cpp
+)
+target_link_libraries(maozi_team_import_test PRIVATE Qt6::Test douyu_guild)
+add_test(NAME maozi_team_import_test COMMAND maozi_team_import_test)
+set_property(TEST maozi_team_import_test PROPERTY ENVIRONMENT_MODIFICATION
+    "PATH=path_list_prepend:${QT_ROOT}/bin"
+    "QT_PLUGIN_PATH=set:${QT_ROOT}/plugins"
+)
 qt_add_resources(douyu_guild guild_roster_resources
     PREFIX "/guild"
     BASE "${CMAKE_CURRENT_SOURCE_DIR}"
@@ -321,7 +331,7 @@ target_include_directories(qml_visual_regression_test PRIVATE
 )
 target_compile_definitions(qml_visual_regression_test PRIVATE
     QML_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/app/qml"
-    QML_VISUAL_OUTPUT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/out/verification/qml-regression"
+    QML_VISUAL_OUTPUT_DIR="${CMAKE_CURRENT_BINARY_DIR}/verification/qml-regression"
     QML_VISUAL_BASELINE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/visual/baselines"
 )
 add_custom_command(TARGET qml_visual_regression_test POST_BUILD
@@ -949,7 +959,11 @@ if(DOUYU_BUILD_SERVICE_TESTS)
     else()
         set(_douyu_venv_python "${CMAKE_CURRENT_SOURCE_DIR}/.venv/bin/python")
     endif()
-    if(EXISTS "${_douyu_venv_python}")
+    if(Python3_EXECUTABLE AND NOT EXISTS "${Python3_EXECUTABLE}")
+        unset(Python3_EXECUTABLE CACHE)
+        unset(Python3_EXECUTABLE)
+    endif()
+    if(NOT Python3_EXECUTABLE AND EXISTS "${_douyu_venv_python}")
         set(Python3_EXECUTABLE "${_douyu_venv_python}" CACHE FILEPATH
             "Python interpreter for the StreamGet service tests" FORCE)
     endif()
@@ -964,7 +978,7 @@ if(DOUYU_BUILD_SERVICE_TESTS)
             ENVIRONMENT "PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}/.."
         )
     else()
-        message(WARNING "Python3 interpreter not found; service tests are disabled")
+        message(FATAL_ERROR "Service tests are enabled but no Python3 interpreter is available")
     endif()
 endif()
 

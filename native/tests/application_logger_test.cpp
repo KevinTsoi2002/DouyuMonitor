@@ -9,6 +9,7 @@ class ApplicationLoggerTest final : public QObject {
 
 private slots:
     void writesTimestampedMessagesAndRedactsSensitiveValues();
+    void redactsCompleteCredentialsAndRemoteAddresses();
 };
 
 void ApplicationLoggerTest::writesTimestampedMessagesAndRedactsSensitiveValues()
@@ -29,12 +30,42 @@ void ApplicationLoggerTest::writesTimestampedMessagesAndRedactsSensitiveValues()
     QVERIFY(contents.contains(QStringLiteral("[INFO]")));
     QVERIFY(contents.contains(QStringLiteral("token=[REDACTED]")));
     QVERIFY(contents.contains(QStringLiteral("cookie=[REDACTED]")));
-    QVERIFY(contents.contains(QStringLiteral("signature=[REDACTED]")));
+    QVERIFY(contents.contains(QStringLiteral("[REMOTE_URL_REDACTED]")));
     QVERIFY(!contents.contains(QStringLiteral("secret-value")));
     QVERIFY(!contents.contains(QStringLiteral("abc123")));
     QVERIFY(!contents.contains(QStringLiteral("hidden")));
 
     ApplicationLogger::resetForTest();
+}
+
+namespace {
+QString forwarded;
+void captureMessage(QtMsgType, const QMessageLogContext &, const QString &message)
+{
+    forwarded = message;
+}
+}
+
+void ApplicationLoggerTest::redactsCompleteCredentialsAndRemoteAddresses()
+{
+    QTemporaryDir directory;
+    const auto previous = qInstallMessageHandler(captureMessage);
+    ApplicationLogger::install(directory.path());
+    qWarning().noquote() << "Authorization: Bearer synthetic-bearer\n"
+                        << "Cookie: first=synthetic-cookie; second=synthetic-second\n"
+                        << R"({"access_token":"synthetic-json"})"
+                        << "https://example.invalid/live?wsSecret=synthetic-signature";
+    ApplicationLogger::flush();
+    QFile file(ApplicationLogger::currentLogPath());
+    QVERIFY(file.open(QIODevice::ReadOnly));
+    const auto contents = QString::fromUtf8(file.readAll());
+    ApplicationLogger::resetForTest();
+    qInstallMessageHandler(previous);
+    for (const auto &secret : {"synthetic-bearer", "synthetic-cookie", "synthetic-second",
+                               "synthetic-json", "synthetic-signature", "example.invalid"}) {
+        QVERIFY2(!contents.contains(QString::fromLatin1(secret)), secret);
+        QVERIFY2(!forwarded.contains(QString::fromLatin1(secret)), secret);
+    }
 }
 
 QTEST_GUILESS_MAIN(ApplicationLoggerTest)

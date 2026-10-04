@@ -64,7 +64,7 @@ QByteArray snapshotBody()
         {QStringLiteral("guild"), QStringLiteral("仓鼠特工")},
         {QStringLiteral("douyu_id"), QStringLiteral("217331")},
         {QStringLiteral("poster"), QString()},
-        {QStringLiteral("team"), 0},
+        {QStringLiteral("team"), QJsonValue::Null},
     };
     QJsonObject firstDims{
         {QStringLiteral("c0"), QJsonObject{{QStringLiteral("sum"), 20}, {QStringLiteral("cnt"), 1}}},
@@ -245,7 +245,164 @@ private slots:
     void exposesPlacementScoreFormula();
     void skipsSnapshotWhenVersionIsUnchanged();
     void reportsHttpErrors();
+    void validatesCurrentTeamIdentifiers();
+    void completesTimeoutOnceAndRejectsMalformedTeams();
+    void fillsOnlyMissingCaptainTeams();
+    void editsVersionedLocalMappingAndReclassifiesCachedSnapshot();
 };
+
+void MaoziRankClientTest::editsVersionedLocalMappingAndReclassifiesCachedSnapshot()
+{
+    CloudBaseFixture fixture;
+    QVERIFY(fixture.listen());
+    MaoziRankClient client(fixture.authUrl(), fixture.snapshotUrl(), 1000);
+    client.refresh();
+    QTRY_VERIFY(!client.loading());
+    const QByteArray mapping = R"({"version":1,"event":"fixture","members":[{"roomId":"217331","name":"尐表哥","role":"member","team":null},{"roomId":"71415","name":"寅子","role":"captain","team":3}]})";
+    QString error;
+    QVERIFY(QMetaObject::invokeMethod(&client, "setEventMapping", Q_RETURN_ARG(QString, error),
+                                     Q_ARG(QByteArray, mapping)));
+    QVERIFY(error.isEmpty());
+    QCOMPARE(client.entryForRoomId("217331").value("role").toString(), QStringLiteral("member"));
+    QCOMPARE(client.entryForRoomId("71415").value("role").toString(), QStringLiteral("captain"));
+    // The remote snapshot's explicit team wins over a local fallback.
+    QCOMPARE(client.entryForRoomId("71415").value("teamId").toString(), QStringLiteral("0"));
+    const auto unchanged = client.entries();
+    const QByteArray invalid = R"({"version":2,"event":"fixture","members":[]})";
+    QVERIFY(QMetaObject::invokeMethod(&client, "setEventMapping", Q_RETURN_ARG(QString, error),
+                                     Q_ARG(QByteArray, invalid)));
+    QVERIFY(!error.isEmpty());
+    QCOMPARE(client.entries(), unchanged);
+    const QByteArray alias = R"({"version":1,"event":"fixture","members":[{"roomId":"999","name":"尐表哥-队长","role":"leader","team":null}]})";
+    QVERIFY(client.setEventMapping(alias).isEmpty());
+    QCOMPARE(client.entryForRoomId("217331").value("role").toString(), QStringLiteral("leader"));
+    for (const auto &bad : {QByteArray(R"({"version":1,"event":"fixture","members":[{"roomId":"1","name":"A","role":"admin"}]})"),
+                           QByteArray(R"({"version":1,"event":"fixture","members":[{"roomId":"1","name":"A","role":"captain","team":0.5}]})"),
+                           QByteArray(R"({"version":1,"event":"fixture","members":[{"roomId":"1","name":"A","role":"member"},{"roomId":"1","name":"B","role":"member"}]})")})
+        QVERIFY(!client.setEventMapping(bad).isEmpty());
+}
+
+void MaoziRankClientTest::fillsOnlyMissingCaptainTeams()
+{
+    CloudBaseFixture fixture;
+    QVERIFY(fixture.listen());
+    const QStringList rooms{"217331", "7204164", "80432", "6151194",
+                            "731252", "11222", "2140934", "2632018"};
+    const QList<int> teamIds{3, 3, 1, 1, 2, 2, 0, 0};
+    const QStringList teamNames{QStringLiteral("蓝队"), QStringLiteral("蓝队"),
+                                QStringLiteral("黑队"), QStringLiteral("黑队"),
+                                QStringLiteral("紫队"), QStringLiteral("紫队"),
+                                QStringLiteral("红队"), QStringLiteral("红队")};
+    QJsonArray hosts;
+    for (int i = 0; i < rooms.size(); ++i) {
+        QJsonObject host{{"id", rooms.at(i)}, {"name", rooms.at(i)},
+                         {"douyu_id", rooms.at(i)}};
+        if (i % 2 == 0) host.insert("team", QJsonValue::Null);
+        hosts.append(host);
+    }
+    hosts.append(QJsonObject{{"id", "leader"}, {"name", "leader"}, {"douyu_id", "320155"}});
+    hosts.append(QJsonObject{{"id", "member"}, {"name", "member"}, {"douyu_id", "71415"}});
+    fixture.snapshot = QJsonDocument(QJsonObject{{"hosts", hosts}}).toJson();
+    MaoziRankClient client(fixture.authUrl(), fixture.snapshotUrl(), 1000);
+    client.refresh();
+    QTRY_VERIFY(!client.loading());
+    for (int i = 0; i < rooms.size(); ++i) {
+        const auto entry = client.entryForRoomId(rooms.at(i));
+        QCOMPARE(entry.value("role").toString(), QStringLiteral("captain"));
+        QCOMPARE(entry.value("teamId").toString(), QString::number(teamIds.at(i)));
+        QCOMPARE(entry.value("teamName").toString(), teamNames.at(i));
+        QVERIFY(entry.value("teamValid").toBool());
+    }
+    for (const auto &room : {QStringLiteral("320155"), QStringLiteral("71415")})
+        QVERIFY(client.entryForRoomId(room).value("teamId").toString().isEmpty());
+
+    auto moved = hosts[0].toObject();
+    moved.insert("team", 0);
+    hosts[0] = moved;
+    auto malformed = hosts[1].toObject();
+    malformed.insert("team", QStringLiteral("3"));
+    hosts[1] = malformed;
+    fixture.snapshot = QJsonDocument(QJsonObject{{"hosts", hosts}}).toJson();
+    client.refresh();
+    QTRY_VERIFY(!client.loading());
+    QCOMPARE(client.entryForRoomId("217331").value("teamId").toString(), QStringLiteral("0"));
+    QCOMPARE(client.entryForRoomId("217331").value("teamName").toString(), QStringLiteral("红队"));
+    QVERIFY(!client.entryForRoomId("7204164").value("teamValid").toBool());
+    QVERIFY(client.entryForRoomId("7204164").value("teamId").toString().isEmpty());
+}
+
+void MaoziRankClientTest::validatesCurrentTeamIdentifiers()
+{
+    CloudBaseFixture fixture;
+    QVERIFY(fixture.listen());
+    QJsonObject root = QJsonDocument::fromJson(snapshotBody()).object();
+    QJsonArray hosts;
+    const QStringList expected{QStringLiteral("红队"), QStringLiteral("黑队"),
+                               QStringLiteral("紫队"), QStringLiteral("蓝队")};
+    for (int index = 0; index < 4; ++index) {
+        hosts.append(QJsonObject{{QStringLiteral("id"), QString::number(index)},
+                                 {QStringLiteral("name"), QString::number(index)},
+                                 {QStringLiteral("team"), index}});
+    }
+    hosts.append(QJsonObject{{QStringLiteral("id"), QStringLiteral("unknown")},
+                             {QStringLiteral("name"), QStringLiteral("unknown")},
+                             {QStringLiteral("team"), 7}});
+    root.insert(QStringLiteral("hosts"), hosts);
+    fixture.snapshot = QJsonDocument(root).toJson();
+    MaoziRankClient client(fixture.authUrl(), fixture.snapshotUrl(), 1000);
+    QSignalSpy finished(&client, SIGNAL(snapshotRefreshFinished(bool)));
+    client.refresh();
+    QTRY_VERIFY_WITH_TIMEOUT(!client.loading(), 3000);
+    for (int index = 0; index < 4; ++index) {
+        const auto entry = client.entryForName(QString::number(index));
+        QCOMPARE(entry.value(QStringLiteral("teamName")).toString(), expected.at(index));
+        QCOMPARE(entry.value(QStringLiteral("teamId")).toString(), QString::number(index));
+        QVERIFY(entry.value(QStringLiteral("teamValid")).toBool());
+    }
+    QVERIFY(!client.entryForName(QStringLiteral("unknown"))
+                 .value(QStringLiteral("teamValid")).toBool());
+    QCOMPARE(finished.size(), 1);
+    QCOMPARE(finished.at(0).at(0).toBool(), true);
+    fixture.statusCode = 500;
+    client.refresh();
+    QTRY_COMPARE_WITH_TIMEOUT(finished.size(), 2, 3000);
+    QCOMPARE(finished.at(1).at(0).toBool(), false);
+}
+
+void MaoziRankClientTest::completesTimeoutOnceAndRejectsMalformedTeams()
+{
+    CloudBaseFixture fixture;
+    QVERIFY(fixture.listen());
+    auto root = QJsonDocument::fromJson(snapshotBody()).object();
+    root.insert("hosts", QJsonArray{
+        QJsonObject{{"id", "null"}, {"name", "null"}, {"team", QJsonValue::Null}},
+        QJsonObject{{"id", "missing"}, {"name", "missing"}},
+        QJsonObject{{"id", "string"}, {"name", "string"}, {"team", "0"}},
+        QJsonObject{{"id", "fraction"}, {"name", "fraction"}, {"team", 0.5}},
+        QJsonObject{{"id", "boolean"}, {"name", "boolean"}, {"team", true}}});
+    fixture.snapshot = QJsonDocument(root).toJson();
+    MaoziRankClient client(fixture.authUrl(), fixture.snapshotUrl(), 100);
+    QSignalSpy finished(&client, &MaoziRankClient::snapshotRefreshFinished);
+    client.refresh();
+    QTRY_COMPARE(finished.size(), 1);
+    for (const auto &name : {QStringLiteral("null"), QStringLiteral("missing")}) {
+        const auto entry = client.entryForName(name);
+        QVERIFY(entry.value("teamValid").toBool());
+        QVERIFY(entry.value("teamId").toString().isEmpty());
+    }
+    for (const auto &name : {QStringLiteral("string"), QStringLiteral("fraction"),
+                             QStringLiteral("boolean")})
+        QVERIFY(!client.entryForName(name).value("teamValid").toBool());
+    client.checkForChanges();
+    QTRY_VERIFY(!client.syncPending());
+    QCOMPARE(finished.size(), 1);
+    fixture.delayMs = 300;
+    client.refresh();
+    QTRY_COMPARE(finished.size(), 2);
+    QCOMPARE(finished.last().first().toBool(), false);
+    QTest::qWait(400);
+    QCOMPARE(finished.size(), 2);
+}
 
 void MaoziRankClientTest::loadsAndSortsLeaderboardData()
 {
@@ -290,6 +447,9 @@ void MaoziRankClientTest::exposesRolesPlacementPlayValueAndLookupIndexes()
     QCOMPARE(leader.value(QStringLiteral("role")).toString(), QStringLiteral("leader"));
     const QVariantMap captain = client.entryForRoomId(QStringLiteral("217331"));
     QCOMPARE(captain.value(QStringLiteral("role")).toString(), QStringLiteral("captain"));
+    QCOMPARE(captain.value(QStringLiteral("teamName")).toString(), QStringLiteral("蓝队"));
+    QCOMPARE(captain.value(QStringLiteral("teamId")).toString(), QStringLiteral("3"));
+    QVERIFY(captain.value(QStringLiteral("teamValid")).toBool());
     const QVariantMap member = client.entryForName(QStringLiteral("寅子"));
     QCOMPARE(member.value(QStringLiteral("role")).toString(), QStringLiteral("member"));
     QCOMPARE(member.value(QStringLiteral("playValue")).toDouble(), 6.4);

@@ -4,6 +4,7 @@ import subprocess
 import sys
 import textwrap
 import time
+import threading
 import unittest
 from pathlib import Path
 
@@ -60,6 +61,48 @@ async def collect(lines, backend):
 
 
 class ServiceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_cancelled_sync_workers_keep_concurrency_slots(self):
+        class BlockingBackend:
+            active = 0
+            maximum = 0
+            release = threading.Event()
+            lock = threading.Lock()
+
+            def search(self, _query):
+                with self.lock:
+                    self.active += 1
+                    self.maximum = max(self.maximum, self.active)
+                self.release.wait(2)
+                with self.lock:
+                    self.active -= 1
+                return []
+
+        backend = BlockingBackend()
+        output = []
+
+        async def source():
+            for request_id in (1, 2):
+                yield json.dumps({"requestId": request_id, "op": "search", "query": "test"})
+            for _ in range(100):
+                if backend.active == 2:
+                    break
+                await asyncio.sleep(0.01)
+            for request_id in (1, 2):
+                yield json.dumps({"requestId": request_id + 2, "op": "cancel",
+                                  "targetRequestId": request_id})
+            for request_id in (5, 6):
+                yield json.dumps({"requestId": request_id, "op": "search", "query": "test"})
+            await asyncio.sleep(0.1)
+            backend.release.set()
+
+        async def emit(value):
+            output.append(value)
+
+        await run_service(source(), emit, backend)
+        self.assertEqual(backend.maximum, 2)
+        self.assertFalse(any(value["requestId"] in (1, 2) for value in output))
+        self.assertEqual({value["requestId"] for value in output}, {3, 4, 5, 6})
+
     async def test_ping_and_malformed_input_keep_the_loop_alive(self):
         output, shutdown_requested = await collect(
             [
@@ -175,6 +218,8 @@ class ShutdownExitTests(unittest.TestCase):
             if process.poll() is None:
                 process.kill()
                 process.wait()
+            process.stdout.close()
+            process.stderr.close()
 
         self.assertEqual(process.returncode, 0)
         self.assertLess(elapsed, 2.0)

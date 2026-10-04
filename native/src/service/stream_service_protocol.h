@@ -47,6 +47,7 @@ struct RoomSearchResult {
     bool online = false;
     QString viewerLabel;
     QUrl avatarUrl;
+    bool statusKnown = true;
 };
 
 struct ServiceRequest {

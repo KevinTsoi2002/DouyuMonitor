@@ -12,6 +12,7 @@ from native.service.protocol import (
     error_response,
     parse_request,
     success_resolve,
+    success_search,
 )
 
 
@@ -44,6 +45,24 @@ async def run_service(
     semaphore = asyncio.Semaphore(2)
     shutting_down = False
 
+    async def sync_operation(function: Callable[..., Any], argument: str) -> Any:
+        worker = asyncio.create_task(asyncio.to_thread(function, argument))
+        try:
+            return await asyncio.shield(worker)
+        except asyncio.CancelledError:
+            # Cancellation cannot stop a running synchronous HTTP worker.
+            # Keep the caller's semaphore slot until that worker has finished.
+            while not worker.done():
+                try:
+                    await asyncio.shield(worker)
+                except asyncio.CancelledError:
+                    continue
+                except Exception:
+                    break
+            if worker.done() and not worker.cancelled():
+                worker.exception()
+            raise
+
     async def run_operation(request: dict[str, Any]) -> None:
         request_id = request["requestId"]
         try:
@@ -62,10 +81,10 @@ async def run_service(
                         options,
                     ))
                 elif request["op"] == "search":
-                    results = await asyncio.to_thread(backend.search, request["query"])
-                    await emit({"requestId": request_id, "ok": True, "results": results})
+                    results = await sync_operation(backend.search, request["query"])
+                    await emit(success_search(request_id, results))
                 elif request["op"] == "status":
-                    is_live = await asyncio.to_thread(backend.room_status, request["query"])
+                    is_live = await sync_operation(backend.room_status, request["query"])
                     await emit({
                         "requestId": request_id,
                         "ok": True,

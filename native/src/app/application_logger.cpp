@@ -19,8 +19,16 @@ QtMessageHandler previousHandler = nullptr;
 
 QString redact(QString message)
 {
+    static const QRegularExpression headers(
+        QStringLiteral(R"((\b(?:authorization|proxy-authorization|cookie|set-cookie)\s*:\s*)[^\r\n]+)"),
+        QRegularExpression::CaseInsensitiveOption);
+    message.replace(headers, QStringLiteral("\\1[REDACTED]"));
+    static const QRegularExpression jsonValues(
+        QStringLiteral(R"re(("(?:access_token|refresh_token|token|cookie|signature|password|passwd|authorization)"\s*:\s*)"(?:\\.|[^"\\])*")re"),
+        QRegularExpression::CaseInsensitiveOption);
+    message.replace(jsonValues, QStringLiteral("\\1\"[REDACTED]\""));
     static const QRegularExpression keyValue(
-        QStringLiteral(R"(((?:token|cookie|signature|password|passwd|authorization)[[:space:]]*[=:][[:space:]]*)([^[:space:]&;,]+))"),
+        QStringLiteral(R"(((?:access_token|refresh_token|token|cookie|signature|password|passwd|authorization)[[:space:]]*[=:][[:space:]]*)([^[:space:]&;,]+))"),
         QRegularExpression::CaseInsensitiveOption);
     message.replace(keyValue, QStringLiteral("\\1[REDACTED]"));
 
@@ -28,6 +36,9 @@ QString redact(QString message)
         QStringLiteral(R"(([?&](?:token|cookie|signature|password|passwd|authorization)=)([^&#[:space:]]+))"),
         QRegularExpression::CaseInsensitiveOption);
     message.replace(urlQuery, QStringLiteral("\\1[REDACTED]"));
+    static const QRegularExpression remoteUrl(QStringLiteral(R"(https?://[^\s<>"']+)"),
+                                              QRegularExpression::CaseInsensitiveOption);
+    message.replace(remoteUrl, QStringLiteral("[REMOTE_URL_REDACTED]"));
     return message;
 }
 
@@ -45,6 +56,7 @@ QString levelName(QtMsgType type)
 
 void handler(QtMsgType type, const QMessageLogContext &context, const QString &message)
 {
+    const auto safeMessage = redact(message);
     QMutexLocker locker(&mutex);
     if (file != nullptr && file->isOpen()) {
         QTextStream stream(file);
@@ -54,11 +66,11 @@ void handler(QtMsgType type, const QMessageLogContext &context, const QString &m
         if (context.category != nullptr && *context.category != '\0') {
             stream << '[' << context.category << "] ";
         }
-        stream << redact(message) << Qt::endl;
+        stream << safeMessage << Qt::endl;
         file->flush();
     }
     if (previousHandler != nullptr && previousHandler != handler) {
-        previousHandler(type, context, message);
+        previousHandler(type, context, safeMessage);
     }
 }
 

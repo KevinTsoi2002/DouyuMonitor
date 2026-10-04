@@ -974,5 +974,16 @@ bool NativeWorkspaceStore::save(const NativeWorkspaceSnapshot &snapshot)
     settings_->setValue(QString::fromLatin1(kSettingsKey),
                         QJsonDocument(toJson(normalized)).toJson(QJsonDocument::Compact));
     settings_->sync();
+    if (settings_->status() != QSettings::NoError) {
+        // QSettings retains earlier errors; a fresh writer allows retry after disk access recovers.
+        QSettings retry(settings_->fileName(), settings_->format());
+        retry.setValue(QString::fromLatin1(kSettingsKey),
+                       QJsonDocument(toJson(normalized)).toJson(QJsonDocument::Compact));
+        if (settings_->contains(QStringLiteral("DouyuMonitor/eventMappingV1")))
+            retry.setValue(QStringLiteral("DouyuMonitor/eventMappingV1"),
+                           settings_->value(QStringLiteral("DouyuMonitor/eventMappingV1")));
+        retry.sync();
+        return retry.status() == QSettings::NoError;
+    }
     return settings_->status() == QSettings::NoError;
 }

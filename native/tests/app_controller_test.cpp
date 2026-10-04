@@ -3,6 +3,9 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QTcpServer>
+#include <QTcpSocket>
+#include <QTimer>
 #include <QtTest/QtTest>
 
 #include "app/windows_notification_service.h"
@@ -11,6 +14,7 @@
 #include "ui/room_list_model.h"
 #include "ui/workspace_model.h"
 #include "workspace/room_capacity.h"
+#include "workspace/guild_room_resolver.h"
 
 #ifndef FAKE_STREAMGET_SERVICE_PATH
 #define FAKE_STREAMGET_SERVICE_PATH "fake_streamget_service"
@@ -22,6 +26,44 @@ QString fakeServicePath()
 {
     return QString::fromLocal8Bit(FAKE_STREAMGET_SERVICE_PATH);
 }
+
+class ImportRankServer final : public QObject {
+public:
+    ImportRankServer()
+    {
+        server.listen(QHostAddress::LocalHost);
+        connect(&server, &QTcpServer::newConnection, this, [this] {
+            auto *socket = server.nextPendingConnection();
+            connect(socket, &QTcpSocket::readyRead, socket, [this, socket] {
+                const auto request = socket->readAll();
+                if (socket->property("responded").toBool()) return;
+                socket->setProperty("responded", true);
+                const bool auth = request.startsWith("POST /auth");
+                if (!auth) ++snapshotRequests;
+                const auto body = auth
+                    ? QByteArrayLiteral(R"({"access_token":"fixture-only"})")
+                    : QJsonDocument(QJsonObject{{"hosts", hosts}}).toJson();
+                const int code = auth ? 200 : status;
+                QTimer::singleShot(delayMs, socket, [socket, body, code] {
+                    socket->write("HTTP/1.1 " + QByteArray::number(code)
+                        + " Result\r\nContent-Type: application/json\r\nContent-Length: "
+                        + QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body);
+                    socket->disconnectFromHost();
+                });
+            });
+        });
+    }
+    std::unique_ptr<MaoziRankClient> client()
+    {
+        const auto base = QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort());
+        return std::make_unique<MaoziRankClient>(QUrl(base + "/auth"),
+                                                QUrl(base + "/snapshot"), 2000);
+    }
+    QTcpServer server;
+    QJsonArray hosts{QJsonObject{{"id", "captain"}, {"name", QStringLiteral("尐表哥")},
+                                 {"douyu_id", "217331"}, {"team", 0}}};
+    int status = 200, delayMs = 0, snapshotRequests = 0;
+};
 
 class FakeNotificationSink final : public SystemNotificationSink {
 public:
@@ -80,6 +122,9 @@ class AppControllerTest final : public QObject {
     Q_OBJECT
 
 private slots:
+    void defersGuildChecksUntilNavigationOpens();
+    void preservesFailedSaveAndRetriesLatestWorkspace();
+    void persistsEditableEventMapping();
     void addsRoomsThroughModelAndRejectsOverflow();
     void recordsOpenedRoomsForTheLibraryHistory();
     void doesNotExposeSensitivePlaybackMaterial();
@@ -122,7 +167,353 @@ private slots:
     void addsResolvedGuildMemberWithoutUsingOrdinarySearchState();
     void rejectsGuildQuickAddWithoutRoomOrCapacity();
     void enforcesGuildQuickAddLayoutCapacity();
+    void exposesTeamImportCommands();
+    void previewsImportsAndPersistsTeams();
+    void rejectsFailedCancelledAndStaleImports();
+    void doesNotPublishImportWhenSaveFails();
+    void previewsLiveTeamImportWhenEnabled();
+    void importsAllEightCaptainsWithMissingTeams();
+    void keepsImportPreviewAfterRoomMetadataUpdates();
+    void keepsImportPreviewAfterRankDisplayUpdates();
+    void rejectsImportAfterVerifiedRoomIdentityChanges();
+    void keepsImportPreviewWhenBundledRoomIsFirstCached();
 };
+
+void AppControllerTest::keepsImportPreviewWhenBundledRoomIsFirstCached()
+{
+    ImportRankServer server;
+    QTemporaryDir dir;
+    QSettings settings(dir.filePath("workspace.ini"), QSettings::IniFormat);
+    FakeNotificationSink sink;
+    AppController controller(fakeServicePath(), &settings, &sink, {}, nullptr, server.client());
+    auto *resolver = controller.findChild<GuildRoomResolver *>();
+    QVERIFY(resolver != nullptr);
+    resolver->setCache({});
+    controller.previewMaoziTeamImport();
+    QTRY_COMPARE(controller.maoziTeamImport().value("state").toString(), QStringLiteral("preview"));
+    GuildRoomCacheEntry cached;
+    cached.memberId = QStringLiteral("hamster-005");
+    cached.roomId = QStringLiteral("217331");
+    cached.verifiedAtMs = 1;
+    resolver->setCache({cached});
+    QVERIFY(controller.maoziTeamImport().value("canConfirm").toBool());
+    QCOMPARE(controller.confirmMaoziTeamImport(), QString());
+    QVERIFY(NativeWorkspaceStore(&settings).load().teams.first().memberIds
+                .contains(QStringLiteral("hamster-005")));
+}
+
+void AppControllerTest::keepsImportPreviewAfterRoomMetadataUpdates()
+{
+    ImportRankServer server;
+    QTemporaryDir dir;
+    QSettings settings(dir.filePath("workspace.ini"), QSettings::IniFormat);
+    FakeNotificationSink sink;
+    AppController controller(fakeServicePath(), &settings, &sink, {}, nullptr, server.client());
+    auto *resolver = controller.findChild<GuildRoomResolver *>();
+    QVERIFY(resolver != nullptr);
+    GuildRoomCacheEntry cached;
+    cached.memberId = QStringLiteral("hamster-005");
+    cached.roomId = QStringLiteral("217331");
+    cached.anchorName = QStringLiteral("尐表哥-队长");
+    cached.verifiedAtMs = 1;
+    resolver->setCache({cached});
+    controller.previewMaoziTeamImport();
+    QTRY_COMPARE(controller.maoziTeamImport().value("state").toString(), QStringLiteral("preview"));
+    QVERIFY(controller.maoziTeamImport().value("canConfirm").toBool());
+    const auto before = controller.maoziTeamImport().value("teams");
+    cached.liveState = QStringLiteral("online");
+    cached.liveCheckedAtMs = 50;
+    cached.metadataCheckedAtMs = 50;
+    cached.verifiedAtMs = 50;
+    cached.avatarUrl = QUrl(QStringLiteral("https://example.invalid/avatar.png"));
+    QSignalSpy changed(&controller, &AppController::maoziTeamImportChanged);
+    resolver->setCache({cached});
+    QVERIFY(changed.count() > 0);
+    QVERIFY(controller.maoziTeamImport().value("canConfirm").toBool());
+    QCOMPARE(controller.maoziTeamImport().value("teams"), before);
+    QCOMPARE(controller.confirmMaoziTeamImport(), QString());
+    const auto saved = NativeWorkspaceStore(&settings).load();
+    QCOMPARE(saved.teams.size(), 1);
+    QVERIFY(saved.teams.first().memberIds.contains(QStringLiteral("hamster-005")));
+    QCOMPARE(saved.guildRoomCache.first().liveState, cached.liveState);
+    QCOMPARE(saved.guildRoomCache.first().avatarUrl, cached.avatarUrl);
+    QCOMPARE(saved.guildRoomCache.first().verifiedAtMs, cached.verifiedAtMs);
+}
+
+void AppControllerTest::keepsImportPreviewAfterRankDisplayUpdates()
+{
+    ImportRankServer server;
+    QTemporaryDir dir;
+    QSettings settings(dir.filePath("workspace.ini"), QSettings::IniFormat);
+    FakeNotificationSink sink;
+    AppController controller(fakeServicePath(), &settings, &sink, {}, nullptr, server.client());
+    controller.previewMaoziTeamImport();
+    QTRY_COMPARE(controller.maoziTeamImport().value("state").toString(), QStringLiteral("preview"));
+    const auto before = controller.maoziTeamImport().value("teams");
+    auto host = server.hosts.first().toObject();
+    host.insert("note", QStringLiteral("更新后的公开备注"));
+    host.insert("poster", QStringLiteral("captain-updated.png"));
+    host.insert("guild", QStringLiteral("更新后的公会展示"));
+    server.hosts[0] = host;
+    controller.maoziRank()->refresh();
+    QTRY_VERIFY(!controller.maoziRank()->loading());
+    QVERIFY(controller.maoziTeamImport().value("canConfirm").toBool());
+    QCOMPARE(controller.maoziTeamImport().value("teams"), before);
+    QCOMPARE(controller.confirmMaoziTeamImport(), QString());
+}
+
+void AppControllerTest::rejectsImportAfterVerifiedRoomIdentityChanges()
+{
+    ImportRankServer server;
+    QTemporaryDir dir;
+    QSettings settings(dir.filePath("workspace.ini"), QSettings::IniFormat);
+    FakeNotificationSink sink;
+    AppController controller(fakeServicePath(), &settings, &sink, {}, nullptr, server.client());
+    auto *resolver = controller.findChild<GuildRoomResolver *>();
+    QVERIFY(resolver != nullptr);
+    GuildRoomCacheEntry cached;
+    cached.memberId = QStringLiteral("hamster-005");
+    cached.roomId = QStringLiteral("217331");
+    cached.verifiedAtMs = 1;
+    resolver->setCache({cached});
+    controller.previewMaoziTeamImport();
+    QTRY_COMPARE(controller.maoziTeamImport().value("state").toString(), QStringLiteral("preview"));
+    cached.roomId = QStringLiteral("999999");
+    QSignalSpy changed(&controller, &AppController::maoziTeamImportChanged);
+    resolver->setCache({cached});
+    QVERIFY(changed.count() > 0);
+    QVERIFY(!controller.maoziTeamImport().value("canConfirm").toBool());
+    QVERIFY(!controller.confirmMaoziTeamImport().isEmpty());
+    QVERIFY(controller.workspace()->teams().isEmpty());
+    QVERIFY(NativeWorkspaceStore(&settings).load().teams.isEmpty());
+}
+
+void AppControllerTest::importsAllEightCaptainsWithMissingTeams()
+{
+    ImportRankServer server;
+    server.hosts = {};
+    const QStringList captainIds{"hamster-005", "hamster-011", "hamster-003", "hamster-015",
+                                 "hamster-006", "hamster-050", "hamster-008", "hamster-007"};
+    const QStringList rooms{"217331", "7204164", "80432", "6151194",
+                            "731252", "11222", "2140934", "2632018"};
+    const QStringList expectedTeams{QStringLiteral("蓝队"), QStringLiteral("蓝队"),
+                                    QStringLiteral("黑队"), QStringLiteral("黑队"),
+                                    QStringLiteral("紫队"), QStringLiteral("紫队"),
+                                    QStringLiteral("红队"), QStringLiteral("红队")};
+    const auto roster = GuildRoster::bundled();
+    int memberCount = 0;
+    for (const auto &member : roster) {
+        const int captain = captainIds.indexOf(member.id);
+        if (member.roomId == QStringLiteral("320155")) continue;
+        if (captain < 0 && memberCount >= 36) continue;
+        QJsonObject host{{"id", member.id}, {"name", GuildRoster::normalizedName(member.anchorName)},
+                          {"douyu_id", captain >= 0 ? rooms.at(captain) : member.roomId}};
+        if (captain >= 0) host.insert("team", QJsonValue::Null);
+        else host.insert("team", memberCount++ % 4);
+        server.hosts.append(host);
+    }
+    QCOMPARE(server.hosts.size(), 44);
+    QTemporaryDir dir;
+    QSettings settings(dir.filePath("workspace.ini"), QSettings::IniFormat);
+    FakeNotificationSink sink;
+    AppController controller(fakeServicePath(), &settings, &sink, {}, nullptr, server.client());
+    controller.previewMaoziTeamImport();
+    QTRY_COMPARE(controller.maoziTeamImport().value("state").toString(), QStringLiteral("preview"));
+    const auto preview = controller.maoziTeamImport();
+    QVERIFY(preview.value("canConfirm").toBool());
+    QCOMPARE(preview.value("teams").toList().size(), 4);
+    QCOMPARE(preview.value("changedMembers").toInt(), 44);
+    QVERIFY(preview.value("unmatchedNames").toStringList().isEmpty());
+    QVERIFY(preview.value("conflictNames").toStringList().isEmpty());
+    QVERIFY(preview.value("unassignedNames").toStringList().isEmpty());
+    for (const auto &team : preview.value("teams").toList()) {
+        QCOMPARE(team.toMap().value("sourceCount").toInt(), 11);
+        QCOMPARE(team.toMap().value("matchedCount").toInt(), 11);
+    }
+    QVERIFY(controller.workspace()->teams().isEmpty());
+    QCOMPARE(controller.confirmMaoziTeamImport(), QString());
+    const auto saved = NativeWorkspaceStore(&settings).load();
+    for (int i = 0; i < captainIds.size(); ++i) {
+        bool found = false;
+        for (const auto &team : saved.teams)
+            if (team.name == expectedTeams.at(i) && team.memberIds.contains(captainIds.at(i)))
+                found = true;
+        QVERIFY2(found, qPrintable(captainIds.at(i)));
+    }
+    QVERIFY(saved.activeRoomIds.isEmpty());
+    controller.previewMaoziTeamImport();
+    QTRY_COMPARE(controller.maoziTeamImport().value("state").toString(), QStringLiteral("preview"));
+    QCOMPARE(controller.maoziTeamImport().value("changedMembers").toInt(), 0);
+    QCOMPARE(controller.maoziTeamImport().value("unchangedMembers").toInt(), 44);
+    QCOMPARE(controller.maoziTeamImport().value("createdTeams").toInt(), 0);
+    controller.cancelMaoziTeamImport();
+}
+
+void AppControllerTest::previewsLiveTeamImportWhenEnabled()
+{
+    if (!qEnvironmentVariableIsSet("DOUYU_VERIFY_LIVE_TEAM_IMPORT"))
+        QSKIP("Opt-in read-only live preview; no local user workspace mutation");
+    QTemporaryDir dir;
+    QSettings settings(dir.filePath("workspace.ini"), QSettings::IniFormat);
+    FakeNotificationSink sink;
+    AppController controller(fakeServicePath(), &settings, &sink);
+    controller.previewMaoziTeamImport();
+    QTRY_VERIFY_WITH_TIMEOUT(controller.maoziTeamImport().value("state")
+                            != QStringLiteral("loading"), 40000);
+    const auto state = controller.maoziTeamImport();
+    QCOMPARE(state.value("state").toString(), QStringLiteral("preview"));
+    QVERIFY(state.value("canConfirm").toBool());
+    QCOMPARE(state.value("teams").toList().size(), 4);
+    QVERIFY(state.value("unmatchedNames").toStringList().isEmpty());
+    QVERIFY(state.value("conflictNames").toStringList().isEmpty());
+    int sourceCount = 0, matchedCount = 0;
+    for (const auto &team : state.value("teams").toList()) {
+        sourceCount += team.toMap().value("sourceCount").toInt();
+        matchedCount += team.toMap().value("matchedCount").toInt();
+    }
+    QCOMPARE(sourceCount, matchedCount);
+    qInfo() << "Read-only live preview teams:" << state.value("teams").toList().size()
+            << "matched members:" << matchedCount;
+    QVERIFY(controller.workspace()->teams().isEmpty());
+    controller.cancelMaoziTeamImport();
+    QVERIFY(NativeWorkspaceStore(&settings).load().teams.isEmpty());
+}
+
+void AppControllerTest::previewsImportsAndPersistsTeams()
+{
+    ImportRankServer server;
+    QTemporaryDir dir;
+    const auto path = dir.filePath("workspace.ini");
+    QSettings settings(path, QSettings::IniFormat);
+    FakeNotificationSink sink;
+    AppController controller(fakeServicePath(), &settings, &sink, {}, nullptr, server.client());
+    const auto redId = controller.createTeam(QStringLiteral("红队"));
+    const auto oldId = controller.createTeam(QStringLiteral("手动队"));
+    const auto roster = controller.guildRoster();
+    QString captainId, otherId;
+    for (const auto &value : roster) {
+        const auto member = value.toMap();
+        if (member.value("anchorName").toString() == QStringLiteral("尐表哥"))
+            captainId = member.value("id").toString();
+        else if (otherId.isEmpty()) otherId = member.value("id").toString();
+    }
+    QVERIFY(!captainId.isEmpty() && !otherId.isEmpty());
+    QCOMPARE(controller.assignGuildMemberToTeam(captainId, oldId), QString());
+    QCOMPARE(controller.assignGuildMemberToTeam(otherId, redId), QString());
+    controller.addRoom("63136");
+    controller.setFavorite("63136", true);
+    QTRY_COMPARE(controller.libraryRooms().first().toMap().value("anchorName").toString(),
+                 QStringLiteral("Fake Anchor"));
+    QTRY_VERIFY(controller.libraryRooms().first().toMap().value("online").toBool());
+    QTRY_COMPARE(NativeWorkspaceStore(&settings).load().library.first().metadata.anchorName,
+                 QStringLiteral("Fake Anchor"));
+    const auto before = NativeWorkspaceStore(&settings).load();
+    controller.previewMaoziTeamImport();
+    QCOMPARE(controller.maoziTeamImport().value("state").toString(), QStringLiteral("loading"));
+    controller.previewMaoziTeamImport();
+    QCOMPARE(NativeWorkspaceStore(&settings).load().teams, before.teams);
+    QTRY_COMPARE(controller.maoziTeamImport().value("state").toString(), QStringLiteral("preview"));
+    QCOMPARE(server.snapshotRequests, 1);
+    QVERIFY(controller.maoziTeamImport().value("canConfirm").toBool());
+    QCOMPARE(controller.maoziTeamImport().value("changedMembers").toInt(), 1);
+    QCOMPARE(controller.confirmMaoziTeamImport(), QString());
+    const auto after = NativeWorkspaceStore(&settings).load();
+    QCOMPARE(after.teams.first().id, redId);
+    QVERIFY(after.teams.first().memberIds.contains(captainId));
+    QVERIFY(after.teams.first().memberIds.contains(otherId));
+    QVERIFY(after.teams.last().memberIds.isEmpty());
+    auto teamsOnly = before;
+    teamsOnly.teams = after.teams;
+    QCOMPARE(after.library, teamsOnly.library);
+    QCOMPARE(after.activeRoomIds, teamsOnly.activeRoomIds);
+    QCOMPARE(after.primaryRoomId, teamsOnly.primaryRoomId);
+    QCOMPARE(after.audioRoomId, teamsOnly.audioRoomId);
+    QCOMPARE(after.groups, teamsOnly.groups);
+    QCOMPARE(after.danmaku, teamsOnly.danmaku);
+    QCOMPARE(after, teamsOnly);
+    QVERIFY(!controller.confirmMaoziTeamImport().isEmpty());
+    controller.previewMaoziTeamImport();
+    QTRY_COMPARE(controller.maoziTeamImport().value("state").toString(), QStringLiteral("preview"));
+    QCOMPARE(controller.maoziTeamImport().value("changedMembers").toInt(), 0);
+    QCOMPARE(controller.maoziTeamImport().value("createdTeams").toInt(), 0);
+    controller.cancelMaoziTeamImport();
+    QSettings restoredSettings(path, QSettings::IniFormat);
+    AppController restored(fakeServicePath(), &restoredSettings, &sink);
+    QCOMPARE(restored.workspace()->teams(), controller.workspace()->teams());
+}
+
+void AppControllerTest::rejectsFailedCancelledAndStaleImports()
+{
+    ImportRankServer server;
+    QTemporaryDir dir;
+    QSettings settings(dir.filePath("workspace.ini"), QSettings::IniFormat);
+    FakeNotificationSink sink;
+    AppController controller(fakeServicePath(), &settings, &sink, {}, nullptr, server.client());
+    controller.createTeam(QStringLiteral("手动队"));
+    const auto original = controller.workspace()->teams();
+    controller.previewMaoziTeamImport();
+    QTRY_COMPARE(controller.maoziTeamImport().value("state").toString(), QStringLiteral("preview"));
+    controller.cancelMaoziTeamImport();
+    QCOMPARE(controller.maoziTeamImport().value("state").toString(), QStringLiteral("idle"));
+    QCOMPARE(controller.workspace()->teams(), original);
+    server.status = 500;
+    controller.previewMaoziTeamImport();
+    QTRY_COMPARE(controller.maoziTeamImport().value("state").toString(), QStringLiteral("error"));
+    QVERIFY(!controller.maoziRank()->entries().isEmpty());
+    QVERIFY(!controller.confirmMaoziTeamImport().isEmpty());
+    QCOMPARE(controller.workspace()->teams(), original);
+    server.status = 200;
+    server.delayMs = 60;
+    controller.previewMaoziTeamImport();
+    controller.cancelMaoziTeamImport();
+    QTRY_VERIFY(!controller.maoziRank()->loading());
+    QCOMPARE(controller.maoziTeamImport().value("state").toString(), QStringLiteral("idle"));
+    QCOMPARE(controller.workspace()->teams(), original);
+    controller.previewMaoziTeamImport();
+    QTRY_COMPARE(controller.maoziTeamImport().value("state").toString(), QStringLiteral("preview"));
+    controller.createTeam(QStringLiteral("新增队"));
+    const auto changed = controller.workspace()->teams();
+    QVERIFY(!controller.confirmMaoziTeamImport().isEmpty());
+    QCOMPARE(controller.workspace()->teams(), changed);
+    controller.previewMaoziTeamImport();
+    QTRY_COMPARE(controller.maoziTeamImport().value("state").toString(), QStringLiteral("preview"));
+    server.hosts[0] = QJsonObject{{"id", "captain"}, {"name", QStringLiteral("尐表哥")},
+                                  {"douyu_id", "217331"}, {"team", 1}};
+    controller.maoziRank()->refresh();
+    QTRY_VERIFY(!controller.maoziRank()->loading());
+    QVERIFY(!controller.confirmMaoziTeamImport().isEmpty());
+    QCOMPARE(controller.workspace()->teams(), changed);
+}
+
+void AppControllerTest::doesNotPublishImportWhenSaveFails()
+{
+    ImportRankServer server;
+    QTemporaryDir dir;
+    // An existing directory cannot be replaced by a settings file.
+    QSettings settings(dir.path(), QSettings::IniFormat);
+    FakeNotificationSink sink;
+    AppController controller(fakeServicePath(), &settings, &sink, {}, nullptr, server.client());
+    const auto original = controller.workspace()->teams();
+    controller.previewMaoziTeamImport();
+    QTRY_COMPARE(controller.maoziTeamImport().value("state").toString(), QStringLiteral("preview"));
+    QVERIFY(!controller.confirmMaoziTeamImport().isEmpty());
+    QCOMPARE(controller.maoziTeamImport().value("state").toString(), QStringLiteral("error"));
+    QCOMPARE(controller.workspace()->teams(), original);
+    QVERIFY(settings.status() != QSettings::NoError);
+}
+
+void AppControllerTest::exposesTeamImportCommands()
+{
+    QTemporaryDir directory;
+    QSettings settings(directory.filePath("workspace.ini"), QSettings::IniFormat);
+    FakeNotificationSink sink;
+    AppController controller(fakeServicePath(), &settings, &sink);
+    QVERIFY(controller.metaObject()->indexOfMethod("previewMaoziTeamImport()") >= 0);
+    QVERIFY(controller.metaObject()->indexOfMethod("confirmMaoziTeamImport()") >= 0);
+    QVERIFY(controller.metaObject()->indexOfMethod("cancelMaoziTeamImport()") >= 0);
+    QCOMPARE(controller.property("maoziTeamImport").toMap().value("state").toString(),
+             QStringLiteral("idle"));
+}
 
 void AppControllerTest::preservesPlaybackAndDanmakuStateWhenHostedInBackground()
 {
@@ -148,7 +539,7 @@ void AppControllerTest::exposesUpdateCheckerState()
     FakeNotificationSink sink;
     AppController controller(fakeServicePath(), &settings, &sink);
 
-    QCOMPARE(controller.currentVersion(), QStringLiteral("0.2.13"));
+    QCOMPARE(controller.currentVersion(), QStringLiteral("0.2.15"));
     QCOMPARE(controller.updateState(), QStringLiteral("idle"));
     QCOMPARE(controller.updateMessage(), QString());
     QCOMPARE(controller.latestVersion(), QString());
@@ -207,6 +598,42 @@ void AppControllerTest::clearsUnrememberedCloseBehaviorPreference()
     QSettings restoredSettings(path, QSettings::IniFormat);
     AppController restored(fakeServicePath(), &restoredSettings, &sink);
     QCOMPARE(restored.closeBehavior(), QStringLiteral("ask"));
+}
+
+void AppControllerTest::preservesFailedSaveAndRetriesLatestWorkspace()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const auto path = directory.filePath("blocked.ini");
+    QVERIFY(QDir().mkdir(path));
+    QSettings settings(path, QSettings::IniFormat);
+    AppController controller(fakeServicePath(), &settings);
+    QVERIFY(!controller.createTeam("First").isEmpty());
+    QVERIFY(controller.property("workspaceUnsaved").toBool());
+    QVERIFY(!controller.createTeam("Latest").isEmpty());
+    QVERIFY(QDir().rmdir(path));
+    QVERIFY(QMetaObject::invokeMethod(&controller, "retryWorkspaceSave"));
+    QVERIFY(!controller.property("workspaceUnsaved").toBool());
+    QSettings saved(path, QSettings::IniFormat);
+    const auto snapshot = NativeWorkspaceStore(&saved).load();
+    QCOMPARE(snapshot.teams.size(), 2);
+    QCOMPARE(snapshot.teams.last().name, QStringLiteral("Latest"));
+}
+
+void AppControllerTest::persistsEditableEventMapping()
+{
+    QTemporaryDir directory;
+    QSettings settings(directory.filePath("mapping.ini"), QSettings::IniFormat);
+    const QString mapping = QStringLiteral(R"({"version":1,"event":"fixture","members":[{"roomId":"217331","name":"尐表哥","role":"member","team":null}]})");
+    {
+        AppController controller(fakeServicePath(), &settings);
+        QVERIFY(controller.saveEventMapping(mapping).isEmpty());
+        QVERIFY(!controller.workspaceUnsaved());
+        QVERIFY(!controller.saveEventMapping("{}").isEmpty());
+    }
+    AppController restored(fakeServicePath(), &settings);
+    QCOMPARE(QJsonDocument::fromJson(restored.eventMappingJson().toUtf8()),
+             QJsonDocument::fromJson(mapping.toUtf8()));
 }
 
 void AppControllerTest::addsRoomsThroughModelAndRejectsOverflow()
@@ -1023,6 +1450,23 @@ void AppControllerTest::enforcesTeamLimitsAndRosterMembership()
              QStringLiteral("未找到该队伍"));
 }
 
+void AppControllerTest::defersGuildChecksUntilNavigationOpens()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSettings settings(directory.filePath("workspace.ini"), QSettings::IniFormat);
+    FakeNotificationSink sink;
+    AppController controller(fakeServicePath(), &settings, &sink);
+    QCOMPARE(controller.rooms()->rowCount(), 0);
+    QVERIFY(!controller.workspace()->navigationVisible());
+    QTest::qWait(100);
+    QVERIFY2(!controller.serviceProcessRunningForTest(),
+             "Empty startup launched the service solely to check hidden navigation");
+    QCOMPARE(controller.setNavigationVisible(true), QString());
+    QTRY_VERIFY(controller.serviceProcessRunningForTest());
+    controller.requestQuit();
+}
+
 void AppControllerTest::persistsIndependentTeamsAndNavigationVisibility()
 {
     QTemporaryDir directory;
@@ -1041,7 +1485,8 @@ void AppControllerTest::persistsIndependentTeamsAndNavigationVisibility()
                  QStringLiteral("寅子"));
         QCOMPARE(firstMember.value(QStringLiteral("roomId")).toString(),
                  QStringLiteral("71415"));
-        QVERIFY(!firstMember.contains(QStringLiteral("role")));
+        QCOMPARE(firstMember.value(QStringLiteral("role")).toString(),
+                 QStringLiteral("other"));
 
         teamId = controller.createTeam(QStringLiteral("持久化队伍"));
         QCOMPARE(controller.assignGuildMemberToTeam(QStringLiteral("hamster-001"), teamId),

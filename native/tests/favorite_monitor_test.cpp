@@ -43,6 +43,7 @@ class FavoriteMonitorTest final : public QObject {
 private slots:
     void emitsOnlineAndTitleChangesAfterBaseline();
     void removesUnfavoritedRoomAndCancelsRequest();
+    void ignoresUnknownHintsAfterOnlineBaseline();
 };
 
 void FavoriteMonitorTest::emitsOnlineAndTitleChangesAfterBaseline()
@@ -92,6 +93,26 @@ void FavoriteMonitorTest::removesUnfavoritedRoomAndCancelsRequest()
                                    QStringLiteral("标题"))});
     monitor.synchronize({});
     QCOMPARE(cancelled, quint64(41));
+}
+
+void FavoriteMonitorTest::ignoresUnknownHintsAfterOnlineBaseline()
+{
+    quint64 nextRequestId = 1;
+    FavoriteMonitor monitor([&nextRequestId](const QString &) { return nextRequestId++; },
+                            [](quint64) {}, RoomRefreshTiming{60'000, 120'000, {}, 0});
+    monitor.synchronize({favorite("123", RoomLiveStatus::Unknown, "Title")});
+    monitor.onSearchResponse(result(1, "123", true, "Title"));
+    QSignalSpy events(&monitor, &FavoriteMonitor::eventsReady);
+    QSignalSpy updates(&monitor, &FavoriteMonitor::roomUpdated);
+    monitor.requestNow("123");
+    auto unknown = result(2, "123", false, "Hint");
+    unknown.results[0].statusKnown = false;
+    monitor.onSearchResponse(unknown);
+    QCOMPARE(events.count(), 0);
+    QCOMPARE(updates.count(), 0);
+    monitor.requestNow("123");
+    monitor.onSearchResponse(result(3, "123", false, "Title"));
+    QCOMPARE(events.count(), 1);
 }
 
 QTEST_GUILESS_MAIN(FavoriteMonitorTest)

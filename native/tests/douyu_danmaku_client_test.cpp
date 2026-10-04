@@ -93,6 +93,7 @@ private slots:
     void rotatesEndpointsAndRetriesWithConfiguredDelays();
     void blocksOnExplicitAuthenticationAndWaitsForManualRetry();
     void stopsTimersAndIgnoresLateSocketEvents();
+    void reconnectsAfterConnectedServerClosure();
 };
 
 namespace {
@@ -216,6 +217,30 @@ void DouyuDanmakuClientTest::stopsTimersAndIgnoresLateSocketEvents()
     scheduler.advanceBy(60'000);
     QCOMPARE(socketPtr->writes.size(), 0);
     QCOMPARE(statuses.size(), statusCount);
+}
+
+void DouyuDanmakuClientTest::reconnectsAfterConnectedServerClosure()
+{
+    auto socket = std::make_unique<FakeDanmakuSocket>();
+    auto *raw = socket.get();
+    FakeDanmakuTimerScheduler scheduler;
+    DouyuDanmakuClient client(QStringLiteral("63136"), std::move(socket), &scheduler);
+    QVector<DanmakuConnectionStatus> statuses;
+    connect(&client, &DanmakuClient::statusChanged, this,
+            [&](const DanmakuConnectionStatus &status) { statuses.append(status); });
+    client.start();
+    raw->emitConnectedSignal();
+    raw->emitFrame(serverFrame(QStringLiteral("type@=loginres/")));
+    raw->emitClosed(1000, {});
+    QCOMPARE(statuses.constLast().state, DanmakuConnectionState::Reconnecting);
+    raw->emitNetworkFailure();
+    raw->emitClosed(1000, {});
+    scheduler.advanceBy(1000);
+    QCOMPARE(raw->connectedUrls.size(), 2);
+    client.stop();
+    raw->emitClosed(1000, {});
+    scheduler.advanceBy(60000);
+    QCOMPARE(raw->connectedUrls.size(), 2);
 }
 
 QTEST_GUILESS_MAIN(DouyuDanmakuClientTest)

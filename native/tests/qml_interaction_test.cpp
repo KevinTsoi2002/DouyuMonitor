@@ -4,6 +4,12 @@
 #include <QQuickItem>
 #include <QPointF>
 #include <QSize>
+#include <QDir>
+#include <QImage>
+#include <QFont>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
 #include <QtTest/QtTest>
 
 #include "ui/mpv_quick_item.h"
@@ -31,6 +37,7 @@ public:
             {QStringLiteral("viewerLabel"), QStringLiteral("1.2万")},
             {QStringLiteral("avatarUrl"), QUrl()},
             {QStringLiteral("online"), true},
+            {QStringLiteral("statusKnown"), statusKnown},
         }};
     }
 
@@ -44,12 +51,14 @@ public:
     }
 
     QString addedRoomId;
+    bool statusKnown = true;
 };
 
 class FakeHeaderController final : public QObject {
     Q_OBJECT
     Q_PROPERTY(WorkspaceModel *workspace READ workspace CONSTANT)
     Q_PROPERTY(RoomListModel *rooms READ rooms CONSTANT)
+    Q_PROPERTY(bool workspaceUnsaved READ workspaceUnsaved NOTIFY workspaceSaveStateChanged)
 
 public:
     FakeHeaderController()
@@ -60,6 +69,10 @@ public:
 
     WorkspaceModel *workspace() noexcept { return &workspaceModel; }
     RoomListModel *rooms() noexcept { return &roomModel; }
+    bool workspaceUnsaved() const { return unsaved; }
+    Q_INVOKABLE void retryWorkspaceSave() { ++saveRetries; unsaved = false; emit workspaceSaveStateChanged(); }
+    bool unsaved = false;
+    int saveRetries = 0;
 
     void setRoomCount(int count)
     {
@@ -112,6 +125,8 @@ public:
     QString lastLayout;
     bool fullScreenToggled = false;
     QString externalUrl;
+signals:
+    void workspaceSaveStateChanged();
 };
 
 class FakeRoomController final : public QObject {
@@ -203,7 +218,7 @@ public:
 
 class FakeGuildNavigationController final : public QObject {
     Q_OBJECT
-    Q_PROPERTY(QVariantList guildRoster READ guildRoster CONSTANT)
+    Q_PROPERTY(QVariantList guildRoster READ guildRoster NOTIFY guildRosterChanged)
     Q_PROPERTY(QVariantList teams READ teams CONSTANT)
 
 public:
@@ -222,12 +237,17 @@ public:
         lastAddedMemberId = memberId;
         return {};
     }
+    Q_INVOKABLE void refreshGuildLiveStatus() { ++liveRefreshCount; }
 
     QVariantList roster;
     QVariantList teamItems;
     QString lastConfirmedMemberId;
     QString lastConfirmedRoomId;
     QString lastAddedMemberId;
+    int liveRefreshCount = 0;
+
+signals:
+    void guildRosterChanged();
 };
 
 class FakeGuildHoverController final : public QObject {
@@ -283,6 +303,7 @@ public:
 class FakeTeamManagerController final : public QObject {
     Q_OBJECT
     Q_PROPERTY(QVariantList guildRoster READ guildRoster CONSTANT)
+    Q_PROPERTY(QVariantMap maoziTeamImport READ maoziTeamImport NOTIFY maoziTeamImportChanged)
 
 public:
     FakeTeamManagerController()
@@ -291,6 +312,24 @@ public:
     }
 
     QVariantList guildRoster() const { return {}; }
+    QVariantMap maoziTeamImport() const { return importState; }
+    void setImportState(QVariantMap state) {
+        importState = std::move(state);
+        emit maoziTeamImportChanged();
+    }
+    Q_INVOKABLE void previewMaoziTeamImport() {
+        ++previewCount;
+        setImportState({{"state", "loading"}, {"canConfirm", false}});
+    }
+    Q_INVOKABLE QString confirmMaoziTeamImport() {
+        ++confirmCount;
+        setImportState({{"state", "idle"}});
+        return {};
+    }
+    Q_INVOKABLE void cancelMaoziTeamImport() {
+        ++cancelCount;
+        setImportState({{"state", "idle"}});
+    }
 
     void addTeam(const QString &id, const QString &name)
     {
@@ -312,6 +351,11 @@ public:
 
     WorkspaceModel workspaceModel;
     QString deletedTeamId;
+    int previewCount = 0, confirmCount = 0, cancelCount = 0;
+    QVariantMap importState{{"state", "idle"}};
+
+signals:
+    void maoziTeamImportChanged();
 
 private:
     QVector<NativeTeam> teams_;
@@ -321,11 +365,22 @@ class FakeUpdateController final : public QObject {
     Q_PROPERTY(QString updateState READ updateState NOTIFY updateStateChanged)
     Q_PROPERTY(QString updateMessage READ updateMessage NOTIFY updateStateChanged)
     Q_PROPERTY(QUrl updateReleaseUrl READ updateReleaseUrl NOTIFY updateStateChanged)
+    Q_PROPERTY(QString closeBehavior READ closeBehavior CONSTANT)
+    Q_PROPERTY(QString eventMappingJson READ eventMappingJson CONSTANT)
+    Q_PROPERTY(QVariantList guildRoster READ guildRoster CONSTANT)
 
 public:
     QString updateState() const { return updateState_; }
     QString updateMessage() const { return updateMessage_; }
     QUrl updateReleaseUrl() const { return updateReleaseUrl_; }
+    QString closeBehavior() const { return QStringLiteral("ask"); }
+    QString eventMappingJson() const {
+        return QStringLiteral(R"({"version":1,"event":"fixture","members":[{"roomId":"123","name":"Anchor","role":"member","team":null}]})");
+    }
+    QVariantList guildRoster() const { return roster; }
+    QVariantList roster;
+    Q_INVOKABLE QString saveEventMapping(const QString &mapping) { savedMapping = mapping; return {}; }
+    QString savedMapping;
 
     Q_INVOKABLE void checkForUpdates() { ++checkCount; }
     Q_INVOKABLE bool openLatestRelease()
@@ -613,6 +668,7 @@ private slots:
     void checksForUpdatesFromSettingsPage();
     void managesTeamsOnlyFromSettings();
     void deletesTeamFromManagerRow();
+    void previewsAndConfirmsTeamImport();
     void groupsGuildNavigationByTeamsWithoutRoleLabels();
     void filtersGuildNavigationWithoutChangingTeamOrder();
     void quickAddsResolvedGuildMember();
@@ -623,6 +679,12 @@ private slots:
     void hoverCardOmitsDetailsButton();
     void opensMaoziRankPageFromHeader();
     void filtersAndRefreshesMaoziRankPage();
+    void editsEventMappingFromSettings();
+    void eventMappingPopupsUseDarkTheme();
+    void updatesGuildStatusWithoutRecreatingRows();
+    void closesGuildHoverWhenNavigationHidden();
+    void rendersUnknownSearchStatus();
+    void retriesUnsavedWorkspaceFromPersistentWarning();
 };
 
 void QmlInteractionTest::groupsGuildNavigationByTeamsWithoutRoleLabels()
@@ -796,27 +858,18 @@ void QmlInteractionTest::ordersGuildNavigationByRoleTeamAndPinyin()
 
     QObject *rows = panel->findChild<QObject *>(QStringLiteral("guildVisibleRows"));
     QVERIFY(rows != nullptr);
-    QTRY_COMPARE(rows->property("count").toInt(), 8);
+    QTRY_COMPARE(rows->property("count").toInt(), 10);
 
-    QQuickItem *leaderHeader = nullptr;
-    QVERIFY(QMetaObject::invokeMethod(rows, "itemAt",
-                                      Q_RETURN_ARG(QQuickItem *, leaderHeader),
-                                      Q_ARG(int, 0)));
-    QVERIFY(leaderHeader != nullptr);
-    QObject *leaderHeaderText =
-        leaderHeader->findChild<QObject *>(QStringLiteral("guildTeamTitle"));
-    QVERIFY(leaderHeaderText != nullptr);
-    QCOMPARE(leaderHeaderText->property("text").toString(), QStringLiteral("团长"));
-    QVERIFY(leaderHeader->property("rowType").toString() == QStringLiteral("header"));
     QQuickItem *teamHeader = nullptr;
     QVERIFY(QMetaObject::invokeMethod(rows, "itemAt",
                                       Q_RETURN_ARG(QQuickItem *, teamHeader),
-                                      Q_ARG(int, 2)));
+                                      Q_ARG(int, 0)));
     QVERIFY(teamHeader != nullptr);
     QObject *teamHeaderText =
         teamHeader->findChild<QObject *>(QStringLiteral("guildTeamTitle"));
     QVERIFY(teamHeaderText != nullptr);
-    QCOMPARE(teamHeaderText->property("text").toString(), QStringLiteral("一队"));
+    QCOMPARE(teamHeaderText->property("text").toString(), QStringLiteral("团长"));
+    QVERIFY(component.errorString().isEmpty());
 
     QQuickItem *captainTitle = nullptr;
     QVERIFY(QMetaObject::invokeMethod(rows, "itemAt",
@@ -855,9 +908,77 @@ void QmlInteractionTest::checksRankVersionOnlyWhileGuildNavigationIsVisible()
     QVERIFY(timer != nullptr);
     QVERIFY(timer->property("running").toBool());
     QCOMPARE(timer->property("interval").toInt(), 60000);
+    QVERIFY(QMetaObject::invokeMethod(panel.get(), "syncLiveStatus"));
+    QCOMPARE(controller.liveRefreshCount, 1);
 
     panel->setProperty("visible", false);
     QTRY_VERIFY(!timer->property("running").toBool());
+    QVERIFY(QMetaObject::invokeMethod(panel.get(), "syncLiveStatus"));
+    QCOMPARE(controller.liveRefreshCount, 1);
+}
+
+void QmlInteractionTest::updatesGuildStatusWithoutRecreatingRows()
+{
+    FakeGuildNavigationController controller;
+    for (int index = 0; index < 58; ++index) {
+        controller.roster.append(QVariantMap{
+            {"id", QString::number(index)}, {"anchorName", QStringLiteral("Anchor %1").arg(index)},
+            {"roomId", QString::number(1000 + index)}, {"pinyinKey", "A"},
+            {"status", "resolved"}, {"role", "member"}, {"liveState", "unknown"},
+            {"avatarUrl", ""}, {"active", false}});
+    }
+    QQmlApplicationEngine engine;
+    QQuickWindow window;
+    window.resize(284, 720);
+    window.show();
+    QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qml/components/GuildNavigationPanel.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    std::unique_ptr<QObject> panel(component.createWithInitialProperties({
+        {"parent", QVariant::fromValue(window.contentItem())}, {"width", 284}, {"height", 720},
+        {"controller", QVariant::fromValue(static_cast<QObject *>(&controller))}}));
+    QVERIFY(panel != nullptr);
+    auto *rows = panel->findChild<QObject *>("guildVisibleRows");
+    QVERIFY(rows != nullptr);
+    QQuickItem *first = nullptr;
+    QVERIFY(QMetaObject::invokeMethod(rows, "itemAt", Q_RETURN_ARG(QQuickItem *, first), Q_ARG(int, 2)));
+    QVERIFY(first != nullptr);
+    QPointer<QQuickItem> original(first);
+    QElapsedTimer elapsed;
+    elapsed.start();
+    for (int index = 0; index < 58; ++index) {
+        auto member = controller.roster[index].toMap();
+        member.insert("liveState", "online");
+        controller.roster[index] = member;
+        emit controller.guildRosterChanged();
+    }
+    qInfo() << "58 navigation status updates (ms):" << elapsed.elapsed();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    QVERIFY2(!original.isNull(), "A live-status refresh destroyed the existing navigation row");
+    QQuickItem *updated = nullptr;
+    QVERIFY(QMetaObject::invokeMethod(rows, "itemAt", Q_RETURN_ARG(QQuickItem *, updated), Q_ARG(int, 2)));
+    QCOMPARE(updated, original.data());
+    QCOMPARE(updated->findChild<QObject *>("guildMemberLiveStateLabel")->property("text").toString(),
+             QStringLiteral("直播中"));
+    QSignalSpy hoverExited(panel.get(), SIGNAL(memberHoverExited()));
+    panel->setProperty("visible", false);
+    QVERIFY(hoverExited.count() > 0);
+}
+
+void QmlInteractionTest::closesGuildHoverWhenNavigationHidden()
+{
+    QQmlApplicationEngine engine;
+    auto *window = loadWindow(engine);
+    QVERIFY(window != nullptr);
+    click(window->findChild<QObject *>("hamsterNavigationButton"));
+    auto *card = window->findChild<QObject *>("guildRankHoverCard");
+    QVERIFY(card != nullptr);
+    window->setProperty("hoveredGuildMemberId", "fixture");
+    card->setProperty("visible", true);
+    QTRY_VERIFY(card->property("visible").toBool());
+    click(window->findChild<QObject *>("sidebarToggleButton"));
+    QTRY_VERIFY(!window->property("navigationVisible").toBool());
+    QTRY_VERIFY(!card->property("visible").toBool());
+    QCOMPARE(window->property("hoveredGuildMemberId").toString(), QString());
 }
 
 void QmlInteractionTest::hoverCardOmitsDetailsButton()
@@ -990,6 +1111,138 @@ void QmlInteractionTest::keepsTransientDialogSurfacesDark()
     QCOMPARE(addRoomFooter->property("color").value<QColor>(), QColor(QStringLiteral("#202731")));
 }
 
+void QmlInteractionTest::retriesUnsavedWorkspaceFromPersistentWarning()
+{
+    registerQmlTypes();
+    FakeHeaderController controller;
+    controller.unsaved = true;
+    QQmlApplicationEngine engine;
+    QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qml/Main.qml")));
+    std::unique_ptr<QObject> window(component.createWithInitialProperties({
+        {"appController", QVariant::fromValue(static_cast<QObject *>(&controller))}}));
+    QVERIFY2(window != nullptr, qPrintable(component.errorString()));
+    auto *warning = window->findChild<QQuickItem *>("workspaceUnsavedWarning");
+    QVERIFY(warning != nullptr);
+    QVERIFY(warning->isVisible());
+    click(window->findChild<QObject *>("retryWorkspaceSaveButton"));
+    QCOMPARE(controller.saveRetries, 1);
+    QTRY_VERIFY(!warning->isVisible());
+}
+
+void QmlInteractionTest::rendersUnknownSearchStatus()
+{
+    FakeSearchController controller;
+    controller.statusKnown = false;
+    QQmlApplicationEngine engine;
+    QQuickWindow window;
+    window.resize(640, 720);
+    window.show();
+    QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qml/dialogs/AddRoomDialog.qml")));
+    std::unique_ptr<QObject> dialog(component.createWithInitialProperties({
+        {"parent", QVariant::fromValue(window.contentItem())},
+        {"controller", QVariant::fromValue(static_cast<QObject *>(&controller))}}));
+    QVERIFY2(dialog != nullptr, qPrintable(component.errorString()));
+    QVERIFY(QMetaObject::invokeMethod(dialog.get(), "open"));
+    auto *results = dialog->findChild<QQuickItem *>("searchResultList");
+    QVERIFY(results != nullptr);
+    QTRY_COMPARE(results->property("count").toInt(), 1);
+    QQuickItem *row = nullptr;
+    QVERIFY(QMetaObject::invokeMethod(results, "itemAtIndex", Q_RETURN_ARG(QQuickItem *, row), Q_ARG(int, 0)));
+    QVERIFY(row != nullptr);
+    bool foundUnknown = false;
+    for (auto *text : row->findChildren<QObject *>())
+        if (text->property("text").toString().contains(QStringLiteral("状态未知"))) foundUnknown = true;
+    QVERIFY(foundUnknown);
+}
+
+void QmlInteractionTest::editsEventMappingFromSettings()
+{
+    FakeUpdateController controller;
+    QQmlApplicationEngine engine;
+    QQuickWindow hostWindow;
+    hostWindow.resize(640, 720);
+    hostWindow.show();
+    QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qml/pages/SettingsPage.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    std::unique_ptr<QObject> page(component.createWithInitialProperties({
+        {"parent", QVariant::fromValue(hostWindow.contentItem())},
+        {"controller", QVariant::fromValue(static_cast<QObject *>(&controller))}, {"width", 640}, {"height", 720}}));
+    QVERIFY(page != nullptr);
+    auto *rows = page->findChild<QObject *>("eventMappingRows");
+    QVERIFY(rows != nullptr);
+    QTRY_COMPARE(rows->property("count").toInt(), 1);
+    QQuickItem *row = nullptr;
+    QVERIFY(QMetaObject::invokeMethod(rows, "itemAt", Q_RETURN_ARG(QQuickItem *, row), Q_ARG(int, 0)));
+    QVERIFY(row != nullptr);
+    auto *role = row->findChild<QObject *>("eventMappingRole_0");
+    auto *team = row->findChild<QObject *>("eventMappingTeam_0");
+    QVERIFY(role != nullptr);
+    QVERIFY(team != nullptr);
+    role->setProperty("currentIndex", 1);
+    QVERIFY(QMetaObject::invokeMethod(role, "activated", Q_ARG(int, 1)));
+    team->setProperty("currentIndex", 4);
+    QVERIFY(QMetaObject::invokeMethod(team, "activated", Q_ARG(int, 4)));
+    click(page->findChild<QObject *>("saveEventMappingButton"));
+    const auto member = QJsonDocument::fromJson(controller.savedMapping.toUtf8()).object()
+                            .value("members").toArray().first().toObject();
+    QCOMPARE(member.value("role").toString(), QStringLiteral("captain"));
+    QCOMPARE(member.value("team").toInt(), 3);
+    QTest::qWait(100);
+    const auto directory = QCoreApplication::applicationDirPath() + "/verification";
+    QVERIFY(QDir().mkpath(directory));
+    QVERIFY(hostWindow.grabWindow().save(directory + "/event-mapping-settings.png"));
+}
+
+void QmlInteractionTest::eventMappingPopupsUseDarkTheme()
+{
+    FakeUpdateController controller;
+    controller.roster = {QVariantMap{{"roomId", "456"}, {"anchorName", "Popup Anchor"}}};
+    QQmlApplicationEngine engine;
+    QQuickWindow window;
+    window.resize(900, 900);
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qml/pages/SettingsPage.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    std::unique_ptr<QObject> page(component.createWithInitialProperties({
+        {"parent", QVariant::fromValue(window.contentItem())},
+        {"controller", QVariant::fromValue(static_cast<QObject *>(&controller))},
+        {"width", 900}, {"height", 900}}));
+    QVERIFY(page != nullptr);
+    auto *rows = page->findChild<QObject *>("eventMappingRows");
+    QVERIFY(rows != nullptr);
+    QQuickItem *row = nullptr;
+    QVERIFY(QMetaObject::invokeMethod(rows, "itemAt", Q_RETURN_ARG(QQuickItem *, row), Q_ARG(int, 0)));
+    QVERIFY(row != nullptr);
+    const QList<QObject *> selectors{
+        page->findChild<QObject *>("eventMappingMemberPicker"),
+        row->findChild<QObject *>("eventMappingRole_0"),
+        row->findChild<QObject *>("eventMappingTeam_0")};
+    for (auto *selector : selectors) {
+        QVERIFY(selector != nullptr);
+        auto *popup = selector->property("popup").value<QObject *>();
+        QVERIFY(popup != nullptr);
+        QVERIFY(QMetaObject::invokeMethod(popup, "open"));
+        QTRY_VERIFY(popup->property("visible").toBool());
+        auto *background = popup->property("background").value<QQuickItem *>();
+        QVERIFY(background != nullptr);
+        QCOMPARE(background->property("color").value<QColor>(), QColor("#12171e"));
+        const auto directory = QCoreApplication::applicationDirPath() + "/verification";
+        QVERIFY(QDir().mkpath(directory));
+        QTest::qWait(100);
+        const QImage capture = window.grabWindow();
+        QVERIFY(!capture.isNull());
+        const QPointF sample = background->mapToScene(QPointF(background->width() - 8, 8));
+        const QPoint pixel = (sample * window.devicePixelRatio()).toPoint();
+        QVERIFY(capture.rect().contains(pixel));
+        const auto color = capture.pixelColor(pixel);
+        QVERIFY2(color == QColor("#202731") || color == QColor("#12171e"),
+                 qPrintable(color.name()));
+        QVERIFY(capture.save(directory + "/" + selector->objectName() + "-dark-popup.png"));
+        QVERIFY(QMetaObject::invokeMethod(popup, "close"));
+    }
+}
+
 void QmlInteractionTest::checksForUpdatesFromSettingsPage()
 {
     registerQmlTypes();
@@ -1089,6 +1342,78 @@ void QmlInteractionTest::deletesTeamFromManagerRow()
 
     QCOMPARE(controller.deletedTeamId, QStringLiteral("team-b"));
     QTRY_COMPARE(teamList->property("count").toInt(), 1);
+}
+
+void QmlInteractionTest::previewsAndConfirmsTeamImport()
+{
+    registerQmlTypes();
+    const auto previousFont = QGuiApplication::font();
+    QGuiApplication::setFont(QFont(QStringLiteral("Microsoft YaHei UI"), 10));
+    FakeTeamManagerController controller;
+    QQmlApplicationEngine engine;
+    QQmlComponent component(&engine, QUrl("qrc:/qml/dialogs/TeamManagerDialog.qml"));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    QQuickWindow window;
+    window.resize(640, 720);
+    window.show();
+    std::unique_ptr<QObject> dialog(component.createWithInitialProperties({
+        {"parent", QVariant::fromValue(window.contentItem())},
+        {"controller", QVariant::fromValue(static_cast<QObject *>(&controller))},
+        {"workspaceModel", QVariant::fromValue(static_cast<QObject *>(&controller.workspaceModel))}}));
+    QVERIFY(dialog != nullptr);
+    QVERIFY(QMetaObject::invokeMethod(dialog.get(), "open"));
+    auto *button = dialog->findChild<QObject *>("importMaoziTeamsButton");
+    QVERIFY(button != nullptr);
+    click(button);
+    QCOMPARE(controller.previewCount, 1);
+    QTRY_VERIFY(!button->property("enabled").toBool());
+    auto *confirm = dialog->findChild<QObject *>("confirmMaoziTeamImportButton");
+    auto *cancel = dialog->findChild<QObject *>("cancelMaoziTeamImportButton");
+    QVERIFY(confirm != nullptr && cancel != nullptr);
+    QVERIFY(!confirm->property("enabled").toBool());
+    click(cancel);
+    QCOMPARE(controller.cancelCount, 1);
+    controller.setImportState({{"state", "preview"}, {"canConfirm", true},
+        {"createdTeams", 1}, {"changedMembers", 1}, {"unchangedMembers", 0},
+        {"teams", QVariantList{QVariantMap{{"name", QStringLiteral("红队")},
+          {"sourceCount", 1}, {"matchedCount", 1}, {"retainedCount", 0},
+          {"members", QStringList{QStringLiteral("测试主播")}}}}}});
+    QTRY_VERIFY(confirm->property("enabled").toBool());
+    auto *list = dialog->findChild<QObject *>("maoziTeamImportPreviewList");
+    QVERIFY(list != nullptr);
+    QTRY_COMPARE(list->property("count").toInt(), 1);
+    QVariantList previewTeams;
+    for (const auto &name : {QStringLiteral("红队"), QStringLiteral("黑队"),
+                             QStringLiteral("紫队"), QStringLiteral("蓝队")}) {
+        QStringList members;
+        for (int i = 0; i < 11; ++i)
+            members.append(QStringLiteral("测试主播%1名字较长").arg(i + 1));
+        previewTeams.append(QVariantMap{{"name", name}, {"sourceCount", 11},
+            {"matchedCount", 11}, {"retainedCount", 1}, {"members", members},
+            {"retainedMembers", QStringList{QStringLiteral("手动保留主播")}}});
+    }
+    controller.setImportState({{"state", "preview"}, {"canConfirm", true},
+        {"createdTeams", 4}, {"changedMembers", 44}, {"unchangedMembers", 0},
+        {"teams", previewTeams},
+        {"conflictNames", QStringList{QStringLiteral("身份冲突主播")}},
+        {"unmatchedNames", QStringList{QStringLiteral("未匹配主播")}}});
+    QTRY_COMPARE(list->property("count").toInt(), 4);
+    QTest::qWait(150);
+    const QString verificationDir = QCoreApplication::applicationDirPath()
+        + QStringLiteral("/../../verification/team-import");
+    QVERIFY(QDir().mkpath(verificationDir));
+    QVERIFY(window.grabWindow().save(verificationDir + "/preview-minimum.png"));
+    window.resize(1280, 900);
+    QTest::qWait(150);
+    QVERIFY(window.grabWindow().save(verificationDir + "/preview-desktop.png"));
+    click(confirm);
+    QCOMPARE(controller.confirmCount, 1);
+    controller.setImportState({{"state", "error"}, {"canConfirm", false},
+                               {"error", QStringLiteral("刷新失败，请重试")}});
+    QTRY_VERIFY(!confirm->property("enabled").toBool());
+    QVERIFY(QMetaObject::invokeMethod(dialog.get(), "close"));
+    QTRY_COMPARE(controller.cancelCount, 2);
+    QGuiApplication::setFont(previousFont);
 }
 void QmlInteractionTest::keepsInputAndMenuControlsOnDarkTheme()
 {
@@ -2749,6 +3074,7 @@ void QmlInteractionTest::rendersGuildMemberAvatarAndLiveState()
     controller.roster = QVariantList{
         QVariantMap{{QStringLiteral("id"), QStringLiteral("hamster-online")},
                     {QStringLiteral("anchorName"), QStringLiteral("在线主播")},
+                    {QStringLiteral("pinyinKey"), QStringLiteral("Z")},
                     {QStringLiteral("roomId"), QStringLiteral("71415")},
                     {QStringLiteral("status"), QStringLiteral("resolved")},
                     {QStringLiteral("avatarUrl"), QStringLiteral("https://example.invalid/online.jpg")},
@@ -2756,6 +3082,7 @@ void QmlInteractionTest::rendersGuildMemberAvatarAndLiveState()
                     {QStringLiteral("active"), false}},
         QVariantMap{{QStringLiteral("id"), QStringLiteral("hamster-offline")},
                     {QStringLiteral("anchorName"), QStringLiteral("离线主播")},
+                    {QStringLiteral("pinyinKey"), QStringLiteral("L")},
                     {QStringLiteral("roomId"), QStringLiteral("84452")},
                     {QStringLiteral("status"), QStringLiteral("resolved")},
                     {QStringLiteral("avatarUrl"), QString()},
@@ -2763,6 +3090,7 @@ void QmlInteractionTest::rendersGuildMemberAvatarAndLiveState()
                     {QStringLiteral("active"), false}},
         QVariantMap{{QStringLiteral("id"), QStringLiteral("hamster-unknown")},
                     {QStringLiteral("anchorName"), QStringLiteral("检查主播")},
+                    {QStringLiteral("pinyinKey"), QStringLiteral("J")},
                     {QStringLiteral("roomId"), QString()},
                     {QStringLiteral("status"), QStringLiteral("resolving")},
                     {QStringLiteral("liveState"), QStringLiteral("unknown")},
@@ -2794,17 +3122,17 @@ void QmlInteractionTest::rendersGuildMemberAvatarAndLiveState()
 
     QObject *visibleRows = panel->findChild<QObject *>(QStringLiteral("guildVisibleRows"));
     QVERIFY(visibleRows != nullptr);
-    QTRY_COMPARE(visibleRows->property("count").toInt(), 5);
+    QTRY_COMPARE(visibleRows->property("count").toInt(), 6);
 
-    const QList<QString> expectedStates{QStringLiteral("直播中"), QStringLiteral("未开播"),
-                                      QStringLiteral("检查中")};
-    const QList<QString> expectedAvatars{QStringLiteral("https://example.invalid/online.jpg"),
-                                        QString(), QString()};
+    const QList<QString> expectedStates{QStringLiteral("检查中"), QStringLiteral("未开播"),
+                                      QStringLiteral("直播中")};
+    const QList<QString> expectedAvatars{QString(), QString(),
+                                        QStringLiteral("https://example.invalid/online.jpg")};
     for (int index = 0; index < expectedStates.size(); ++index) {
         QQuickItem *row = nullptr;
         QVERIFY(QMetaObject::invokeMethod(visibleRows, "itemAt",
                                           Q_RETURN_ARG(QQuickItem *, row),
-                                          Q_ARG(int, index + 1)));
+                                          Q_ARG(int, index + 2)));
         QVERIFY(row != nullptr);
         QObject *liveLabel =
             row->findChild<QObject *>(QStringLiteral("guildMemberLiveStateLabel"));

@@ -57,14 +57,26 @@ Rectangle {
 
     function syncRank()
     {
-        if (!root.syncActive || !root.controller || !root.controller.maoziRank) return
+        if (!root.syncActive || !root.controller) return
+        if (!root.controller.maoziRank) return
         if (root.controller.maoziRank.checkForChanges)
             root.controller.maoziRank.checkForChanges()
+    }
+
+    function syncLiveStatus()
+    {
+        if (root.syncActive && root.controller && root.controller.refreshGuildLiveStatus)
+            root.controller.refreshGuildLiveStatus()
     }
 
     function buildTeamSections()
     {
         const assigned = ({})
+        const leaderMembers = []
+        for (let index = 0; index < root.roster.length; ++index) {
+            const member = root.roster[index]
+            if (member.role === "leader" && root.memberMatches(member)) leaderMembers.push(member)
+        }
         const sourceSections = []
         for (let teamIndex = 0; teamIndex < root.teams.length; ++teamIndex) {
             const team = root.teams[teamIndex]
@@ -74,7 +86,7 @@ Rectangle {
                 const member = root.roster[rosterIndex]
                 if (memberIds.indexOf(member.id) < 0) continue
                 assigned[member.id] = true
-                if (root.memberMatches(member)) members.push(member)
+                if (member.role !== "leader" && root.memberMatches(member)) members.push(member)
             }
             sourceSections.push({
                 teamId: String(team.id || ""),
@@ -87,7 +99,7 @@ Rectangle {
         const unassigned = []
         for (let rosterIndex = 0; rosterIndex < root.roster.length; ++rosterIndex) {
             const member = root.roster[rosterIndex]
-            if (assigned[member.id] || !root.memberMatches(member)) continue
+            if (member.role === "leader" || assigned[member.id] || !root.memberMatches(member)) continue
             unassigned.push(member)
         }
         const unassignedSection = {
@@ -99,7 +111,6 @@ Rectangle {
 
         const leadIn = []
         const teamSections = []
-        const leaderMembers = []
         for (let index = 0; index < sourceSections.length; ++index) {
             const section = sourceSections[index]
             const captain = []
@@ -107,8 +118,7 @@ Rectangle {
             const other = []
             for (let memberIndex = 0; memberIndex < section.members.length; ++memberIndex) {
                 const entry = section.members[memberIndex]
-                if (entry.role === "leader") leaderMembers.push(entry)
-                else if (entry.role === "captain") captain.push(entry)
+                if (entry.role === "captain") captain.push(entry)
                 else if (entry.role === "member") member.push(entry)
                 else other.push(entry)
             }
@@ -148,11 +158,11 @@ Rectangle {
 
     function rebuildNavigationRows()
     {
-        navigationRows.clear()
+        const nextRows = []
         const sections = root.teamSections
         for (let sectionIndex = 0; sectionIndex < sections.length; ++sectionIndex) {
             const section = sections[sectionIndex]
-            navigationRows.append({
+            nextRows.push({
                 rowType: "header",
                 title: section.title,
                 memberId: "",
@@ -166,7 +176,7 @@ Rectangle {
             for (let groupIndex = 0; groupIndex < section.groups.length; ++groupIndex) {
                 const group = section.groups[groupIndex]
                 if (group.title.length > 0) {
-                    navigationRows.append({
+                    nextRows.push({
                         rowType: "subheader",
                         title: group.title,
                         memberId: "",
@@ -180,7 +190,7 @@ Rectangle {
                 }
                 for (let memberIndex = 0; memberIndex < group.members.length; ++memberIndex) {
                     const member = group.members[memberIndex]
-                    navigationRows.append({
+                    nextRows.push({
                         rowType: "member",
                         title: "",
                         memberId: String(member.id || ""),
@@ -193,6 +203,27 @@ Rectangle {
                     })
                 }
             }
+        }
+        // Live-status updates retain delegates and their hover/scroll state.
+        for (let index = 0; index < nextRows.length; ++index) {
+            const next = nextRows[index]
+            const current = index < navigationRows.count ? navigationRows.get(index) : null
+            const sameRow = current && current.rowType === next.rowType
+                            && (next.rowType === "member"
+                                ? current.memberId === next.memberId : current.title === next.title)
+            if (!sameRow) {
+                root.memberHoverExited()
+                if (current) navigationRows.remove(index)
+                navigationRows.insert(index, next)
+                continue
+            }
+            for (const key in next) {
+                if (current[key] !== next[key]) navigationRows.setProperty(index, key, next[key])
+            }
+        }
+        if (navigationRows.count > nextRows.length) {
+            root.memberHoverExited()
+            navigationRows.remove(nextRows.length, navigationRows.count - nextRows.length)
         }
     }
 
@@ -276,12 +307,16 @@ Rectangle {
         interval: 60000
         repeat: true
         running: root.syncActive
-        onTriggered: root.syncRank()
+        onTriggered: {
+            root.syncRank()
+            root.syncLiveStatus()
+        }
     }
 
     Component.onCompleted: root.rebuildNavigationRows()
     onTeamSectionsChanged: root.rebuildNavigationRows()
     onSyncActiveChanged: if (syncActive) root.syncRank()
+    onVisibleChanged: if (!visible) root.memberHoverExited()
 
     Column {
         anchors.fill: parent
@@ -349,7 +384,7 @@ Rectangle {
                             anchors.left: parent.left
                             anchors.right: parent.right
                             anchors.top: parent.top
-                            height: visible ? implicitHeight : 0
+                            height: visible ? 20 : 0
                             visible: model.rowType === "header"
                             color: Theme.mutedText
                             font.bold: true
@@ -364,7 +399,7 @@ Rectangle {
                             anchors.leftMargin: 8
                             anchors.right: parent.right
                             anchors.top: parent.top
-                            height: visible ? implicitHeight : 0
+                            height: visible ? 18 : 0
                             visible: model.rowType === "subheader"
                             color: Theme.mutedText
                             font.pixelSize: 10

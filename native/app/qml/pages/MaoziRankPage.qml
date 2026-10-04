@@ -194,7 +194,9 @@ Item {
                     anchors.right: parent.right
                     anchors.bottom: parent.bottom
                     height: 16
-                    text: root.rankClient ? root.rankClient.statusText : "暂无野榜数据"
+                    text: root.rankClient && root.rankClient.statusText !== undefined
+                          ? String(root.rankClient.statusText)
+                          : "暂无野榜数据"
                     color: Theme.mutedText
                     font.pixelSize: 11
                     elide: Text.ElideRight
@@ -400,7 +402,7 @@ Item {
                                 clip: true
                                 onStatusChanged: {
                                     if (status === Image.Error) {
-                                        console.warn("maozi avatar failed:", source, errorString)
+                                        console.warn("maozi avatar failed:", source)
                                     }
                                 }
                             }

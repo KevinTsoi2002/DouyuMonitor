@@ -205,11 +205,21 @@ class DouyuBackend:
                 pass
 
         roster_matches = self._search_roster(value)
-        if roster_matches:
-            return roster_matches
+        exact = [item for item in roster_matches
+                 if _normalized_anchor_name(item["anchorName"]) == _normalized_anchor_name(value)]
+        if exact:
+            results = []
+            for hint in exact:
+                try:
+                    results.append(self._fetch_room(hint["roomId"]))
+                except BackendError:
+                    results.append(hint)
+            return results
 
         url = f"{SEARCH_API_URL}?{urlencode({'kw': value, 'pageOff': 0, 'pageSize': 20})}"
-        candidates: dict[str, dict[str, Any]] = {}
+        candidates = {item["roomId"]: item for item in roster_matches}
+        remote_rooms: set[str] = set()
+        remote_found = False
         try:
             payload = self._fetch_json(url, self._timeout)
             if isinstance(payload, dict) and payload.get("error") == 0:
@@ -219,8 +229,11 @@ class DouyuBackend:
                     for item in relate_user["list"]:
                         candidate = _search_candidate(item)
                         if candidate is not None:
-                            candidates.setdefault(candidate["roomId"], candidate)
-            if candidates:
+                            if candidate["roomId"] not in remote_rooms:
+                                candidates[candidate["roomId"]] = candidate
+                                remote_rooms.add(candidate["roomId"])
+                            remote_found = True
+            if remote_found:
                 return list(candidates.values())
         except BackendError:
             pass
@@ -229,11 +242,17 @@ class DouyuBackend:
         try:
             legacy_payload = self._fetch_json(legacy_url, self._timeout)
         except BackendError as error:
+            if candidates:
+                return list(candidates.values())
             raise BackendError(ErrorCode.INVALID_RESPONSE) from error
         if not isinstance(legacy_payload, dict) or legacy_payload.get("error") != 0:
+            if candidates:
+                return list(candidates.values())
             raise BackendError(ErrorCode.INVALID_RESPONSE)
         legacy_data = legacy_payload.get("data")
         if not isinstance(legacy_data, dict) or not isinstance(legacy_data.get("relateShow"), list):
+            if candidates:
+                return list(candidates.values())
             raise BackendError(ErrorCode.INVALID_RESPONSE)
         for item in legacy_data["relateShow"]:
             if not isinstance(item, dict):
@@ -254,7 +273,7 @@ class DouyuBackend:
             avatar_url = _safe_http_url(item.get("avatar"))
             if avatar_url:
                 candidate["avatarUrl"] = avatar_url
-            candidates.setdefault(room_id, candidate)
+            candidates[room_id] = candidate
         return list(candidates.values())
 
     def _search_roster(self, query: str) -> list[dict[str, Any]]:
@@ -283,6 +302,7 @@ class DouyuBackend:
                 "title": f"{anchor_name}的直播间",
                 "category": "未分类",
                 "online": False,
+                "statusKnown": False,
                 "viewerLabel": "0",
             })
         return matches

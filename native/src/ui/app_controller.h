@@ -19,6 +19,7 @@
 #include "danmaku/danmaku_controller.h"
 #include "workspace/native_workspace_store.h"
 #include "workspace/notification_policy.h"
+#include "workspace/maozi_team_import.h"
 
 class MultiRoomCoordinator;
 class FavoriteMonitor;
@@ -55,6 +56,9 @@ class AppController final : public QObject {
     Q_PROPERTY(bool rankSyncPending READ rankSyncPending NOTIFY rankSyncStateChanged)
     Q_PROPERTY(QString rankSyncError READ rankSyncError NOTIFY rankSyncStateChanged)
     Q_PROPERTY(MaoziRankClient *maoziRank READ maoziRank CONSTANT)
+    Q_PROPERTY(QVariantMap maoziTeamImport READ maoziTeamImport NOTIFY maoziTeamImportChanged)
+    Q_PROPERTY(bool workspaceUnsaved READ workspaceUnsaved NOTIFY workspaceSaveStateChanged)
+    Q_PROPERTY(QString eventMappingJson READ eventMappingJson NOTIFY eventMappingChanged)
 
 public:
     explicit AppController(QString serviceProgram,
@@ -62,6 +66,10 @@ public:
                            SystemNotificationSink *notificationSink = nullptr,
                            DanmakuClientFactory danmakuFactory = {},
                            QObject *parent = nullptr);
+    AppController(QString serviceProgram, QSettings *settings,
+                  SystemNotificationSink *notificationSink,
+                  DanmakuClientFactory danmakuFactory, QObject *parent,
+                  std::unique_ptr<MaoziRankClient> rankClient);
     ~AppController() override;
 
     RoomListModel *rooms() noexcept;
@@ -82,6 +90,15 @@ public:
     MaoziRankClient *maoziRank() noexcept;
     bool rankSyncPending() const noexcept;
     QString rankSyncError() const;
+    QVariantMap maoziTeamImport() const;
+    bool workspaceUnsaved() const noexcept { return workspaceUnsaved_; }
+    Q_INVOKABLE void retryWorkspaceSave();
+    Q_INVOKABLE void refreshGuildLiveStatus();
+    QString eventMappingJson() const;
+    Q_INVOKABLE QString saveEventMapping(const QString &mapping);
+    Q_INVOKABLE void previewMaoziTeamImport();
+    Q_INVOKABLE QString confirmMaoziTeamImport();
+    Q_INVOKABLE void cancelMaoziTeamImport();
     bool backgroundHosted() const noexcept;
     bool windowMinimized() const noexcept;
     QString closeBehavior() const;
@@ -177,6 +194,9 @@ signals:
     void searchStateChanged();
     void updateStateChanged();
     void rankSyncStateChanged();
+    void maoziTeamImportChanged();
+    void workspaceSaveStateChanged();
+    void eventMappingChanged();
     void backgroundHostedChanged();
     void windowMinimizedChanged();
     void closeBehaviorChanged();
@@ -220,6 +240,7 @@ private:
     QWindow::Visibility preFullScreenVisibility_ = QWindow::Windowed;
     bool hadPreFullScreenVisibility_ = false;
     bool restoring_ = false;
+    bool workspaceUnsaved_ = false;
     bool shuttingDown_ = false;
     bool backgroundHosted_ = false;
     bool windowMinimized_ = false;
@@ -232,6 +253,12 @@ private:
     QString searchError_;
     std::unique_ptr<UpdateChecker> updateChecker_;
     std::unique_ptr<MaoziRankClient> maoziRank_;
+    QVariantMap maoziTeamImport_{{QStringLiteral("state"), QStringLiteral("idle")},
+                                {QStringLiteral("canConfirm"), false}};
+    MaoziTeamImportPlan maoziTeamImportPlan_;
+    QVector<NativeTeam> maoziTeamImportSourceTeams_;
+    QVector<GuildRoomCacheEntry> maoziTeamImportSourceCache_;
+    QVariantList maoziTeamImportSourceEntries_;
     QHash<QString, RoomLiveStatus> lastLiveStatuses_;
     QHash<QString, RoomLiveStatus> favoriteLiveStatuses_;
 };

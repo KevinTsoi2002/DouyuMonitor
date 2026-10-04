@@ -56,9 +56,11 @@ private slots:
     void prioritizesVerifiedRoomMetadataBeforeResolution();
     void deduplicatesRepeatedMetadataRefreshes();
     void refreshesBundledRoomMetadataWithoutResolvingAgain();
-    void checksMetadataOnceBeforeStatusOnlyRefreshes();
+    void cachesFreshLiveStateAfterMetadataRefresh();
     void skipsMetadataRefreshWhenCacheAlreadyComplete();
     void reusesCachedLiveStateWhenFresh();
+    void refreshesLiveStatusWithoutRefetchingIdentity();
+    void preservesCachedAvatarWhenSearchStatusIsUnknown();
 };
 
 void GuildRoomResolverTest::resolvesExactAnchorMatchOnly()
@@ -284,10 +286,12 @@ void GuildRoomResolverTest::refreshesBundledRoomMetadataWithoutResolvingAgain()
              QStringLiteral("https://example.invalid/bundled.jpg"));
     QCOMPARE(resolver.liveStateFor(QStringLiteral("hamster-001")),
              QStringLiteral("offline"));
-    QCOMPARE(resolver.cache().size(), 0);
+    QCOMPARE(resolver.cache().size(), 1);
+    QVERIFY(resolver.cache().first().metadataCheckedAtMs > 0);
+    QVERIFY(resolver.cache().first().liveCheckedAtMs > 0);
 }
 
-void GuildRoomResolverTest::checksMetadataOnceBeforeStatusOnlyRefreshes()
+void GuildRoomResolverTest::cachesFreshLiveStateAfterMetadataRefresh()
 {
     FakeSearchTransport transport;
     GuildRoomResolver resolver(&transport);
@@ -328,8 +332,7 @@ void GuildRoomResolverTest::checksMetadataOnceBeforeStatusOnlyRefreshes()
     resolver.refreshMetadata();
     QTest::qWait(1300);
     QCOMPARE(transport.requestCount, 1);
-    QCOMPARE(transport.statusRequestCount, 1);
-    QCOMPARE(transport.lastStatusRoomId, QStringLiteral("84452"));
+    QCOMPARE(transport.statusRequestCount, 0);
 }
 
 void GuildRoomResolverTest::skipsMetadataRefreshWhenCacheAlreadyComplete()
@@ -469,6 +472,68 @@ void GuildRoomResolverTest::skipsBundledAndCachedRoomIds()
         QStringLiteral("午夜抹抹茶的直播间"),
     }};
     QVERIFY(resolver.handleResponse(response));
+}
+
+void GuildRoomResolverTest::refreshesLiveStatusWithoutRefetchingIdentity()
+{
+    FakeSearchTransport transport;
+    GuildRoomResolver resolver(&transport);
+    resolver.setRoster({{"member", "Anchor", {}, "123"}});
+    GuildRoomCacheEntry entry;
+    entry.memberId = "member";
+    entry.roomId = "123";
+    entry.metadataCheckedAtMs = entry.verifiedAtMs = entry.liveCheckedAtMs = QDateTime::currentMSecsSinceEpoch();
+    entry.liveState = "online";
+    resolver.setCache({entry});
+    resolver.start();
+    QCOMPARE(transport.requestCount, 0);
+    resolver.refreshMetadata();
+    QCOMPARE(transport.statusRequestCount, 0);
+    // The visible navigation's periodic refresh must bypass the reopen TTL.
+    QVERIFY(QMetaObject::invokeMethod(&resolver, "refreshLiveStatus"));
+    QTRY_COMPARE(transport.statusRequestCount, 1);
+    QVERIFY(QMetaObject::invokeMethod(&resolver, "refreshLiveStatus"));
+    QCOMPARE(transport.statusRequestCount, 1);
+    QCOMPARE(transport.requestCount, 0);
+    QVERIFY(resolver.handleFailure(transport.lastStatusRequestId, "unavailable"));
+    QCOMPARE(resolver.liveStateFor("member"), QStringLiteral("unknown"));
+    QCOMPARE(resolver.roomIdFor("member"), QStringLiteral("123"));
+}
+
+void GuildRoomResolverTest::preservesCachedAvatarWhenSearchStatusIsUnknown()
+{
+    FakeSearchTransport transport;
+    GuildRoomResolver resolver(&transport);
+    resolver.setRoster({{"member", "Anchor", {}, "123"}});
+    GuildRoomCacheEntry cached;
+    cached.memberId = "member";
+    cached.roomId = "123";
+    cached.verifiedAtMs = cached.metadataCheckedAtMs = 1;
+    cached.avatarUrl = QUrl("https://example.invalid/avatar.png");
+    resolver.setCache({cached});
+    resolver.start();
+    QTRY_COMPARE(transport.statusRequestCount, 1);
+    ServiceResponse status;
+    status.requestId = transport.lastStatusRequestId;
+    status.ok = true;
+    status.status = true;
+    status.isLive = true;
+    QVERIFY(resolver.handleResponse(status));
+    resolver.refreshMetadata(true);
+    QTRY_COMPARE(transport.requestCount, 1);
+    ServiceResponse response;
+    response.requestId = transport.lastRequestId;
+    response.ok = true;
+    response.search = true;
+    RoomSearchResult hint;
+    hint.roomId = "123";
+    hint.anchorName = "Anchor";
+    hint.statusKnown = false;
+    response.results = {hint};
+    QVERIFY(resolver.handleResponse(response));
+    QCOMPARE(resolver.avatarUrlFor("member"), cached.avatarUrl.toString());
+    QCOMPARE(resolver.cache().first().avatarUrl, cached.avatarUrl);
+    QCOMPARE(resolver.liveStateFor("member"), QStringLiteral("unknown"));
 }
 
 QTEST_GUILESS_MAIN(GuildRoomResolverTest)

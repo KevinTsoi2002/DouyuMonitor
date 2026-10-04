@@ -257,12 +257,13 @@ class BackendTests(unittest.TestCase):
         with self.assertRaises(BackendError) as context:
             backend.search("unknown anchor")
         self.assertEqual(context.exception.code, ErrorCode.INVALID_RESPONSE)
-    def test_searches_verified_guild_roster_without_remote_request(self):
+    def test_hydrates_exact_roster_search(self):
         calls = []
 
         def fetch_json(url, _timeout):
             calls.append(url)
-            raise AssertionError("remote search should not be used for a verified roster member")
+            return {"error": 0, "data": {"room_id": "84452", "owner_name": "主播阿飞",
+                    "room_name": "Live", "room_status": "1"}}
 
         backend = DouyuBackend(
             fetch_json=fetch_json,
@@ -272,14 +273,33 @@ class BackendTests(unittest.TestCase):
             ],
         )
         self.assertEqual(
-            [item["roomId"] for item in backend.search("阿飞")],
+            [item["roomId"] for item in backend.search("主播阿飞")],
             ["84452"],
         )
-        self.assertEqual(calls, [])
+        self.assertEqual(len(calls), 1)
+        self.assertTrue(backend.search("主播阿飞")[0]["online"])
+
+    def test_merges_roster_hints_and_remote_search(self):
+        def fetch_json(_url, _timeout):
+            return {"error": 0, "data": {"relateUser": {"list": [
+                {"anchorInfo": {"rid": "123", "nickName": "另一个主播", "isLive": 1}},
+            ]}}}
+        backend = DouyuBackend(fetch_json=fetch_json, roster_factory=lambda: [
+            {"name": "主播阿飞", "roomId": "84452"}])
+        results = backend.search("主播")
+        self.assertEqual([item["roomId"] for item in results], ["84452", "123"])
+        self.assertFalse(results[0]["statusKnown"])
+
+    def test_failed_roster_hydration_is_unknown(self):
+        def fetch_json(_url, _timeout):
+            raise BackendError(ErrorCode.INVALID_RESPONSE)
+        backend = DouyuBackend(fetch_json=fetch_json, roster_factory=lambda: [
+            {"name": "主播阿飞", "roomId": "84452"}])
+        self.assertEqual(backend.search("主播阿飞")[0].get("statusKnown"), False)
 
     def test_loads_bundled_roster_for_verified_members(self):
         def fetch_json(_url, _timeout):
-            raise AssertionError("bundled roster should avoid a remote search")
+            raise BackendError(ErrorCode.INVALID_RESPONSE)
 
         backend = DouyuBackend(fetch_json=fetch_json)
         self.assertEqual(

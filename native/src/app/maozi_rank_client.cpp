@@ -40,6 +40,18 @@ const QSet<QString> kCaptainRoomIds{
     QStringLiteral("11222"),
     QStringLiteral("2140934"),
 };
+// Captain assignments verified in the user's 2026-10-04 page screenshot.
+// An explicit snapshot team always takes precedence over this fallback.
+const QHash<QString, int> kCaptainTeamIds{
+    {QStringLiteral("217331"), 3},  // 尐表哥 -> 蓝队
+    {QStringLiteral("7204164"), 3}, // 你个瞎马 -> 蓝队
+    {QStringLiteral("80432"), 1},   // 午夜抹抹茶 -> 黑队
+    {QStringLiteral("6151194"), 1}, // 宋暖阳绝不咕咕 -> 黑队
+    {QStringLiteral("731252"), 2},  // 主播帝王 -> 紫队
+    {QStringLiteral("11222"), 2},   // 王大谋QoQ -> 紫队
+    {QStringLiteral("2140934"), 0}, // 老皮历险记 -> 红队
+    {QStringLiteral("2632018"), 0}, // 归海念一刀 -> 红队
+};
 const QHash<QString, QString> kKnownNameAliases{
     {QStringLiteral("雾蒙蒙y"), QStringLiteral("雾萌萌y")},
 };
@@ -51,9 +63,9 @@ const QStringList kPlacementDays{
 
 const QStringList kTeamNames{
     QStringLiteral("红队"),
-    QStringLiteral("蓝队"),
-    QStringLiteral("黄队"),
     QStringLiteral("黑队"),
+    QStringLiteral("紫队"),
+    QStringLiteral("蓝队"),
 };
 
 double numberValue(const QJsonValue &value, double fallback = 0.0)
@@ -77,6 +89,16 @@ QString normalizedName(const QString &value)
 bool isMemberRole(const QString &role)
 {
     return role == QStringLiteral("member");
+}
+
+QString mappingName(const QString &value)
+{
+    auto name = value.trimmed();
+    for (const auto &suffix : {QStringLiteral("-团长"), QStringLiteral("-队长"),
+                               QStringLiteral("-队员"), QStringLiteral("-OB")}) {
+        if (name.endsWith(suffix, Qt::CaseInsensitive)) { name.chop(suffix.size()); break; }
+    }
+    return normalizedName(kKnownNameAliases.value(name, name));
 }
 
 struct PlacementStage {
@@ -212,7 +234,10 @@ MaoziRankClient::MaoziRankClient(QUrl authEndpoint, QUrl snapshotEndpoint, int t
     timeoutTimer_->setSingleShot(true);
     connect(timeoutTimer_, &QTimer::timeout, this, [this] {
         if (reply_ == nullptr) return;
-        reply_->abort();
+        QNetworkReply *timedOut = reply_;
+        reply_ = nullptr;
+        timedOut->abort();
+        timedOut->deleteLater();
         finishError(QStringLiteral("野榜请求超时"), true);
     });
 }
@@ -236,6 +261,11 @@ void MaoziRankClient::refresh()
         stale->abort();
         stale->deleteLater();
     }
+    if (snapshotRefreshActive_) {
+        snapshotRefreshActive_ = false;
+        emit snapshotRefreshFinished(false);
+    }
+    snapshotRefreshActive_ = true;
     accessToken_.clear();
     errorMessage_.clear();
     lastSyncError_.clear();
@@ -442,6 +472,7 @@ void MaoziRankClient::parseSnapshot(const QByteArray &payload)
         finishError(QStringLiteral("野榜数据为空"), true);
         return;
     }
+    lastSnapshot_ = payload;
 
     QHash<QString, QJsonObject> aggregates;
     const QJsonObject agg = root.value(QStringLiteral("agg")).toObject();
@@ -519,7 +550,17 @@ void MaoziRankClient::parseSnapshot(const QByteArray &payload)
         }
 
         const QString roomId = host.value(QStringLiteral("douyu_id")).toString();
-        const QString role = roleForRoomId(roomId);
+        QJsonValue team = host.value(QStringLiteral("team"));
+        const auto mapping = mappingForIdentity(roomId, host.value(QStringLiteral("name")).toString());
+        const QString role = mapping.value(QStringLiteral("role"), QStringLiteral("member")).toString();
+        if ((team.isNull() || team.isUndefined()) && role == QStringLiteral("captain")
+            && !mapping.value(QStringLiteral("team")).isNull())
+            team = QJsonValue::fromVariant(mapping.value(QStringLiteral("team")));
+        const bool unassigned = team.isNull() || team.isUndefined();
+        const double teamNumber = team.toDouble(-1.0);
+        const bool teamValid = unassigned
+            || (team.isDouble() && teamNumber >= 0 && teamNumber < kTeamNames.size()
+                && std::floor(teamNumber) == teamNumber);
         const QJsonObject playValue =
             playValuesByName.value(normalizedName(host.value(QStringLiteral("name")).toString()));
         entryIndexByHostId.insert(hostId, entries.size());
@@ -531,7 +572,10 @@ void MaoziRankClient::parseSnapshot(const QByteArray &payload)
             {QStringLiteral("roomId"), roomId},
             {QStringLiteral("note"), host.value(QStringLiteral("note")).toString()},
             {QStringLiteral("posterUrl"), posterUrl(host.value(QStringLiteral("poster")).toString())},
-            {QStringLiteral("teamName"), teamName(host.value(QStringLiteral("team")))},
+            {QStringLiteral("teamName"), teamName(team)},
+            {QStringLiteral("teamId"), !unassigned && teamValid
+                 ? QString::number(static_cast<int>(teamNumber)) : QString()},
+            {QStringLiteral("teamValid"), teamValid},
             {QStringLiteral("score"), score},
             {QStringLiteral("grade"), grade},
             {QStringLiteral("gradeColor"), gradeColor},
@@ -846,6 +890,10 @@ void MaoziRankClient::applyEntries(QVariantList entries,
     setLoading(false);
     emit entriesChanged();
     emit syncStateChanged();
+    if (snapshotRefreshActive_) {
+        snapshotRefreshActive_ = false;
+        emit snapshotRefreshFinished(true);
+    }
 }
 
 void MaoziRankClient::finishError(const QString &message, bool preserveEntries)
@@ -870,6 +918,10 @@ void MaoziRankClient::finishError(const QString &message, bool preserveEntries)
     setLoading(false);
     emit entriesChanged();
     emit syncStateChanged();
+    if (snapshotRefreshActive_) {
+        snapshotRefreshActive_ = false;
+        emit snapshotRefreshFinished(false);
+    }
 }
 
 void MaoziRankClient::setLoading(bool loading)
@@ -910,16 +962,73 @@ QString MaoziRankClient::posterUrl(const QString &cloudPath)
 QString MaoziRankClient::teamName(const QJsonValue &team)
 {
     if (team.isNull() || team.isUndefined()) return QStringLiteral("未分队");
-    const int index = team.toInt(-1);
+    const double number = team.toDouble(-1.0);
+    if (!team.isDouble() || number < 0 || number >= kTeamNames.size()
+        || std::floor(number) != number) return QStringLiteral("未知队伍");
+    const int index = static_cast<int>(number);
     return index >= 0 && index < kTeamNames.size() ? kTeamNames.at(index)
                                                    : QStringLiteral("未分队");
 }
 
-QString MaoziRankClient::roleForRoomId(const QString &roomId)
+QByteArray MaoziRankClient::eventMapping() const
 {
-    if (kLeaderRoomIds.contains(roomId)) return QStringLiteral("leader");
-    if (kCaptainRoomIds.contains(roomId)) return QStringLiteral("captain");
-    return QStringLiteral("member");
+    if (!eventMapping_.isEmpty()) return QJsonDocument::fromVariant(eventMapping_).toJson(QJsonDocument::Compact);
+    QVariantList members;
+    const QMap<QString, QString> defaults{{"320155", QStringLiteral("主播阿郎")},
+        {"217331", QStringLiteral("尐表哥")}, {"7204164", QStringLiteral("你个瞎马")},
+        {"80432", QStringLiteral("午夜抹抹茶")}, {"6151194", QStringLiteral("宋暖阳绝不咕咕")},
+        {"731252", QStringLiteral("主播帝王")}, {"11222", QStringLiteral("王大谋QoQ")},
+        {"2140934", QStringLiteral("老皮历险记")}, {"2632018", QStringLiteral("归海念一刀")}};
+    for (auto member = defaults.cbegin(); member != defaults.cend(); ++member) {
+        members.append(QVariantMap{{"roomId", member.key()}, {"name", member.value()},
+            {"role", kLeaderRoomIds.contains(member.key()) ? "leader" : "captain"},
+            {"team", kCaptainTeamIds.contains(member.key()) ? QVariant(kCaptainTeamIds.value(member.key())) : QVariant{}}});
+    }
+    return QJsonDocument::fromVariant(QVariantMap{{"version", 1}, {"event", "CSTG-S1"}, {"members", members}}).toJson(QJsonDocument::Compact);
+}
+
+QString MaoziRankClient::setEventMapping(const QByteArray &mapping)
+{
+    if (loading_ || syncPending_) return QStringLiteral("野榜正在刷新，请稍后保存角色配置");
+    const auto document = QJsonDocument::fromJson(mapping);
+    const auto object = document.object();
+    const auto invalid = QStringLiteral("活动角色配置无效，请检查版本、主播、角色和队伍");
+    if (!document.isObject() || object.value("version").toDouble() != 1
+        || object.value("event").toString().trimmed().isEmpty()
+        || object.value("event").toString().size() > 80 || !object.value("members").isArray()) return invalid;
+    QSet<QString> rooms, names;
+    for (const auto &value : object.value("members").toArray()) {
+        if (!value.isObject()) return invalid;
+        const auto member = value.toObject();
+        const auto room = member.value("roomId").toString();
+        const auto name = mappingName(member.value("name").toString());
+        const auto role = member.value("role").toString();
+        const auto team = member.value("team");
+        if (room.isEmpty() || room.size() > 20 || name.isEmpty() || names.contains(name) || rooms.contains(room)
+            || !std::all_of(room.begin(), room.end(), [](QChar c) { return c >= QLatin1Char('0') && c <= QLatin1Char('9'); })
+            || (role != "leader" && role != "captain" && role != "member")
+            || (!team.isNull() && !team.isUndefined()
+                && (!team.isDouble() || team.toDouble() < 0 || team.toDouble() > 3
+                    || std::floor(team.toDouble()) != team.toDouble()))) return invalid;
+        rooms.insert(room);
+        names.insert(name);
+    }
+    eventMapping_ = object.toVariantMap();
+    if (!lastSnapshot_.isEmpty()) parseSnapshot(lastSnapshot_);
+    else emit entriesChanged();
+    return {};
+}
+
+QVariantMap MaoziRankClient::mappingForIdentity(const QString &roomId, const QString &name) const
+{
+    const auto members = QJsonDocument::fromJson(eventMapping()).object().value("members").toArray();
+    const auto key = mappingName(name);
+    for (const auto &value : members) {
+        const auto member = value.toObject();
+        if (member.value("roomId").toString() == roomId
+            || mappingName(member.value("name").toString()) == key) return member.toVariantMap();
+    }
+    return {};
 }
 
 QString MaoziRankClient::canonicalLookupName(const QString &name)
