@@ -13,6 +13,7 @@
 
 class StreamgetProcessClient;
 class MpvQuickItem;
+class QTimer;
 
 class RoomSession final : public QObject {
     Q_OBJECT
@@ -84,8 +85,11 @@ private slots:
     void onControllerFailed(QString errorCode);
     void onControllerStateChanged(RemotePlaybackController::State state);
     void onSurfacePlaybackFailed();
+    void recoverPlayback();
 
 private:
+    void cancelRecovery();
+    void scheduleRecovery();
     bool startPendingSource();
     void setState(State state);
     void setLiveStatus(RoomLiveStatus status);
@@ -108,6 +112,9 @@ private:
     std::optional<MediaSource> pendingSource_;
     std::optional<MediaSource> activeSource_;
     QVariantList availableQualities_;
+    QTimer *playbackRecoveryTimer_ = nullptr;
+    int playbackRecoveryAttempts_ = 0;
+    bool recoveringPlayback_ = false;
 };
 
 Q_DECLARE_METATYPE(RoomSession::State)

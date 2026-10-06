@@ -10,14 +10,20 @@
 #include <QQuickOpenGLUtils>
 #include <QQuickWindow>
 #include <QRunnable>
+#include <QTimer>
 
 #include <mpv/client.h>
 #include <mpv/render.h>
 #include <mpv/render_gl.h>
 
+#include <cmath>
+
 namespace {
 
 constexpr quint64 kStopMediaRequest = 2;
+constexpr quint64 kPauseObservation = 1;
+constexpr int kRemoteProgressCheckIntervalMs = 2'000;
+constexpr qint64 kRemoteProgressStallMs = 30'000;
 
 #ifdef DOUYU_TESTING
 std::atomic_uint64_t g_teardownSequence = 0;
@@ -50,6 +56,9 @@ QString safeErrorLabelForCode(const QString &errorCode)
     }
     if (errorCode == QStringLiteral("PLAYBACK_FAILED")) {
         return QStringLiteral("播放失败");
+    }
+    if (errorCode == QStringLiteral("PLAYBACK_STALLED")) {
+        return QStringLiteral("播放卡顿，正在重连");
     }
     return {};
 }
@@ -155,6 +164,7 @@ struct MpvQuickItem::MpvRenderState : std::enable_shared_from_this<MpvRenderStat
     std::atomic_bool mediaLoaded = false;
     std::atomic_bool videoConfigured = false;
     std::atomic_bool firstFrameRendered = false;
+    std::atomic_uint64_t videoFrameSequence = 0;
     std::atomic<PlaybackState> playbackState = PlaybackState::Idle;
 };
 
@@ -202,6 +212,10 @@ public:
         mpv_render_context *context = state_->renderContext.load();
         if (context == nullptr || framebufferObject() == nullptr) return;
 
+        mpv_render_context_update(context);
+        mpv_render_frame_info frameInfo{};
+        const mpv_render_param frameInfoParam{MPV_RENDER_PARAM_NEXT_FRAME_INFO, &frameInfo};
+        mpv_render_context_get_info(context, frameInfoParam);
         const QSize framebufferSize = framebufferObject()->size();
         mpv_opengl_fbo framebuffer{
             .fbo = static_cast<int>(framebufferObject()->handle()),
@@ -218,6 +232,10 @@ public:
         const int result = mpv_render_context_render(context, params);
         QQuickOpenGLUtils::resetOpenGLState();
         if (result >= 0 && state_->mediaLoaded.load() && state_->videoConfigured.load()) {
+            if ((frameInfo.flags & MPV_RENDER_FRAME_INFO_PRESENT)
+                && !(frameInfo.flags & (MPV_RENDER_FRAME_INFO_REDRAW | MPV_RENDER_FRAME_INFO_REPEAT))) {
+                ++state_->videoFrameSequence;
+            }
             state_->firstFrameRendered.store(true);
             if (state_->playbackState.load() == PlaybackState::Loading) {
                 state_->playbackState.store(PlaybackState::Playing);
@@ -279,6 +297,7 @@ MpvQuickItem::MpvQuickItem(QQuickItem *parent)
     // mpv falls back to software when the codec/device cannot use hardware.
     mpvInitialized_ = mpv_set_option_string(mpv_, "vo", "libmpv") >= 0
         && mpv_set_option_string(mpv_, "hwdec", "auto-copy") >= 0
+        && mpv_set_option_string(mpv_, "network-timeout", "30") >= 0
         && mpv_initialize(mpv_) >= 0;
     if (!mpvInitialized_) {
         mpv_terminate_destroy(mpv_);
@@ -292,6 +311,13 @@ MpvQuickItem::MpvQuickItem(QQuickItem *parent)
     mpv_set_property_string(mpv_, "mute", "yes");
     mpv_set_wakeup_callback(mpv_, &MpvQuickItem::onMpvWakeup, renderState_.get());
     renderState_->wakeupCallbackRegistered.store(true);
+    mpv_observe_property(mpv_, kPauseObservation, "pause", MPV_FORMAT_FLAG);
+    progressClock_.start();
+    playbackProgressTimer_ = new QTimer(this);
+    playbackProgressTimer_->setObjectName(QStringLiteral("playbackProgressTimer"));
+    playbackProgressTimer_->setInterval(kRemoteProgressCheckIntervalMs);
+    connect(playbackProgressTimer_, &QTimer::timeout,
+            this, [this] { checkRemoteProgress(progressClock_.elapsed()); });
 }
 
 MpvQuickItem::~MpvQuickItem()
@@ -375,6 +401,14 @@ bool MpvQuickItem::loadSource(const MediaSource &source)
     renderState_->videoConfigured.store(false);
     renderState_->firstFrameRendered.store(false);
     renderState_->playbackState.store(PlaybackState::Loading);
+    remotePlayback_ = source.kind() == MediaSource::Kind::RemoteStream;
+    lastObservedTimePos_.reset();
+    pendingProgressRequestId_ = 0;
+    resetProgressDeadline(progressClock_.elapsed());
+    if (playbackProgressTimer_ != nullptr) {
+        if (remotePlayback_) playbackProgressTimer_->start();
+        else playbackProgressTimer_->stop();
+    }
     errorCode_.clear();
     const quint64 loadRequestId = beginLoadRequest();
     const char *args[] = {"loadfile", encodedSource.constData(), "replace", nullptr};
@@ -402,6 +436,9 @@ bool MpvQuickItem::stop()
         return false;
     }
     resetMediaState(PlaybackState::Ended);
+    remotePlayback_ = false;
+    pendingProgressRequestId_ = 0;
+    if (playbackProgressTimer_ != nullptr) playbackProgressTimer_->stop();
     return true;
 }
 
@@ -419,6 +456,10 @@ void MpvQuickItem::release()
         stop();
     }
     resetMediaState(PlaybackState::Idle);
+    remotePlayback_ = false;
+    lastObservedTimePos_.reset();
+    pendingProgressRequestId_ = 0;
+    if (playbackProgressTimer_ != nullptr) playbackProgressTimer_->stop();
 }
 
 bool MpvQuickItem::isMediaLoaded() const noexcept
@@ -440,6 +481,8 @@ bool MpvQuickItem::setPaused(bool paused)
         return false;
     }
 
+    userPaused_ = paused;
+    resetProgressDeadline(progressClock_.elapsed());
     if (paused) {
         renderState_->playbackState.store(PlaybackState::Paused);
     } else if (renderState_->firstFrameRendered.load()) {
@@ -500,12 +543,14 @@ void MpvQuickItem::suspendRendering()
 {
     if (renderState_ == nullptr || renderState_->renderingSuspended.exchange(true)) return;
     renderState_->frameUpdateQueued.store(false);
+    if (progressClock_.isValid()) resetProgressDeadline(progressClock_.elapsed());
     update();
 }
 
 void MpvQuickItem::resumeRendering()
 {
     if (renderState_ == nullptr || !renderState_->renderingSuspended.exchange(false)) return;
+    if (progressClock_.isValid()) resetProgressDeadline(progressClock_.elapsed());
     update();
     if (isRenderContextReady()) emit renderContextReady();
 }
@@ -643,6 +688,36 @@ void MpvQuickItem::handleMpvEvent(const mpv_event *event)
     if (event == nullptr) return;
 
     switch (event->event_id) {
+    case MPV_EVENT_PROPERTY_CHANGE: {
+        const auto *property = static_cast<const mpv_event_property *>(event->data);
+        if (event->reply_userdata == kPauseObservation && property != nullptr
+            && property->format == MPV_FORMAT_FLAG && property->data != nullptr) {
+            userPaused_ = *static_cast<const int *>(property->data) != 0;
+            resetProgressDeadline(progressClock_.elapsed());
+        }
+        break;
+    }
+    case MPV_EVENT_GET_PROPERTY_REPLY: {
+        if (pendingProgressRequestId_ == 0
+            || event->reply_userdata != pendingProgressRequestId_) break;
+        pendingProgressRequestId_ = 0;
+        if (!remotePlayback_ || userPaused_ || renderingSuspended()
+            || !playbackProgressTimer_->isActive()) break;
+        const auto *property = static_cast<const mpv_event_property *>(event->data);
+        if (event->error < 0 || property == nullptr
+            || property->format != MPV_FORMAT_DOUBLE || property->data == nullptr) break;
+        const double position = *static_cast<const double *>(property->data);
+        if (!std::isfinite(position)) break;
+        if (!lastObservedTimePos_ || std::abs(position - *lastObservedTimePos_) > 0.05) {
+            const bool advancing = lastObservedTimePos_.has_value();
+            lastObservedTimePos_ = position;
+            lastProgressAtMs_ = progressClock_.elapsed();
+            if (advancing && isFirstFrameRendered()
+                && lastProgressAtMs_ - lastVideoFrameAtMs_ < 2 * kRemoteProgressCheckIntervalMs)
+                emit playbackProgress();
+        }
+        break;
+    }
     case MPV_EVENT_COMMAND_REPLY:
         if (event->reply_userdata == pendingLoadRequestId_) {
             pendingLoadRequestId_ = 0;
@@ -695,16 +770,59 @@ void MpvQuickItem::handleMpvEvent(const mpv_event *event)
             break;
         }
         activePlaylistEntryId_ = 0;
-        if (endFile->error < 0 && renderState_->playbackState.load() != PlaybackState::Ended) {
+        if (endFile->reason == MPV_END_FILE_REASON_REDIRECT) {
+            resetProgressDeadline(progressClock_.elapsed());
+            break;
+        }
+        if ((remotePlayback_ && playbackState() != PlaybackState::Ended
+             && (endFile->reason == MPV_END_FILE_REASON_EOF
+                 || endFile->reason == MPV_END_FILE_REASON_ERROR))
+            || (endFile->error < 0
+                && renderState_->playbackState.load() != PlaybackState::Ended)) {
             setAsyncPlaybackError(QStringLiteral("PLAYBACK_FAILED"));
         } else {
             renderState_->playbackState.store(PlaybackState::Ended);
+            if (playbackProgressTimer_ != nullptr) playbackProgressTimer_->stop();
         }
         break;
     }
     default:
         break;
     }
+}
+
+void MpvQuickItem::resetProgressDeadline(qint64 nowMs)
+{
+    lastProgressAtMs_ = nowMs;
+    lastVideoFrameAtMs_ = nowMs;
+    lastVideoFrameSequence_ = renderState_->videoFrameSequence.load();
+    pendingProgressRequestId_ = 0;
+}
+
+void MpvQuickItem::checkRemoteProgress(qint64 nowMs)
+{
+    if (!remotePlayback_ || mpv_ == nullptr || playbackProgressTimer_ == nullptr
+        || !playbackProgressTimer_->isActive()) return;
+    if (renderingSuspended() || userPaused_) {
+        resetProgressDeadline(nowMs);
+        return;
+    }
+    const auto sequence = renderState_->videoFrameSequence.load();
+    if (sequence != lastVideoFrameSequence_) {
+        lastVideoFrameSequence_ = sequence;
+        lastVideoFrameAtMs_ = nowMs;
+    }
+    if (nowMs - lastProgressAtMs_ >= kRemoteProgressStallMs
+        || (isFirstFrameRendered() && renderState_->videoConfigured.load()
+            && nowMs - lastVideoFrameAtMs_ >= kRemoteProgressStallMs)) {
+        qWarning() << "remote playback stalled; requesting source recovery";
+        setAsyncPlaybackError(QStringLiteral("PLAYBACK_STALLED"));
+        return;
+    }
+    if (pendingProgressRequestId_ != 0) return;
+    const quint64 requestId = nextLoadRequestId_++;
+    if (mpv_get_property_async(mpv_, requestId, "time-pos", MPV_FORMAT_DOUBLE) >= 0)
+        pendingProgressRequestId_ = requestId;
 }
 
 quint64 MpvQuickItem::beginLoadRequest()
@@ -722,6 +840,8 @@ quint64 MpvQuickItem::beginLoadRequest()
 
 void MpvQuickItem::setAsyncPlaybackError(QString errorCode)
 {
+    if (playbackProgressTimer_ != nullptr) playbackProgressTimer_->stop();
+    pendingProgressRequestId_ = 0;
     const bool wasError = renderState_->playbackState.load() == PlaybackState::Error;
     renderState_->playbackState.store(PlaybackState::Error);
     errorCode_ = std::move(errorCode);

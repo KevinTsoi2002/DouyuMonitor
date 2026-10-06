@@ -1,4 +1,5 @@
 #include <QSignalSpy>
+#include <QTimer>
 #include <QtTest/QtTest>
 
 #include "service/streamget_process_client.h"
@@ -38,7 +39,151 @@ private slots:
     void cancelSuppressesLateSource();
     void releasesSessionWithQuickPlayer();
     void mapsControllerErrorsWithoutRawDiagnostics();
+    void retriesRemotePlayerFailureOnceAndPreservesQuality();
+    void stopsPendingRemoteRecovery();
+    void cancelsRemoteRecoveryWhenRoomGoesOffline();
+    void boundsConsecutiveRecoveryAndResetsOnManualResolve();
+    void retriesResolutionFailureDuringRecovery();
+    void doesNotRecoverLocalPlayerFailure();
 };
+
+void RoomSessionTest::boundsConsecutiveRecoveryAndResetsOnManualResolve()
+{
+    StreamgetProcessClient client(fakeServicePath());
+    RoomSession session(&client, "63136", StreamQuality::Auto);
+    MpvQuickItem player;
+    QVERIFY(session.attachPlayer(&player));
+    QSignalSpy responses(&client, &StreamgetProcessClient::responseReceived);
+    QVERIFY(session.resolve());
+    QTRY_VERIFY(session.hasPendingSourceForTest());
+    auto *timer = session.findChild<QTimer *>("playbackRecoveryTimer");
+    QVERIFY(timer);
+    for (int attempt = 0; attempt < 5; ++attempt) {
+        player.playbackFailed();
+        QVERIFY(timer->isActive());
+        QCOMPARE(timer->interval(), 3'000 << attempt);
+        timer->start(1);
+        QTRY_COMPARE(responses.count(), attempt + 2);
+        QTRY_VERIFY(session.hasPendingSourceForTest());
+    }
+    player.playbackFailed();
+    QVERIFY(!timer->isActive());
+    QVERIFY(session.resolve());
+    QTRY_COMPARE(responses.count(), 7);
+    QTRY_VERIFY(session.hasPendingSourceForTest());
+    player.playbackFailed();
+    QVERIFY(timer->isActive());
+    QCOMPARE(timer->interval(), 3000);
+    session.stop();
+    client.shutdown();
+}
+
+void RoomSessionTest::retriesResolutionFailureDuringRecovery()
+{
+    StreamgetProcessClient client(fakeServicePath());
+    RoomSession session(&client, "63136", StreamQuality::Auto);
+    MpvQuickItem player;
+    QVERIFY(session.attachPlayer(&player));
+    QVERIFY(session.resolve());
+    QTRY_VERIFY(session.hasPendingSourceForTest());
+    player.playbackFailed();
+    auto *timer = session.findChild<QTimer *>("playbackRecoveryTimer");
+    QVERIFY(timer);
+    QVERIFY(QMetaObject::invokeMethod(&session, "recoverPlayback", Qt::DirectConnection));
+    QVERIFY(QMetaObject::invokeMethod(&session, "onControllerFailed", Qt::DirectConnection,
+                                      Q_ARG(QString, QStringLiteral("TIMEOUT"))));
+    QVERIFY(timer->isActive());
+    session.stop();
+    client.shutdown();
+}
+
+void RoomSessionTest::doesNotRecoverLocalPlayerFailure()
+{
+    StreamgetProcessClient client(fakeServicePath());
+    RoomSession session(&client, "63136", StreamQuality::Auto);
+    MpvQuickItem player;
+    QVERIFY(session.attachPlayer(&player));
+    QVERIFY(session.resolve());
+    const auto source = MediaSource::fromDescriptor(QCoreApplication::applicationFilePath());
+    QVERIFY(source);
+    QVERIFY(QMetaObject::invokeMethod(&session, "onControllerSourceReady", Qt::DirectConnection,
+                                      Q_ARG(MediaSource, *source)));
+    player.playbackFailed();
+    QCOMPARE(session.state(), RoomSession::State::Error);
+    auto *timer = session.findChild<QTimer *>("playbackRecoveryTimer");
+    QVERIFY(timer);
+    QVERIFY(!timer->isActive());
+    client.shutdown();
+}
+
+void RoomSessionTest::retriesRemotePlayerFailureOnceAndPreservesQuality()
+{
+    StreamgetProcessClient client(fakeServicePath());
+    RoomSession session(&client, "63136", StreamQuality::High, nullptr, {}, 8);
+    MpvQuickItem player;
+    QVERIFY(session.attachPlayer(&player));
+    QSignalSpy responses(&client, &StreamgetProcessClient::responseReceived);
+    QVERIFY(session.resolve());
+    QTRY_VERIFY(session.hasPendingSourceForTest());
+    player.playbackFailed();
+    auto *timer = session.findChild<QTimer *>("playbackRecoveryTimer");
+    QVERIFY(timer);
+    QVERIFY(timer->isActive());
+    const int delay = timer->interval();
+    player.playbackFailed();
+    QCOMPARE(timer->interval(), delay);
+    QCOMPARE(responses.count(), 1);
+    timer->start(1);
+    QTRY_COMPARE(responses.count(), 2);
+    QCOMPARE(session.effectiveQuality(), StreamQuality::High);
+    QCOMPARE(session.effectiveQualityRate(), 8);
+    QVERIFY(session.hasPendingSourceForTest());
+    client.shutdown();
+}
+
+void RoomSessionTest::stopsPendingRemoteRecovery()
+{
+    StreamgetProcessClient client(fakeServicePath());
+    RoomSession session(&client, "63136", StreamQuality::Auto);
+    MpvQuickItem player;
+    QVERIFY(session.attachPlayer(&player));
+    QSignalSpy responses(&client, &StreamgetProcessClient::responseReceived);
+    QVERIFY(session.resolve());
+    QTRY_VERIFY(session.hasPendingSourceForTest());
+    player.playbackFailed();
+    auto *timer = session.findChild<QTimer *>("playbackRecoveryTimer");
+    QVERIFY(timer);
+    QVERIFY(timer->isActive());
+    session.stop();
+    QVERIFY(!timer->isActive());
+    QTest::qWait(100);
+    QCOMPARE(responses.count(), 1);
+    QCOMPARE(session.state(), RoomSession::State::Idle);
+    client.shutdown();
+}
+
+void RoomSessionTest::cancelsRemoteRecoveryWhenRoomGoesOffline()
+{
+    StreamgetProcessClient client(fakeServicePath());
+    RoomSession session(&client, "63136", StreamQuality::Auto);
+    MpvQuickItem player;
+    QVERIFY(session.attachPlayer(&player));
+    QSignalSpy responses(&client, &StreamgetProcessClient::responseReceived);
+    QVERIFY(session.resolve());
+    QTRY_VERIFY(session.hasPendingSourceForTest());
+    player.playbackFailed();
+    auto *timer = session.findChild<QTimer *>("playbackRecoveryTimer");
+    QVERIFY(timer);
+    RoomSearchResult metadata;
+    metadata.roomId = "63136";
+    metadata.anchorName = "Anchor";
+    metadata.online = false;
+    session.applyMetadata(metadata);
+    QVERIFY(!timer->isActive());
+    QTest::qWait(100);
+    QCOMPARE(responses.count(), 1);
+    client.shutdown();
+}
 
 void RoomSessionTest::preservesLiveStateWhenMetadataStatusIsUnknown()
 {

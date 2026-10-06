@@ -4,6 +4,8 @@
 #include "service/streamget_process_client.h"
 #include "ui/mpv_quick_item.h"
 
+#include <QTimer>
+
 namespace {
 
 QString qualityToken(StreamQuality quality)
@@ -52,6 +54,11 @@ RoomSession::RoomSession(StreamgetProcessClient *client,
             this, &RoomSession::onControllerFailed);
     connect(controller_, &RemotePlaybackController::stateChanged,
             this, &RoomSession::onControllerStateChanged);
+    playbackRecoveryTimer_ = new QTimer(this);
+    playbackRecoveryTimer_->setObjectName(QStringLiteral("playbackRecoveryTimer"));
+    playbackRecoveryTimer_->setSingleShot(true);
+    connect(playbackRecoveryTimer_, &QTimer::timeout,
+            this, &RoomSession::recoverPlayback);
 }
 
 RoomSession::~RoomSession()
@@ -204,6 +211,12 @@ bool RoomSession::attachPlayer(MpvQuickItem *player)
     player_ = player;
     connect(player_, &MpvQuickItem::playbackFailed,
             this, &RoomSession::onSurfacePlaybackFailed);
+    connect(player_, &MpvQuickItem::playbackProgress, this, [this] {
+        if (controller_->state() == RemotePlaybackController::State::Resolving
+            || state_ == State::Error) return;
+        playbackRecoveryAttempts_ = 0;
+        cancelRecovery();
+    });
     connect(player_, &MpvQuickItem::renderContextReady, this, [this, player] {
         if (player_ != player || !pendingSource_.has_value()) return;
         startPendingSource();
@@ -230,6 +243,7 @@ bool RoomSession::attachPlayer(MpvQuickItem *player)
 void RoomSession::detachPlayer(MpvQuickItem *player)
 {
     if (player == nullptr || player_ != player) return;
+    cancelRecovery();
     QObject::disconnect(player, nullptr, this, nullptr);
     player_.clear();
 }
@@ -247,11 +261,14 @@ QVariantList RoomSession::availableQualities() const
 quint64 RoomSession::resolve()
 {
     if (controller_ == nullptr) return 0;
+    cancelRecovery();
+    playbackRecoveryAttempts_ = 0;
     return controller_->resolve(roomId_, effectiveQuality_, effectiveQualityRate_);
 }
 
 void RoomSession::cancel()
 {
+    cancelRecovery();
     if (controller_ == nullptr) return;
     controller_->cancel();
     pendingSource_.reset();
@@ -261,6 +278,7 @@ void RoomSession::cancel()
 
 void RoomSession::stop()
 {
+    cancelRecovery();
     if (controller_ != nullptr) controller_->stop();
     if (player_ != nullptr) player_->release();
     pendingSource_.reset();
@@ -271,6 +289,7 @@ void RoomSession::stop()
 
 void RoomSession::release()
 {
+    cancelRecovery();
     if (controller_ != nullptr) controller_->release();
     // The QML scene owns the player. Releasing its libmpv core from the
     // session can race the scene graph while the delegate is being removed.
@@ -342,6 +361,7 @@ bool RoomSession::startPendingSource()
     }
     activeSource_ = pendingSource_;
     pendingSource_.reset();
+    if (playbackRecoveryTimer_ != nullptr) playbackRecoveryTimer_->stop();
     setLiveStatus(RoomLiveStatus::Online);
     setPlaybackHealth(RoomPlaybackHealth::Playing);
     setState(State::Ready);
@@ -352,6 +372,7 @@ bool RoomSession::startPendingSource()
 void RoomSession::onControllerFailed(QString errorCode)
 {
     if (errorCode == QStringLiteral("ROOM_OFFLINE")) {
+        cancelRecovery();
         if (player_ != nullptr) player_->stop();
         pendingSource_.reset();
         activeSource_.reset();
@@ -367,6 +388,7 @@ void RoomSession::onControllerFailed(QString errorCode)
     setPlaybackHealth(RoomPlaybackHealth::Error);
     setState(State::Error);
     emit failed(std::move(errorCode));
+    if (recoveringPlayback_) scheduleRecovery();
 }
 
 #ifdef DOUYU_TESTING
@@ -389,9 +411,46 @@ void RoomSession::onControllerStateChanged(RemotePlaybackController::State state
 void RoomSession::onSurfacePlaybackFailed()
 {
     if (state_ == State::Idle || liveStatus_ == RoomLiveStatus::Offline) return;
+    const bool remote = (activeSource_ && activeSource_->kind() == MediaSource::Kind::RemoteStream)
+        || (pendingSource_ && pendingSource_->kind() == MediaSource::Kind::RemoteStream);
+    if (remote && controller_->state() == RemotePlaybackController::State::Resolving) return;
     setPlaybackHealth(RoomPlaybackHealth::Error);
     setState(State::Error);
+    if (remote) {
+        recoveringPlayback_ = true;
+        scheduleRecovery();
+    }
     emit failed(QStringLiteral("PLAYER_FAILED"));
+}
+
+void RoomSession::recoverPlayback()
+{
+    playbackRecoveryTimer_->stop();
+    if (liveStatus_ == RoomLiveStatus::Offline || player_ == nullptr
+        || !recoveringPlayback_ || playbackRecoveryAttempts_ >= 5) {
+        return;
+    }
+    ++playbackRecoveryAttempts_;
+    pendingSource_.reset();
+    activeSource_.reset();
+    setPlaybackHealth(RoomPlaybackHealth::Pending);
+    qWarning() << "recovering remote playback room=" << roomId_
+               << "attempt=" << playbackRecoveryAttempts_;
+    controller_->resolve(roomId_, effectiveQuality_, effectiveQualityRate_);
+}
+
+void RoomSession::cancelRecovery()
+{
+    if (playbackRecoveryTimer_ != nullptr) playbackRecoveryTimer_->stop();
+    recoveringPlayback_ = false;
+}
+
+void RoomSession::scheduleRecovery()
+{
+    if (!recoveringPlayback_ || playbackRecoveryTimer_->isActive()
+        || playbackRecoveryAttempts_ >= 5 || player_ == nullptr
+        || liveStatus_ == RoomLiveStatus::Offline) return;
+    playbackRecoveryTimer_->start(3'000 << playbackRecoveryAttempts_);
 }
 
 void RoomSession::setState(State state)
@@ -405,6 +464,7 @@ void RoomSession::setLiveStatus(RoomLiveStatus status)
 {
     if (liveStatus_ == status) return;
     liveStatus_ = status;
+    if (status == RoomLiveStatus::Offline) cancelRecovery();
     emit liveStatusChanged(status);
 }
 

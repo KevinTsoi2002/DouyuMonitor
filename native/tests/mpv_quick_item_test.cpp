@@ -5,6 +5,7 @@
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QThread>
+#include <QTimer>
 #include <QtTest>
 
 #include <memory>
@@ -55,7 +56,207 @@ private slots:
     void appliesValidatedVolume();
     void usesWakeupDrivenEventDraining();
     void enablesCompatibleHardwareDecoding();
+    void reportsUnexpectedRemoteEof();
+    void monitorsRemoteProgressAndStopsOnRelease();
+    void detectsProgressDeadlineWithoutBlockingOrDuplicateRequests();
+    void ignoresOldProgressRepliesAfterSourceSwitch();
+    void doesNotRecoverPausedSuspendedOrLocalPlayback();
+    void doesNotTreatIntentionalStopAsRemoteFailure();
+    void observesAdvancingVideoFramesWithoutForcingUpdates();
+    void detectsVideoFreezeWhilePlaybackClockStillMoves();
+    void propagatesNaturalLiveEofFromMpv();
 };
+
+void MpvQuickItemTest::detectsProgressDeadlineWithoutBlockingOrDuplicateRequests()
+{
+    MpvQuickItem item;
+    StreamVariant variant{"auto", "auto", StreamQuality::Auto, "flv",
+                          QUrl("https://unit-test.douyucdn.cn/live.flv")};
+    QVERIFY(item.loadSource(*MediaSource::fromRemoteVariant("123", variant)));
+    item.resetProgressDeadline(100);
+    item.checkRemoteProgress(29'999);
+    const auto request = item.pendingProgressRequestId_;
+    QVERIFY(request);
+    item.checkRemoteProgress(30'099);
+    QCOMPARE(item.pendingProgressRequestId_, request);
+    QSignalSpy failures(&item, &MpvQuickItem::playbackFailed);
+    item.checkRemoteProgress(30'100);
+    QCOMPARE(failures.count(), 1);
+    item.checkRemoteProgress(60'100);
+    QCOMPARE(failures.count(), 1);
+    QVERIFY(item.safeErrorLabel().contains(QStringLiteral("卡顿")));
+}
+
+void MpvQuickItemTest::ignoresOldProgressRepliesAfterSourceSwitch()
+{
+    MpvQuickItem item;
+    StreamVariant variant{"auto", "auto", StreamQuality::Auto, "flv",
+                          QUrl("https://unit-test.douyucdn.cn/live.flv")};
+    auto source = *MediaSource::fromRemoteVariant("123", variant);
+    QVERIFY(item.loadSource(source));
+    item.resetProgressDeadline(100);
+    item.checkRemoteProgress(200);
+    const auto oldRequest = item.pendingProgressRequestId_;
+    QVERIFY(oldRequest);
+    QVERIFY(item.loadSource(source));
+    double position = 55.0;
+    mpv_event_property property{"time-pos", MPV_FORMAT_DOUBLE, &position};
+    mpv_event reply{};
+    reply.event_id = MPV_EVENT_GET_PROPERTY_REPLY;
+    reply.reply_userdata = oldRequest;
+    reply.data = &property;
+    item.handleMpvEvent(&reply);
+    QVERIFY(!item.lastObservedTimePos_.has_value());
+}
+
+void MpvQuickItemTest::doesNotRecoverPausedSuspendedOrLocalPlayback()
+{
+    MpvQuickItem item;
+    StreamVariant variant{"auto", "auto", StreamQuality::Auto, "flv",
+                          QUrl("https://unit-test.douyucdn.cn/live.flv")};
+    QVERIFY(item.loadSource(*MediaSource::fromRemoteVariant("123", variant)));
+    QSignalSpy failures(&item, &MpvQuickItem::playbackFailed);
+    QVERIFY(item.setPaused(true));
+    item.checkRemoteProgress(100'000);
+    QCOMPARE(failures.count(), 0);
+    QVERIFY(item.setPaused(false));
+    item.suspendRendering();
+    item.checkRemoteProgress(200'000);
+    QCOMPARE(failures.count(), 0);
+    item.release();
+    item.checkRemoteProgress(300'000);
+    QCOMPARE(failures.count(), 0);
+    QTemporaryDir directory;
+    QVERIFY(item.loadLocalMedia(makeY4mFixture(directory)));
+    item.checkRemoteProgress(400'000);
+    QCOMPARE(failures.count(), 0);
+}
+
+void MpvQuickItemTest::doesNotTreatIntentionalStopAsRemoteFailure()
+{
+    MpvQuickItem item;
+    StreamVariant variant{"auto", "auto", StreamQuality::Auto, "flv",
+                          QUrl("https://unit-test.douyucdn.cn/live.flv")};
+    QVERIFY(item.loadSource(*MediaSource::fromRemoteVariant("123", variant)));
+    item.activePlaylistEntryId_ = 101;
+    QSignalSpy failures(&item, &MpvQuickItem::playbackFailed);
+    QVERIFY(item.stop());
+    mpv_event_end_file ended{};
+    ended.reason = MPV_END_FILE_REASON_STOP;
+    ended.playlist_entry_id = 101;
+    mpv_event event{};
+    event.event_id = MPV_EVENT_END_FILE;
+    event.data = &ended;
+    item.handleMpvEvent(&event);
+    QCOMPARE(failures.count(), 0);
+}
+
+void MpvQuickItemTest::observesAdvancingVideoFramesWithoutForcingUpdates()
+{
+    QTemporaryDir directory;
+    QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
+    QQuickWindow window;
+    window.resize(320, 240);
+    auto *item = new MpvQuickItem(window.contentItem());
+    item->setSize(QSizeF(320, 240));
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    QTRY_VERIFY_WITH_TIMEOUT(item->isRenderContextReady(), 10000);
+    QVERIFY(item->loadLocalMedia(makeY4mFixture(directory)));
+    QTRY_VERIFY_WITH_TIMEOUT(item->isFirstFrameRendered(), 10000);
+    item->remotePlayback_ = true;
+    item->playbackProgressTimer_->start();
+    QSignalSpy failures(item, &MpvQuickItem::playbackFailed);
+    QTRY_VERIFY_WITH_TIMEOUT([item] {
+        item->checkRemoteProgress(item->progressClock_.elapsed());
+        return item->lastVideoFrameSequence_ >= 3;
+    }(), 3000);
+    QCOMPARE(failures.count(), 0);
+    item->release();
+}
+
+void MpvQuickItemTest::detectsVideoFreezeWhilePlaybackClockStillMoves()
+{
+    QTemporaryDir directory;
+    QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
+    QQuickWindow window;
+    window.resize(320, 240);
+    auto *item = new MpvQuickItem(window.contentItem());
+    item->setSize(QSizeF(320, 240));
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    QTRY_VERIFY_WITH_TIMEOUT(item->isRenderContextReady(), 10000);
+    QVERIFY(item->loadLocalMedia(makeY4mFixture(directory)));
+    QTRY_VERIFY_WITH_TIMEOUT(item->isFirstFrameRendered(), 10000);
+    item->remotePlayback_ = true;
+    item->playbackProgressTimer_->start();
+    item->resetProgressDeadline(100);
+    item->lastProgressAtMs_ = 30'000;
+    QSignalSpy failures(item, &MpvQuickItem::playbackFailed);
+    item->checkRemoteProgress(30'100);
+    QCOMPARE(failures.count(), 1);
+    item->release();
+}
+
+void MpvQuickItemTest::propagatesNaturalLiveEofFromMpv()
+{
+    QTemporaryDir directory;
+    QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
+    QQuickWindow window;
+    window.resize(320, 240);
+    auto *item = new MpvQuickItem(window.contentItem());
+    item->setSize(QSizeF(320, 240));
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    QTRY_VERIFY_WITH_TIMEOUT(item->isRenderContextReady(), 10000);
+    const QString fixture = makeY4mFixture(directory);
+    QVERIFY(item->loadLocalMedia(fixture));
+    item->remotePlayback_ = true;
+    item->playbackProgressTimer_->start();
+    QSignalSpy failures(item, &MpvQuickItem::playbackFailed);
+    QTRY_VERIFY_WITH_TIMEOUT(item->isFirstFrameRendered(), 10000);
+    QTRY_COMPARE_WITH_TIMEOUT(failures.count(), 1, 10000);
+    QCOMPARE(item->playbackState(), MpvQuickItem::PlaybackState::Error);
+    item->release();
+}
+
+void MpvQuickItemTest::reportsUnexpectedRemoteEof()
+{
+    MpvQuickItem item;
+    StreamVariant variant{"auto", "auto", StreamQuality::Auto, "flv",
+                          QUrl("https://unit-test.douyucdn.cn/live.flv")};
+    const auto source = MediaSource::fromRemoteVariant("123", variant);
+    QVERIFY(source);
+    QVERIFY(item.loadSource(*source));
+    item.activePlaylistEntryId_ = 101;
+    QSignalSpy failures(&item, &MpvQuickItem::playbackFailed);
+    mpv_event_end_file ended{};
+    ended.reason = MPV_END_FILE_REASON_EOF;
+    ended.playlist_entry_id = 101;
+    mpv_event event{};
+    event.event_id = MPV_EVENT_END_FILE;
+    event.data = &ended;
+    item.handleMpvEvent(&event);
+    QCOMPARE(failures.count(), 1);
+    QCOMPARE(item.playbackState(), MpvQuickItem::PlaybackState::Error);
+    item.handleMpvEvent(&event);
+    QCOMPARE(failures.count(), 1);
+}
+
+void MpvQuickItemTest::monitorsRemoteProgressAndStopsOnRelease()
+{
+    MpvQuickItem item;
+    StreamVariant variant{"auto", "auto", StreamQuality::Auto, "flv",
+                          QUrl("https://unit-test.douyucdn.cn/live.flv")};
+    const auto source = MediaSource::fromRemoteVariant("123", variant);
+    QVERIFY(source);
+    QVERIFY(item.loadSource(*source));
+    auto *timer = item.findChild<QTimer *>("playbackProgressTimer");
+    QVERIFY(timer);
+    QVERIFY(timer->isActive());
+    item.release();
+    QVERIFY(!timer->isActive());
+}
 
 void MpvQuickItemTest::enablesCompatibleHardwareDecoding()
 {

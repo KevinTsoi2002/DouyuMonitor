@@ -4,14 +4,17 @@
 #include <QString>
 
 #include <QSet>
+#include <QElapsedTimer>
 
 #include <atomic>
 #include <memory>
+#include <optional>
 
 #include "media/media_source.h"
 
 struct mpv_event;
 struct mpv_handle;
+class QTimer;
 
 class MpvQuickItem : public QQuickFramebufferObject {
     Q_OBJECT
@@ -64,6 +67,7 @@ public:
 signals:
     void renderContextReady();
     void playbackFailed();
+    void playbackProgress();
 
 protected:
     void geometryChange(const QRectF &newGeometry, const QRectF &oldGeometry) override;
@@ -75,6 +79,8 @@ private:
 
     static void onMpvWakeup(void *ctx);
     static void onMpvUpdate(void *ctx);
+    void checkRemoteProgress(qint64 nowMs);
+    void resetProgressDeadline(qint64 nowMs);
     void requestFrame();
     void notifyRenderContextReady();
     void pollMpvEvents();
@@ -94,4 +100,13 @@ private:
     quint64 pendingLoadRequestId_ = 0;
     qint64 activePlaylistEntryId_ = 0;
     QSet<qint64> retiredPlaylistEntryIds_;
+    QTimer *playbackProgressTimer_ = nullptr;
+    bool remotePlayback_ = false;
+    bool userPaused_ = false;
+    QElapsedTimer progressClock_;
+    qint64 lastProgressAtMs_ = 0;
+    qint64 lastVideoFrameAtMs_ = 0;
+    quint64 lastVideoFrameSequence_ = 0;
+    quint64 pendingProgressRequestId_ = 0;
+    std::optional<double> lastObservedTimePos_;
 };
