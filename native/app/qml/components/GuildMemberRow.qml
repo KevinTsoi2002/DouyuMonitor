@@ -71,6 +71,7 @@ Item {
                 visible: source.toString().length > 0 && status !== Image.Error
                 fillMode: Image.PreserveAspectCrop
                 asynchronous: true
+                sourceSize: Qt.size(64, 64)
                 smooth: true
                 clip: true
             }

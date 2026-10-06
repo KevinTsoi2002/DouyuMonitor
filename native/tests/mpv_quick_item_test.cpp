@@ -10,6 +10,7 @@
 #include <memory>
 
 #include "ui/mpv_quick_item.h"
+#include <mpv/client.h>
 
 namespace {
 QString makePpmFixture(QTemporaryDir &directory)
@@ -53,7 +54,18 @@ private slots:
     void doesNotPlaceRemoteAddressInFailureText();
     void appliesValidatedVolume();
     void usesWakeupDrivenEventDraining();
+    void enablesCompatibleHardwareDecoding();
 };
+
+void MpvQuickItemTest::enablesCompatibleHardwareDecoding()
+{
+    MpvQuickItem item;
+    QVERIFY(item.isMpvInitialized());
+    char *value = mpv_get_property_string(item.mpv_, "options/hwdec");
+    const QByteArray mode = value ? QByteArray(value) : QByteArray{};
+    mpv_free(value);
+    QCOMPARE(mode, QByteArray("auto-copy"));
+}
 
 void MpvQuickItemTest::suspendsRenderingWithoutChangingPlaybackControls()
 {

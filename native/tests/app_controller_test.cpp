@@ -124,6 +124,8 @@ class AppControllerTest final : public QObject {
 private slots:
     void defersGuildChecksUntilNavigationOpens();
     void preservesFailedSaveAndRetriesLatestWorkspace();
+    void coalescesVolumeSavesAndFlushesOnShutdown();
+    void coalescesGuildCacheAndMemberNotifications();
     void persistsEditableEventMapping();
     void addsRoomsThroughModelAndRejectsOverflow();
     void recordsOpenedRoomsForTheLibraryHistory();
@@ -539,7 +541,7 @@ void AppControllerTest::exposesUpdateCheckerState()
     FakeNotificationSink sink;
     AppController controller(fakeServicePath(), &settings, &sink);
 
-    QCOMPARE(controller.currentVersion(), QStringLiteral("0.2.15"));
+    QCOMPARE(controller.currentVersion(), QStringLiteral(DOUYU_APP_VERSION));
     QCOMPARE(controller.updateState(), QStringLiteral("idle"));
     QCOMPARE(controller.updateMessage(), QString());
     QCOMPARE(controller.latestVersion(), QString());
@@ -618,6 +620,39 @@ void AppControllerTest::preservesFailedSaveAndRetriesLatestWorkspace()
     const auto snapshot = NativeWorkspaceStore(&saved).load();
     QCOMPARE(snapshot.teams.size(), 2);
     QCOMPARE(snapshot.teams.last().name, QStringLiteral("Latest"));
+}
+
+void AppControllerTest::coalescesVolumeSavesAndFlushesOnShutdown()
+{
+    QTemporaryDir directory;
+    QSettings settings(directory.filePath("workspace.ini"), QSettings::IniFormat);
+    AppController controller(fakeServicePath(), &settings);
+    QCOMPARE(controller.addRoom("63136"), QString());
+    const int savedVolume = NativeWorkspaceStore(&settings).load().library.first().volume;
+    for (int volume = 10; volume <= 30; ++volume)
+        QCOMPARE(controller.setVolume("63136", volume), QString());
+    QCOMPARE(NativeWorkspaceStore(&settings).load().library.first().volume, savedVolume);
+    QTRY_COMPARE_WITH_TIMEOUT(
+        NativeWorkspaceStore(&settings).load().library.first().volume, 30, 1000);
+    QCOMPARE(controller.setVolume("63136", 40), QString());
+    controller.shutdown();
+    QCOMPARE(NativeWorkspaceStore(&settings).load().library.first().volume, 40);
+}
+
+void AppControllerTest::coalescesGuildCacheAndMemberNotifications()
+{
+    QTemporaryDir directory;
+    QSettings settings(directory.filePath("workspace.ini"), QSettings::IniFormat);
+    AppController controller(fakeServicePath(), &settings);
+    auto *resolver = controller.findChild<GuildRoomResolver *>();
+    QVERIFY(resolver);
+    QSignalSpy changed(&controller, &AppController::guildRosterChanged);
+    for (int index = 0; index < 58; ++index) {
+        resolver->cacheChanged();
+        resolver->memberChanged(QStringLiteral("fixture"));
+    }
+    QCOMPARE(changed.count(), 0);
+    QTRY_COMPARE_WITH_TIMEOUT(changed.count(), 1, 1000);
 }
 
 void AppControllerTest::persistsEditableEventMapping()

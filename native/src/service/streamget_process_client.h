@@ -81,6 +81,7 @@ private:
     quint64 nextRequestId_ = 1;
     bool shuttingDown_ = false;
     bool protocolFailed_ = false;
+    int consecutivePlaybackRequests_ = 0;
 #ifdef Q_OS_WIN
     HANDLE job_ = nullptr;
 #endif

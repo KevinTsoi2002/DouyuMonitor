@@ -38,6 +38,8 @@ private slots:
     void searchesNumericRoomWithScriptedStatus();
     void refreshesRoomStatus();
     void correlatesRequestsAndKeepsTwoInFlight();
+    void prioritizesPlaybackOverQueuedBackgroundChecks();
+    void doesNotStarveBackgroundChecksDuringPlaybackBurst();
     void timesOutAndCancelsLateResponses();
     void rejectsMalformedChildOutput();
     void failsPendingWorkAndRestartsAfterCrash();
@@ -170,6 +172,47 @@ void StreamgetProcessClientTest::correlatesRequestsAndKeepsTwoInFlight()
     QCOMPARE(client.activeRequestCount(), 0);
     QCOMPARE(client.queuedRequestCount(), 0);
 
+    client.shutdown();
+}
+
+void StreamgetProcessClientTest::prioritizesPlaybackOverQueuedBackgroundChecks()
+{
+    StreamgetProcessClient client(fakeServicePath(), {"--delay-ms", "1500"});
+    QSignalSpy failures(&client, &StreamgetProcessClient::requestFailed);
+    QSignalSpy responses(&client, &StreamgetProcessClient::responseReceived);
+    client.resolve("100", StreamQuality::Auto, 150);
+    client.resolve("200", StreamQuality::Auto, 5000);
+    QTRY_COMPARE(client.activeRequestCount(), 2);
+    const quint64 background1 = client.status("300");
+    const quint64 background2 = client.status("400");
+    const quint64 background3 = client.status("500");
+    const quint64 playback = client.resolve("600", StreamQuality::Auto, 5000);
+    QCOMPARE(client.queuedRequestCount(), 4);
+    QTRY_COMPARE_WITH_TIMEOUT(failures.count(), 1, 1000);
+    QCOMPARE(client.activeRequestCount(), 2);
+    QCOMPARE(client.queuedRequestCount(), 3);
+    QVERIFY(client.cancel(background1));
+    QVERIFY(client.cancel(background2));
+    QVERIFY(client.cancel(background3));
+    QCOMPARE(client.queuedRequestCount(), 0);
+    QTRY_VERIFY_WITH_TIMEOUT(responses.count() >= 2, 4000);
+    bool receivedPlayback = false;
+    for (const auto &arguments : responses)
+        receivedPlayback |= qvariant_cast<ServiceResponse>(arguments.at(0)).requestId == playback;
+    QVERIFY(receivedPlayback);
+    client.shutdown();
+}
+
+void StreamgetProcessClientTest::doesNotStarveBackgroundChecksDuringPlaybackBurst()
+{
+    StreamgetProcessClient client(fakeServicePath(), {"--delay-ms", "5000"});
+    QSignalSpy responses(&client, &StreamgetProcessClient::responseReceived);
+    for (int index = 0; index < 8; ++index)
+        client.resolve(QString::number(100 + index), StreamQuality::Auto, 100);
+    const auto background = client.status("300");
+    QTRY_VERIFY_WITH_TIMEOUT(!responses.isEmpty(), 1000);
+    QCOMPARE(responseFrom(responses).requestId, background);
+    QVERIFY(client.activeRequestCount() <= 2);
     client.shutdown();
 }
 

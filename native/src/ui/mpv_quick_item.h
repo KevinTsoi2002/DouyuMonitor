@@ -53,6 +53,7 @@ public:
     QString safeErrorLabel() const;
 
 #ifdef DOUYU_TESTING
+    friend class MpvQuickItemTest;
     static void resetTeardownObservationForTest();
     static bool wasLastCoreTeardownAfterRenderContextReleaseForTest();
     bool usesWakeupCallbackForTest() const noexcept;

@@ -7,7 +7,6 @@
 namespace {
 
 constexpr qint64 kInputWindowMs = 3'000;
-constexpr qint64 kStatsWindowMs = 60'000;
 constexpr qint64 kAcceptedWindowMs = 1'000;
 constexpr int kCrowdedLimit = 20;
 constexpr int kBurstLimit = 10;
@@ -50,15 +49,30 @@ QString normalizeComparable(const QString &text)
     return text.trimmed().toCaseFolded();
 }
 
-QVector<qint64> prune(QVector<qint64> timestamps, qint64 nowMs, qint64 windowMs)
+void prune(std::deque<DanmakuTimeBucket> &buckets, qint64 &count,
+           qint64 nowMs, qint64 windowMs)
 {
     const qint64 cutoff = nowMs - windowMs;
-    timestamps.erase(std::remove_if(timestamps.begin(), timestamps.end(),
-                                     [=](qint64 timestamp) {
-                                         return timestamp < cutoff || timestamp > nowMs;
-                                     }),
-                     timestamps.end());
-    return timestamps;
+    while (!buckets.empty() && buckets.front().timestampMs < cutoff) {
+        count -= buckets.front().count;
+        buckets.pop_front();
+    }
+    // System clock corrections must not retain events from the future.
+    while (!buckets.empty() && buckets.back().timestampMs > nowMs) {
+        count -= buckets.back().count;
+        buckets.pop_back();
+    }
+}
+
+void append(std::deque<DanmakuTimeBucket> &buckets, qint64 &count,
+            qint64 nowMs, qint64 amount)
+{
+    if (amount == 0) return;
+    if (!buckets.empty() && buckets.back().timestampMs == nowMs)
+        buckets.back().count += amount;
+    else
+        buckets.push_back({nowMs, amount});
+    count += amount;
 }
 
 QString peakLevel(qreal rate)
@@ -131,24 +145,22 @@ QVector<DanmakuMessage> apply(const QVector<DanmakuMessage> &messages,
                                DanmakuGovernanceRuntime &runtime,
                                const QDateTime &nowUtc)
 {
-    const DanmakuGovernanceSettings settings = validatedGovernanceSettings(rawSettings);
-    const qint64 nowMs = nowUtc.toUTC().toMSecsSinceEpoch();
-    for (qsizetype i = 0; i < messages.size(); ++i) runtime.inputTimestampsMs.push_back(nowMs);
-    runtime.inputTimestampsMs = prune(runtime.inputTimestampsMs, nowMs, kStatsWindowMs);
-    const qint64 recentCutoff = nowMs - kInputWindowMs;
-    int recentInputCount = 0;
-    for (const qint64 timestamp : runtime.inputTimestampsMs) {
-        if (timestamp >= recentCutoff) ++recentInputCount;
+    if (!runtime.rawSettings || *runtime.rawSettings != rawSettings) {
+        runtime.rawSettings = rawSettings;
+        runtime.validatedSettings = validatedGovernanceSettings(rawSettings);
     }
-    const qreal recentRate = static_cast<qreal>(recentInputCount) / 3.0;
+    const auto &settings = runtime.validatedSettings;
+    const qint64 nowMs = nowUtc.toUTC().toMSecsSinceEpoch();
+    prune(runtime.inputTimestampsMs, runtime.recentInputCount, nowMs, kInputWindowMs);
+    append(runtime.inputTimestampsMs, runtime.recentInputCount, nowMs, messages.size());
+    const qreal recentRate = static_cast<qreal>(runtime.recentInputCount) / 3.0;
     runtime.stats.level = peakLevel(recentRate);
     runtime.stats.recentRate = std::round(recentRate * 100.0) / 100.0;
     runtime.stats.peakRate = std::max(runtime.stats.peakRate, runtime.stats.recentRate);
     runtime.peakRate = runtime.stats.peakRate;
 
-    runtime.acceptedTimestampsMs = prune(runtime.acceptedTimestampsMs, nowMs,
-                                         kAcceptedWindowMs);
-    const QStringList keywords = normalizedKeywords(settings.keywordBlacklist);
+    prune(runtime.acceptedTimestampsMs, runtime.acceptedCount, nowMs, kAcceptedWindowMs);
+    const auto &keywords = settings.keywordBlacklist;
     const int limit = settings.peakProtectionEnabled ? acceptedLimit(runtime.stats.level)
                                                       : std::numeric_limits<int>::max();
     QVector<DanmakuMessage> accepted;
@@ -172,12 +184,12 @@ QVector<DanmakuMessage> apply(const QVector<DanmakuMessage> &messages,
             runtime.lastComparableText = comparable;
             runtime.lastComparableAtMs = nowMs;
         }
-        if (settings.enabled && runtime.acceptedTimestampsMs.size() >= limit) {
+        if (settings.enabled && runtime.acceptedCount >= limit) {
             ++runtime.stats.rateLimited;
             continue;
         }
         accepted.push_back(message);
-        runtime.acceptedTimestampsMs.push_back(nowMs);
+        append(runtime.acceptedTimestampsMs, runtime.acceptedCount, nowMs, 1);
     }
     return accepted;
 }

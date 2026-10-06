@@ -4,6 +4,7 @@
 #include <QEventLoop>
 #include <QProcess>
 #include <QTimer>
+#include <algorithm>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -12,6 +13,7 @@
 namespace {
 
 constexpr int kMaxInFlight = 2;
+constexpr int kMaxPlaybackBurst = 4;
 
 } // namespace
 
@@ -192,7 +194,23 @@ void StreamgetProcessClient::pumpQueue()
     if (process_->state() != QProcess::Running) return;
 
     while (activeRequests_.size() < kMaxInFlight && !queuedRequests_.isEmpty()) {
-        const ServiceRequest request = queuedRequests_.dequeue();
+        const auto playback = std::find_if(
+            queuedRequests_.cbegin(), queuedRequests_.cend(), [](const ServiceRequest &request) {
+                return request.operation == ServiceOperation::Resolve;
+            });
+        const auto background = std::find_if(
+            queuedRequests_.cbegin(), queuedRequests_.cend(), [](const ServiceRequest &request) {
+                return request.operation != ServiceOperation::Resolve;
+            });
+        // Playback takes priority, but a long restore must not starve status/search work.
+        const auto selected = playback != queuedRequests_.cend()
+                && (consecutivePlaybackRequests_ < kMaxPlaybackBurst
+                    || background == queuedRequests_.cend())
+            ? playback : background;
+        const qsizetype index = std::distance(queuedRequests_.cbegin(), selected);
+        const ServiceRequest request = queuedRequests_.takeAt(index);
+        if (request.operation == ServiceOperation::Resolve) ++consecutivePlaybackRequests_;
+        else consecutivePlaybackRequests_ = 0;
         PendingRequest pending;
         pending.request = request;
         pending.timeoutMs = queuedTimeouts_.take(request.requestId);
@@ -239,6 +257,7 @@ void StreamgetProcessClient::failRequest(quint64 requestId, const QString &error
 
 void StreamgetProcessClient::failAll(const QString &errorCode)
 {
+    consecutivePlaybackRequests_ = 0;
     const QList<quint64> activeIds = activeRequests_.keys();
     for (const quint64 requestId : activeIds) failRequest(requestId, errorCode);
     while (!queuedRequests_.isEmpty()) {

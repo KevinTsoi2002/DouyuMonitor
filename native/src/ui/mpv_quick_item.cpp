@@ -275,7 +275,10 @@ MpvQuickItem::MpvQuickItem(QQuickItem *parent)
     }
     renderState_->handle.store(mpv_);
 
+    // Copy-back decoding also works with the shared Qt Quick OpenGL renderer.
+    // mpv falls back to software when the codec/device cannot use hardware.
     mpvInitialized_ = mpv_set_option_string(mpv_, "vo", "libmpv") >= 0
+        && mpv_set_option_string(mpv_, "hwdec", "auto-copy") >= 0
         && mpv_initialize(mpv_) >= 0;
     if (!mpvInitialized_) {
         mpv_terminate_destroy(mpv_);

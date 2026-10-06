@@ -22,8 +22,8 @@ Item {
     readonly property string density: displaySettings.density || "normal"
     readonly property string fontFamily: displaySettings.fontFamily === "simhei" ? "SimHei" : "Microsoft YaHei"
     readonly property string rendering: displaySettings.rendering || "native"
-    readonly property bool presentationSuspended: controller && controller.presentationSuspended
-                                                  ? controller.presentationSuspended : false
+    readonly property bool presentationSuspended: !root.visible
+                                                  || !!(controller && controller.presentationSuspended)
     readonly property int launchInterval: density === "massive" ? 80 : density === "reduced" ? 360 : 180
     readonly property real safeTopInset: Math.max(0, topInset)
     readonly property real usableHeight: Math.max(0, height - safeTopInset - Math.max(0, bottomInset))
@@ -57,7 +57,8 @@ Item {
         target: root.signalController || root.controller
 
         function onMessageAvailable(roomId) {
-            if (roomId === root.roomId && root.enabled) launchTimer.restart()
+            if (roomId === root.roomId && root.enabled && !root.presentationSuspended
+                    && !launchTimer.running) launchTimer.restart()
         }
     }
 
@@ -106,7 +107,7 @@ Item {
     }
 
     function launchNextMessage() {
-        if (!enabled || !controller || width <= 0 || usableHeight <= 0) return
+        if (!enabled || presentationSuspended || !controller || width <= 0 || usableHeight <= 0) return
         if (activeItems.length >= activeItemLimit) return
 
         if (!hasPendingMessage()) pendingMessage = controller.takeNextMessage(roomId)

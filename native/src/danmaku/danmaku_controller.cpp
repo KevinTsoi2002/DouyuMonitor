@@ -157,7 +157,6 @@ void DanmakuController::setConfiguration(const NativeDanmakuConfiguration &confi
 
 void DanmakuController::synchronize(const QVector<DanmakuRoomEligibility> &rooms)
 {
-    qInfo() << "danmaku synchronize rooms=" << rooms.size();
     sessions_.synchronize(rooms);
 }
 

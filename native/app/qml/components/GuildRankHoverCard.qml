@@ -38,6 +38,8 @@ Popup {
                     anchors.margins: 1
                     source: root.member ? String(root.member.avatarUrl || "") : ""
                     fillMode: Image.PreserveAspectCrop
+                    asynchronous: true
+                    sourceSize: Qt.size(84, 84)
                     clip: true
                 }
             }

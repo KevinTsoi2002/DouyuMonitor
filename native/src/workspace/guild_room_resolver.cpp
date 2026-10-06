@@ -176,6 +176,16 @@ void GuildRoomResolver::stop()
     started_ = false;
     if (scheduleTimer_ != nullptr) scheduleTimer_->stop();
     const quint64 requestId = activeRequestId_;
+    if (!activeMemberId_.isEmpty()) {
+        if (activeRequestIsMetadataRefresh_) {
+            metadataQueue_.prepend({activeMemberId_, activeRequestStatusOnly_});
+            queuedMetadataMembers_.insert(activeMemberId_);
+        } else {
+            queue_.prepend(activeMemberId_);
+            queuedMembers_.insert(activeMemberId_);
+            statuses_.insert(activeMemberId_, QStringLiteral("idle"));
+        }
+    }
     activeRequestId_ = 0;
     activeMemberId_.clear();
     activeRequestIsMetadataRefresh_ = false;

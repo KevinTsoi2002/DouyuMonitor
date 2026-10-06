@@ -30,6 +30,7 @@ class WindowsNotificationService;
 class WindowsTrayService;
 class QSettings;
 class UpdateChecker;
+class QTimer;
 
 class AppController final : public QObject {
     Q_OBJECT
@@ -204,6 +205,8 @@ signals:
 private:
     void restoreWorkspace();
     void persistWorkspace();
+    void scheduleWorkspaceSave();
+    void scheduleGuildRosterNotification();
     void onSnapshotsChanged(const RoomSnapshots &snapshots);
     void onServiceResponse(const ServiceResponse &response);
     void onServiceRequestFailed(quint64 requestId, const QString &errorCode);
@@ -241,6 +244,8 @@ private:
     bool hadPreFullScreenVisibility_ = false;
     bool restoring_ = false;
     bool workspaceUnsaved_ = false;
+    QTimer *workspaceSaveTimer_ = nullptr;
+    QTimer *guildRosterNotifyTimer_ = nullptr;
     bool shuttingDown_ = false;
     bool backgroundHosted_ = false;
     bool windowMinimized_ = false;

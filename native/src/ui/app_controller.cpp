@@ -151,6 +151,13 @@ AppController::AppController(QString serviceProgram,
     , workspaceStore_(settings)
     , notificationPolicy_([] { return QDateTime::currentMSecsSinceEpoch(); })
 {
+    workspaceSaveTimer_ = new QTimer(this);
+    workspaceSaveTimer_->setSingleShot(true);
+    workspaceSaveTimer_->setInterval(250);
+    connect(workspaceSaveTimer_, &QTimer::timeout, this, &AppController::persistWorkspace);
+    guildRosterNotifyTimer_ = new QTimer(this);
+    guildRosterNotifyTimer_->setSingleShot(true);
+    connect(guildRosterNotifyTimer_, &QTimer::timeout, this, &AppController::guildRosterChanged);
     if (!danmakuFactory) {
         danmakuFactory = [](const QString &roomId, QObject *parent) {
             auto *scheduler = new QtDanmakuTimerScheduler(parent);
@@ -174,12 +181,12 @@ AppController::AppController(QString serviceProgram,
         new StreamgetSearchTransport(service_.get(), this), this);
     connect(guildRoomResolver_, &GuildRoomResolver::cacheChanged, this, [this] {
         snapshot_.guildRoomCache = guildRoomResolver_->cache();
-        if (!restoring_) persistWorkspace();
-        emit guildRosterChanged();
+        scheduleWorkspaceSave();
+        scheduleGuildRosterNotification();
         emit maoziTeamImportChanged();
     });
     connect(guildRoomResolver_, &GuildRoomResolver::memberChanged, this,
-            [this](const QString &) { emit guildRosterChanged(); });
+            [this](const QString &) { scheduleGuildRosterNotification(); });
     notificationService_ = std::make_unique<WindowsNotificationService>(settings, notificationSink, this);
     trayService_ = std::make_unique<WindowsTrayService>(this);
     rooms_ = std::make_unique<RoomListModel>(this);
@@ -194,11 +201,11 @@ AppController::AppController(QString serviceProgram,
     if (settings_ && settings_->contains(QStringLiteral("DouyuMonitor/eventMappingV1")))
         maoziRank_->setEventMapping(settings_->value(QStringLiteral("DouyuMonitor/eventMappingV1")).toByteArray());
     connect(maoziRank_.get(), &MaoziRankClient::entriesChanged,
-            this, &AppController::guildRosterChanged);
+            this, &AppController::scheduleGuildRosterNotification);
     connect(maoziRank_.get(), &MaoziRankClient::syncStateChanged,
             this, &AppController::rankSyncStateChanged);
     connect(maoziRank_.get(), &MaoziRankClient::syncStateChanged,
-            this, &AppController::guildRosterChanged);
+            this, &AppController::scheduleGuildRosterNotification);
     connect(maoziRank_.get(), &MaoziRankClient::entriesChanged,
             this, &AppController::maoziTeamImportChanged);
     connect(maoziRank_.get(), &MaoziRankClient::syncStateChanged,
@@ -378,6 +385,7 @@ void AppController::shutdown()
 {
     if (shuttingDown_) return;
     shuttingDown_ = true;
+    guildRosterNotifyTimer_->stop();
     if (trayService_ != nullptr) trayService_->stop();
     if (guildRoomResolver_ != nullptr) guildRoomResolver_->stop();
 
@@ -961,7 +969,7 @@ QString AppController::setVolume(const QString &roomId, int volume)
 {
     if (volume < 0 || volume > 100) return commandMessage(RoomCommandResult::InvalidRoomId);
     const RoomCommandResult result = coordinator_->setVolume(roomId, volume);
-    if (result == RoomCommandResult::Accepted) persistWorkspace();
+    if (result == RoomCommandResult::Accepted) scheduleWorkspaceSave();
     return commandMessage(result);
 }
 
@@ -1271,6 +1279,8 @@ QString AppController::setNavigationVisible(bool visible)
     if (visible && guildRoomResolver_ != nullptr) {
         guildRoomResolver_->start();
         guildRoomResolver_->refreshMetadata(false);
+    } else if (guildRoomResolver_ != nullptr) {
+        guildRoomResolver_->stop();
     }
     persistWorkspace();
     return {};
@@ -1762,16 +1772,30 @@ void AppController::onFavoriteRoomUpdated(const QString &roomId,
     record->metadata.roomId = roomId;
     favoriteLiveStatuses_.insert(roomId, liveStatus);
     emit libraryRoomsChanged();
-    if (!restoring_) persistWorkspace();
+    scheduleWorkspaceSave();
 }
 
 void AppController::persistWorkspace()
 {
     if (restoring_) return;
+    workspaceSaveTimer_->stop();
     const bool unsaved = !workspaceStore_.save(snapshot_);
     if (workspaceUnsaved_ == unsaved) return;
     workspaceUnsaved_ = unsaved;
     emit workspaceSaveStateChanged();
+}
+
+void AppController::scheduleWorkspaceSave()
+{
+    if (restoring_ || shuttingDown_) return;
+    // Do not restart on traffic: even continuous updates are saved periodically.
+    if (!workspaceSaveTimer_->isActive()) workspaceSaveTimer_->start();
+}
+
+void AppController::scheduleGuildRosterNotification()
+{
+    if (!shuttingDown_ && !guildRosterNotifyTimer_->isActive())
+        guildRosterNotifyTimer_->start(0);
 }
 
 void AppController::retryWorkspaceSave()

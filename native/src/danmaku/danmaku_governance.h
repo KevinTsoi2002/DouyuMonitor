@@ -4,10 +4,20 @@
 
 #include <QDateTime>
 #include <QVector>
+#include <deque>
+
+struct DanmakuTimeBucket {
+    qint64 timestampMs = 0;
+    qint64 count = 0;
+};
 
 struct DanmakuGovernanceRuntime {
-    QVector<qint64> inputTimestampsMs;
-    QVector<qint64> acceptedTimestampsMs;
+    std::deque<DanmakuTimeBucket> inputTimestampsMs;
+    std::deque<DanmakuTimeBucket> acceptedTimestampsMs;
+    qint64 recentInputCount = 0;
+    qint64 acceptedCount = 0;
+    std::optional<DanmakuGovernanceSettings> rawSettings;
+    DanmakuGovernanceSettings validatedSettings;
     QString lastComparableText;
     qint64 lastComparableAtMs = -1;
     qreal peakRate = 0;

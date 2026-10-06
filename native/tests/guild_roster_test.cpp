@@ -7,6 +7,7 @@ class GuildRosterTest final : public QObject {
 
 private slots:
     void loadsBundledRosterWithoutRoleLabels();
+    void sharesCachedBundledRosterWithoutReparsing();
     void exposesStablePinyinKeysForEveryMember();
     void stripsRoleSuffixOnlyForSearch();
     void rejectsInvalidRoomIdsFromResource();
@@ -27,6 +28,17 @@ void GuildRosterTest::loadsBundledRosterWithoutRoleLabels()
         QVERIFY(!member.anchorName.contains(QStringLiteral("-队员")));
         QVERIFY(!member.anchorName.endsWith(QStringLiteral("-OB")));
     }
+}
+
+void GuildRosterTest::sharesCachedBundledRosterWithoutReparsing()
+{
+    const auto first = GuildRoster::bundled();
+    const auto second = GuildRoster::bundled();
+    QVERIFY(!first.isEmpty());
+    QCOMPARE(first.constData(), second.constData());
+    auto changed = first;
+    changed.first().anchorName = QStringLiteral("fixture");
+    QCOMPARE(GuildRoster::bundled().first().anchorName, first.first().anchorName);
 }
 
 void GuildRosterTest::exposesStablePinyinKeysForEveryMember()

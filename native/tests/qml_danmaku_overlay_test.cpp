@@ -2,6 +2,7 @@
 #include <QQmlEngine>
 #include <QQuickItem>
 #include <QQuickWindow>
+#include <QTimer>
 #include <QtTest/QtTest>
 
 #include <memory>
@@ -117,7 +118,53 @@ private slots:
     void keepsLaneSpacingSafeForOutlinedText();
     void relayoutsActiveDanmakuWhenContainerHeightChanges();
     void clearsActiveAndQueuedMessagesWhenDisabled();
+    void pausesHiddenOverlayWithoutConsumingQueuedMessages();
+    void keepsLaunchingDuringContinuousMessageArrival();
 };
+
+void QmlDanmakuOverlayTest::pausesHiddenOverlayWithoutConsumingQueuedMessages()
+{
+    QQmlEngine engine;
+    QQuickWindow window;
+    window.resize(320, 180);
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    FakeDanmakuQmlController controller;
+    QQuickItem page(window.contentItem());
+    std::unique_ptr<QQuickItem> overlay(createOverlay(engine, window, controller));
+    QVERIFY(overlay);
+    overlay->setParentItem(&page);
+    page.setVisible(false);
+    QVERIFY(!overlay->isVisible());
+    controller.enqueue(message("hidden", "queued while hidden"));
+    QTest::qWait(250);
+    QCOMPARE(activeLines(overlay.get()).size(), 0);
+    QCOMPARE(controller.clearCount(), 0);
+    page.setVisible(true);
+    QVERIFY(overlay->isVisible());
+    QCOMPARE(overlay->property("presentationSuspended").toBool(), false);
+    QTRY_COMPARE_WITH_TIMEOUT(activeLines(overlay.get()).size(), 1, 1000);
+}
+
+void QmlDanmakuOverlayTest::keepsLaunchingDuringContinuousMessageArrival()
+{
+    QQmlEngine engine;
+    QQuickWindow window;
+    window.resize(320, 180);
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    FakeDanmakuQmlController controller;
+    std::unique_ptr<QQuickItem> overlay(createOverlay(engine, window, controller));
+    QVERIFY(overlay);
+    QTimer arrivals;
+    int nextId = 0;
+    connect(&arrivals, &QTimer::timeout, &controller, [&] {
+        controller.enqueue(message(QString::number(++nextId), "continuous"));
+    });
+    arrivals.start(20);
+    QTRY_VERIFY_WITH_TIMEOUT(!activeLines(overlay.get()).isEmpty(), 400);
+    QVERIFY(arrivals.isActive());
+}
 
 void QmlDanmakuOverlayTest::launchesAQueuedMessageIntoTheConfiguredRegion()
 {

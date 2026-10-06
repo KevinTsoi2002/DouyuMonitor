@@ -25,9 +25,12 @@ bool isValidRoomId(const QString &roomId)
 
 QVector<GuildMember> GuildRoster::bundled()
 {
-    QFile file(kRosterResourcePath);
-    if (!file.open(QIODevice::ReadOnly)) return {};
-    return parse(file.readAll());
+    static const QVector<GuildMember> members = [] {
+        QFile file(kRosterResourcePath);
+        if (!file.open(QIODevice::ReadOnly)) return QVector<GuildMember>{};
+        return parse(file.readAll());
+    }();
+    return members;
 }
 
 QVector<GuildMember> GuildRoster::parse(const QByteArray &json)

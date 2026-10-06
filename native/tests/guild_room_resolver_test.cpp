@@ -61,7 +61,35 @@ private slots:
     void reusesCachedLiveStateWhenFresh();
     void refreshesLiveStatusWithoutRefetchingIdentity();
     void preservesCachedAvatarWhenSearchStatusIsUnknown();
+    void resumesCancelledMetadataTaskAfterPause();
 };
+
+void GuildRoomResolverTest::resumesCancelledMetadataTaskAfterPause()
+{
+    FakeSearchTransport transport;
+    GuildRoomResolver resolver(&transport);
+    resolver.setRoster({{"a", "A", "A", "100"}, {"b", "B", "B", "200"}});
+    resolver.start();
+    QTRY_COMPARE(transport.requestCount, 1);
+    const quint64 cancelledId = transport.lastRequestId;
+    const QString cancelledQuery = transport.lastQuery;
+    resolver.stop();
+    QCOMPARE(transport.cancelledRequestId, cancelledId);
+    QTest::qWait(50);
+    QCOMPARE(transport.requestCount, 1);
+    resolver.start();
+    QTRY_COMPARE(transport.requestCount, 2);
+    QCOMPARE(transport.lastQuery, cancelledQuery);
+    ServiceResponse late;
+    late.requestId = cancelledId;
+    late.ok = true;
+    late.search = true;
+    QVERIFY(!resolver.handleResponse(late));
+    late.requestId = transport.lastRequestId;
+    QVERIFY(resolver.handleResponse(late));
+    QTRY_COMPARE(transport.requestCount, 3);
+    QVERIFY(transport.lastQuery != cancelledQuery);
+}
 
 void GuildRoomResolverTest::resolvesExactAnchorMatchOnly()
 {

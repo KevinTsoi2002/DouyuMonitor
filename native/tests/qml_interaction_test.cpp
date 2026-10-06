@@ -3140,6 +3140,8 @@ void QmlInteractionTest::rendersGuildMemberAvatarAndLiveState()
             row->findChild<QObject *>(QStringLiteral("guildMemberAvatarImage"));
         QVERIFY(liveLabel != nullptr);
         QVERIFY(avatarImage != nullptr);
+        QCOMPARE(avatarImage->property("sourceSize").toSize(), QSize(64, 64));
+        QVERIFY(avatarImage->property("asynchronous").toBool());
         QTRY_COMPARE(liveLabel->property("text").toString(), expectedStates.at(index));
         QTRY_COMPARE(avatarImage->property("source").toString(), expectedAvatars.at(index));
     }
