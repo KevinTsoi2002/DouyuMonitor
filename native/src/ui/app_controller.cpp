@@ -1372,6 +1372,11 @@ QString AppController::applyWorkspacePreset(const QString &presetId)
     workspace_->setSidebarVisible(preset.sidebarVisible);
     snapshot_.danmaku = preset.danmaku;
     danmaku_->setConfiguration(snapshot_.danmaku);
+    const qint64 openedAtMs = QDateTime::currentMSecsSinceEpoch();
+    for (const QString &roomId : preset.roomIds) {
+        if (auto *record = libraryRecord(roomId)) record->lastOpenedAtMs = openedAtMs;
+    }
+    emit libraryRoomsChanged();
     synchronizeDanmaku();
     refreshPresentation();
     persistWorkspace();

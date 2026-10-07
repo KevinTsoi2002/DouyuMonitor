@@ -66,6 +66,7 @@ public:
 
 signals:
     void renderContextReady();
+    void remoteStreamEnded();
     void playbackFailed();
     void playbackProgress();
 

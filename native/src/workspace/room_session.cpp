@@ -7,6 +7,8 @@
 #include <QTimer>
 
 namespace {
+constexpr int kSourcePrefetchLeadMs = 240'000;
+constexpr int kPrefetchedSourceMaxAgeMs = 120'000;
 
 QString qualityToken(StreamQuality quality)
 {
@@ -43,6 +45,7 @@ RoomSession::RoomSession(StreamgetProcessClient *client,
     , effectiveQualityRate_(userQualityRate_)
     , metadata_(std::move(metadata))
     , controller_(new RemotePlaybackController(client, this))
+    , prefetchController_(new RemotePlaybackController(client, this))
 {
     metadata_.roomId = roomId_;
     qRegisterMetaType<RoomSession::State>();
@@ -54,11 +57,20 @@ RoomSession::RoomSession(StreamgetProcessClient *client,
             this, &RoomSession::onControllerFailed);
     connect(controller_, &RemotePlaybackController::stateChanged,
             this, &RoomSession::onControllerStateChanged);
+    connect(prefetchController_, &RemotePlaybackController::sourceReady,
+            this, &RoomSession::onPrefetchSourceReady);
+    connect(prefetchController_, &RemotePlaybackController::failed,
+            this, &RoomSession::onPrefetchFailed);
     playbackRecoveryTimer_ = new QTimer(this);
     playbackRecoveryTimer_->setObjectName(QStringLiteral("playbackRecoveryTimer"));
     playbackRecoveryTimer_->setSingleShot(true);
     connect(playbackRecoveryTimer_, &QTimer::timeout,
             this, &RoomSession::recoverPlayback);
+    sourcePrefetchTimer_ = new QTimer(this);
+    sourcePrefetchTimer_->setObjectName(QStringLiteral("sourcePrefetchTimer"));
+    sourcePrefetchTimer_->setSingleShot(true);
+    sourcePrefetchTimer_->setInterval(kSourcePrefetchLeadMs);
+    connect(sourcePrefetchTimer_, &QTimer::timeout, this, &RoomSession::beginSourcePrefetch);
 }
 
 RoomSession::~RoomSession()
@@ -101,6 +113,7 @@ bool RoomSession::setRequestedQuality(StreamQuality quality)
 {
     if (userQuality_ == quality) return false;
     userQuality_ = quality;
+    cancelPrefetch();
     return true;
 }
 
@@ -115,6 +128,9 @@ bool RoomSession::setRequestedQuality(StreamQuality quality, int qualityRate)
     if (userQualityRate_ != qualityRate) {
         userQualityRate_ = qualityRate;
         changed = true;
+    }
+    if (changed) {
+        cancelPrefetch();
     }
     return changed;
 }
@@ -132,6 +148,7 @@ StreamQuality RoomSession::effectiveQuality() const noexcept
 bool RoomSession::setEffectiveQuality(StreamQuality quality)
 {
     if (effectiveQuality_ == quality) return false;
+    cancelPrefetch();
     effectiveQuality_ = quality;
     emit qualityChanged(quality);
     return true;
@@ -147,6 +164,7 @@ bool RoomSession::setEffectiveQualityRate(int qualityRate)
     if (qualityRate < -1 || qualityRate > 255 || effectiveQualityRate_ == qualityRate) {
         return false;
     }
+    cancelPrefetch();
     effectiveQualityRate_ = qualityRate;
     return true;
 }
@@ -211,11 +229,14 @@ bool RoomSession::attachPlayer(MpvQuickItem *player)
     player_ = player;
     connect(player_, &MpvQuickItem::playbackFailed,
             this, &RoomSession::onSurfacePlaybackFailed);
+    connect(player_, &MpvQuickItem::remoteStreamEnded,
+            this, &RoomSession::onSurfaceRemoteStreamEnded);
     connect(player_, &MpvQuickItem::playbackProgress, this, [this] {
         if (controller_->state() == RemotePlaybackController::State::Resolving
             || state_ == State::Error) return;
         playbackRecoveryAttempts_ = 0;
         cancelRecovery();
+        schedulePrefetch();
     });
     connect(player_, &MpvQuickItem::renderContextReady, this, [this, player] {
         if (player_ != player || !pendingSource_.has_value()) return;
@@ -244,6 +265,7 @@ void RoomSession::detachPlayer(MpvQuickItem *player)
 {
     if (player == nullptr || player_ != player) return;
     cancelRecovery();
+    cancelPrefetch();
     QObject::disconnect(player, nullptr, this, nullptr);
     player_.clear();
 }
@@ -262,6 +284,7 @@ quint64 RoomSession::resolve()
 {
     if (controller_ == nullptr) return 0;
     cancelRecovery();
+    cancelPrefetch();
     playbackRecoveryAttempts_ = 0;
     return controller_->resolve(roomId_, effectiveQuality_, effectiveQualityRate_);
 }
@@ -271,6 +294,7 @@ void RoomSession::cancel()
     cancelRecovery();
     if (controller_ == nullptr) return;
     controller_->cancel();
+    cancelPrefetch();
     pendingSource_.reset();
     activeSource_.reset();
     setState(State::Idle);
@@ -280,6 +304,7 @@ void RoomSession::stop()
 {
     cancelRecovery();
     if (controller_ != nullptr) controller_->stop();
+    cancelPrefetch();
     if (player_ != nullptr) player_->release();
     pendingSource_.reset();
     activeSource_.reset();
@@ -291,6 +316,7 @@ void RoomSession::release()
 {
     cancelRecovery();
     if (controller_ != nullptr) controller_->release();
+    cancelPrefetch();
     // The QML scene owns the player. Releasing its libmpv core from the
     // session can race the scene graph while the delegate is being removed.
     if (player_ != nullptr) detachPlayer(player_);
@@ -312,6 +338,7 @@ void RoomSession::resumeRendering()
 void RoomSession::onControllerSourceReady(MediaSource source)
 {
     pendingSource_ = std::move(source);
+    cancelPrefetch();
     if (player_ != nullptr && player_->isRenderContextReady()) {
         startPendingSource();
         return;
@@ -362,6 +389,7 @@ bool RoomSession::startPendingSource()
     activeSource_ = pendingSource_;
     pendingSource_.reset();
     if (playbackRecoveryTimer_ != nullptr) playbackRecoveryTimer_->stop();
+    schedulePrefetch();
     setLiveStatus(RoomLiveStatus::Online);
     setPlaybackHealth(RoomPlaybackHealth::Playing);
     setState(State::Ready);
@@ -371,6 +399,7 @@ bool RoomSession::startPendingSource()
 
 void RoomSession::onControllerFailed(QString errorCode)
 {
+    cancelPrefetch();
     if (errorCode == QStringLiteral("ROOM_OFFLINE")) {
         cancelRecovery();
         if (player_ != nullptr) player_->stop();
@@ -423,6 +452,60 @@ void RoomSession::onSurfacePlaybackFailed()
     emit failed(QStringLiteral("PLAYER_FAILED"));
 }
 
+void RoomSession::onSurfaceRemoteStreamEnded()
+{
+    if (!prefetchedSource_.has_value() || player_ == nullptr
+        || state_ != State::Ready || liveStatus_ == RoomLiveStatus::Offline
+        || controller_->state() == RemotePlaybackController::State::Resolving
+        || !prefetchAge_.isValid() || prefetchAge_.elapsed() > kPrefetchedSourceMaxAgeMs
+        || !player_->isRenderContextReady()) {
+        return;
+    }
+    const MediaSource replacement = *prefetchedSource_;
+    cancelPrefetch();
+    if (!player_->loadSource(replacement)) return;
+    activeSource_ = replacement;
+    schedulePrefetch();
+    setLiveStatus(RoomLiveStatus::Online);
+    setPlaybackHealth(RoomPlaybackHealth::Playing);
+    setState(State::Ready);
+}
+
+void RoomSession::beginSourcePrefetch()
+{
+    if (prefetchController_ == nullptr
+        || !activeSource_ || activeSource_->kind() != MediaSource::Kind::RemoteStream
+        || player_ == nullptr || state_ != State::Ready
+        || liveStatus_ == RoomLiveStatus::Offline || recoveringPlayback_
+        || prefetchAttempts_ >= 3
+        || prefetchController_->state() == RemotePlaybackController::State::Resolving
+        || controller_->state() == RemotePlaybackController::State::Resolving) {
+        return;
+    }
+    ++prefetchAttempts_;
+    prefetchController_->resolve(roomId_, effectiveQuality_, effectiveQualityRate_);
+}
+
+void RoomSession::onPrefetchSourceReady(MediaSource source)
+{
+    if (!activeSource_ || player_ == nullptr || state_ != State::Ready
+        || liveStatus_ == RoomLiveStatus::Offline || recoveringPlayback_) return;
+    prefetchedSource_ = std::move(source);
+    prefetchAge_.start();
+    prefetchAttempts_ = 0;
+    // Long-lived sources should not leave an old replacement cached forever.
+    sourcePrefetchTimer_->start(60'000);
+}
+
+void RoomSession::onPrefetchFailed(QString)
+{
+    if (sourcePrefetchTimer_ != nullptr && activeSource_.has_value()
+        && state_ == State::Ready && prefetchAttempts_ < 3
+        && liveStatus_ != RoomLiveStatus::Offline && !recoveringPlayback_) {
+        sourcePrefetchTimer_->start(5000);
+    }
+}
+
 void RoomSession::recoverPlayback()
 {
     playbackRecoveryTimer_->stop();
@@ -431,6 +514,7 @@ void RoomSession::recoverPlayback()
         return;
     }
     ++playbackRecoveryAttempts_;
+    cancelPrefetch();
     pendingSource_.reset();
     activeSource_.reset();
     setPlaybackHealth(RoomPlaybackHealth::Pending);
@@ -443,6 +527,25 @@ void RoomSession::cancelRecovery()
 {
     if (playbackRecoveryTimer_ != nullptr) playbackRecoveryTimer_->stop();
     recoveringPlayback_ = false;
+}
+
+void RoomSession::cancelPrefetch()
+{
+    if (sourcePrefetchTimer_ != nullptr) sourcePrefetchTimer_->stop();
+    if (prefetchController_ != nullptr) prefetchController_->cancel();
+    prefetchedSource_.reset();
+    prefetchAge_.invalidate();
+    prefetchAttempts_ = 0;
+    prefetchScheduled_ = false;
+}
+
+void RoomSession::schedulePrefetch()
+{
+    if (prefetchScheduled_ || !activeSource_
+        || activeSource_->kind() != MediaSource::Kind::RemoteStream) return;
+    prefetchScheduled_ = true;
+    sourcePrefetchTimer_->start(kSourcePrefetchLeadMs
+        + int(roomId_.toULongLong() % 11) * 1000);
 }
 
 void RoomSession::scheduleRecovery()
@@ -464,7 +567,10 @@ void RoomSession::setLiveStatus(RoomLiveStatus status)
 {
     if (liveStatus_ == status) return;
     liveStatus_ = status;
-    if (status == RoomLiveStatus::Offline) cancelRecovery();
+    if (status == RoomLiveStatus::Offline) {
+        cancelRecovery();
+        cancelPrefetch();
+    }
     emit liveStatusChanged(status);
 }
 

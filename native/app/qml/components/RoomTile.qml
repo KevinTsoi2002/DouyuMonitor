@@ -78,10 +78,12 @@ FocusScope {
 
     Timer {
         id: controlsTimer
+        objectName: "roomControlsTimer"
         interval: 2200
         repeat: false
         onTriggered: {
-            if (!root.activeFocus && !root.menuOpen) root.controlsVisible = false
+            if (root.menuOpen || qualityBox.popup.visible || roomVolumeSlider.pressed) restart()
+            else root.controlsVisible = false
         }
     }
 
@@ -89,6 +91,8 @@ FocusScope {
         controlsVisible = true
         controlsTimer.restart()
     }
+
+    Component.onCompleted: controlsTimer.start()
 
     function attachPlayerForCurrentRoom(player) {
         if (!player || !root.controller || root.roomId.trim().length === 0) return
@@ -641,13 +645,19 @@ FocusScope {
             }
         }
 
-        MouseArea {
-            anchors.fill: parent
-            hoverEnabled: true
-            acceptedButtons: Qt.NoButton
-            onPositionChanged: root.revealControls()
-            onEntered: root.revealControls()
+    }
+
+    HoverHandler {
+        onHoveredChanged: {
+            if (hovered) root.revealControls()
+            else controlsTimer.restart()
         }
+        onPointChanged: if (hovered) root.revealControls()
+    }
+
+    onMenuOpenChanged: {
+        if (menuOpen) revealControls()
+        else controlsTimer.restart()
     }
 
     onActiveFocusChanged: {

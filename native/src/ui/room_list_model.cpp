@@ -201,8 +201,6 @@ void RoomListModel::applySnapshots(const RoomSnapshots &snapshots)
                 entries_.append({snapshots.at(row), {}});
             }
             endInsertRows();
-            notifyCountChanged();
-            return;
         }
     }
 
@@ -296,6 +294,7 @@ bool RoomListModel::snapshotsEqual(const RoomSnapshot &left, const RoomSnapshot 
 {
     return left.roomId == right.roomId
         && left.isPrimary == right.isPrimary
+        && left.isSecondaryPrimary == right.isSecondaryPrimary
         && left.state == right.state
         && left.requestedQuality == right.requestedQuality
         && left.requestedQualityRate == right.requestedQualityRate

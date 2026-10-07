@@ -30,7 +30,33 @@ private slots:
     void exposesSafeDanmakuPresentationRoles();
     void exposesAvailableQualityOptionsWithoutPlaybackUrl();
     void exposesMultipleGroupMemberships();
+    void updatesSurvivingRowsDuringBatchAppend();
+    void updatesSecondaryPrimaryWithoutOtherChanges();
 };
+
+void RoomListModelTest::updatesSurvivingRowsDuringBatchAppend()
+{
+    RoomListModel model;
+    model.applySnapshots({makeSnapshot("63136", true)});
+    auto first = makeSnapshot("63136", false);
+    first.metadata.anchorName = "Updated";
+    first.liveStatus = RoomLiveStatus::Offline;
+    model.applySnapshots({first, makeSnapshot("63137", true), makeSnapshot("63138", false)});
+    QCOMPARE(model.rowCount(), 3);
+    QCOMPARE(model.data(model.index(0), RoomListModel::AnchorNameRole).toString(), "Updated");
+    QCOMPARE(model.data(model.index(0), RoomListModel::PrimaryRole).toBool(), false);
+    QCOMPARE(model.data(model.index(0), RoomListModel::LiveStateRole).toString(), "offline");
+}
+
+void RoomListModelTest::updatesSecondaryPrimaryWithoutOtherChanges()
+{
+    RoomListModel model;
+    auto room = makeSnapshot("63136", false);
+    model.applySnapshots({room});
+    room.isSecondaryPrimary = true;
+    model.applySnapshots({room});
+    QVERIFY(model.data(model.index(0), RoomListModel::SecondaryPrimaryRole).toBool());
+}
 
 void RoomListModelTest::exposesSafeRoleNames()
 {

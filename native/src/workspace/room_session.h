@@ -4,6 +4,7 @@
 #include <QPointer>
 #include <QString>
 #include <QVariantList>
+#include <QElapsedTimer>
 
 #include <optional>
 
@@ -68,6 +69,7 @@ public:
 
 #ifdef DOUYU_TESTING
     bool hasPendingSourceForTest() const noexcept;
+    friend class RoomSessionTest;
 #endif
 
 signals:
@@ -85,10 +87,16 @@ private slots:
     void onControllerFailed(QString errorCode);
     void onControllerStateChanged(RemotePlaybackController::State state);
     void onSurfacePlaybackFailed();
+    void onSurfaceRemoteStreamEnded();
+    void beginSourcePrefetch();
+    void onPrefetchSourceReady(MediaSource source);
+    void onPrefetchFailed(QString errorCode);
     void recoverPlayback();
 
 private:
     void cancelRecovery();
+    void cancelPrefetch();
+    void schedulePrefetch();
     void scheduleRecovery();
     bool startPendingSource();
     void setState(State state);
@@ -113,8 +121,14 @@ private:
     std::optional<MediaSource> activeSource_;
     QVariantList availableQualities_;
     QTimer *playbackRecoveryTimer_ = nullptr;
+    QTimer *sourcePrefetchTimer_ = nullptr;
+    RemotePlaybackController *prefetchController_ = nullptr;
     int playbackRecoveryAttempts_ = 0;
     bool recoveringPlayback_ = false;
+    std::optional<MediaSource> prefetchedSource_;
+    QElapsedTimer prefetchAge_;
+    int prefetchAttempts_ = 0;
+    bool prefetchScheduled_ = false;
 };
 
 Q_DECLARE_METATYPE(RoomSession::State)

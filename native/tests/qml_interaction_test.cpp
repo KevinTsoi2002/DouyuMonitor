@@ -649,6 +649,10 @@ private slots:
     void truncatesLongRoomTitleBeforeActions();
     void keepsSidebarMetadataClearOfActionsForLongTitles();
     void exposesRoomVolumeAndRefreshControls();
+    void hidesInactiveRoomControlsWithRetainedFocus();
+    void hidesRoomControlsAfterMenuCloses();
+    void keepsControlsVisibleDuringQualityPopupInteraction();
+    void hidesInitiallyVisibleRoomControlsWithoutPointerEntry();
     void switchesRoomQualityByStreamRate();
     void keepsQualityLabelGeometryWhileHoveringSelector();
     void rendersQualityPopupOptions();
@@ -2365,6 +2369,117 @@ void QmlInteractionTest::exposesRoomVolumeAndRefreshControls()
 
     QVERIFY(QMetaObject::invokeMethod(refresh, "clicked"));
     QCOMPARE(controller.refreshedRoom, QStringLiteral("63136"));
+}
+
+void QmlInteractionTest::hidesInactiveRoomControlsWithRetainedFocus()
+{
+    registerQmlTypes();
+    QQmlApplicationEngine engine;
+    QQmlComponent component(&engine, QUrl("qrc:/qml/components/RoomTile.qml"));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    QQuickWindow window;
+    window.resize(640, 480);
+    window.show();
+    auto properties = roomTileProperties("connected");
+    properties["parent"] = QVariant::fromValue(window.contentItem());
+    properties["width"] = 320;
+    properties["height"] = 180;
+    properties["avatarUrl"] = QUrl();
+    std::unique_ptr<QObject> tile(component.createWithInitialProperties(properties));
+    QVERIFY2(tile != nullptr, qPrintable(component.errorString()));
+    auto *timer = tile->findChild<QObject *>("roomControlsTimer");
+    QVERIFY(timer);
+    QCOMPARE(timer->property("interval").toInt(), 2200);
+    timer->setProperty("interval", 100);
+    auto *item = qobject_cast<QQuickItem *>(tile.get());
+    item->forceActiveFocus(Qt::MouseFocusReason);
+    QTRY_VERIFY(item->hasActiveFocus());
+    QVERIFY(QMetaObject::invokeMethod(tile.get(), "revealControls"));
+    QTest::mouseMove(&window, QPoint(500, 350));
+    QTRY_VERIFY_WITH_TIMEOUT(!tile->property("controlsVisible").toBool(), 5000);
+}
+
+void QmlInteractionTest::hidesInitiallyVisibleRoomControlsWithoutPointerEntry()
+{
+    registerQmlTypes();
+    QQmlApplicationEngine engine;
+    QQmlComponent component(&engine, QUrl("qrc:/qml/components/RoomTile.qml"));
+    QVERIFY(component.isReady());
+    QQuickWindow window;
+    window.resize(640, 480);
+    window.show();
+    QTest::mouseMove(&window, QPoint(620, 460));
+    auto properties = roomTileProperties("connected");
+    properties["parent"] = QVariant::fromValue(window.contentItem());
+    properties["width"] = 320;
+    properties["height"] = 180;
+    properties["avatarUrl"] = QUrl();
+    std::unique_ptr<QObject> tile(component.createWithInitialProperties(properties));
+    QVERIFY(tile);
+    auto *timer = tile->findChild<QObject *>("roomControlsTimer");
+    QVERIFY(timer);
+    QCOMPARE(timer->property("interval").toInt(), 2200);
+    timer->setProperty("interval", 100);
+    QTRY_VERIFY_WITH_TIMEOUT(!tile->property("controlsVisible").toBool(), 5000);
+}
+
+void QmlInteractionTest::hidesRoomControlsAfterMenuCloses()
+{
+    registerQmlTypes();
+    QQmlApplicationEngine engine;
+    QQmlComponent component(&engine, QUrl("qrc:/qml/components/RoomTile.qml"));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    QQuickWindow window;
+    window.resize(640, 480);
+    window.show();
+    auto properties = roomTileProperties("connected");
+    properties["parent"] = QVariant::fromValue(window.contentItem());
+    properties["width"] = 320;
+    properties["height"] = 180;
+    properties["avatarUrl"] = QUrl();
+    std::unique_ptr<QObject> tile(component.createWithInitialProperties(properties));
+    QVERIFY2(tile != nullptr, qPrintable(component.errorString()));
+    auto *timer = tile->findChild<QObject *>("roomControlsTimer");
+    QVERIFY(timer);
+    timer->setProperty("interval", 100);
+    tile->setProperty("menuOpen", true);
+    QVERIFY(QMetaObject::invokeMethod(tile.get(), "revealControls"));
+    QTest::qWait(250);
+    QVERIFY(tile->property("controlsVisible").toBool());
+    tile->setProperty("menuOpen", false);
+    QTRY_VERIFY_WITH_TIMEOUT(!tile->property("controlsVisible").toBool(), 5000);
+}
+
+void QmlInteractionTest::keepsControlsVisibleDuringQualityPopupInteraction()
+{
+    registerQmlTypes();
+    QQmlApplicationEngine engine;
+    QQmlComponent component(&engine, QUrl("qrc:/qml/components/RoomTile.qml"));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    QQuickWindow window;
+    window.resize(640, 480);
+    window.show();
+    auto properties = roomTileProperties("connected");
+    properties["parent"] = QVariant::fromValue(window.contentItem());
+    properties["width"] = 640;
+    properties["height"] = 360;
+    properties["avatarUrl"] = QUrl();
+    std::unique_ptr<QObject> tile(component.createWithInitialProperties(properties));
+    QVERIFY(tile);
+    auto *timer = tile->findChild<QObject *>("roomControlsTimer");
+    QVERIFY(timer);
+    timer->setProperty("interval", 100);
+    auto *quality = tile->findChild<QObject *>("roomQualitySelector");
+    QVERIFY(quality);
+    QObject *popup = quality->property("popup").value<QObject *>();
+    QVERIFY(popup);
+    QVERIFY(QMetaObject::invokeMethod(popup, "open"));
+    QVERIFY(QMetaObject::invokeMethod(tile.get(), "revealControls"));
+    QTest::qWait(250);
+    QVERIFY(tile->property("controlsVisible").toBool());
+    QVERIFY(QMetaObject::invokeMethod(popup, "close"));
+    QTest::mouseMove(&window, QPoint(620, 460));
+    QTRY_VERIFY_WITH_TIMEOUT(!tile->property("controlsVisible").toBool(), 5000);
 }
 
 void QmlInteractionTest::switchesRoomQualityByStreamRate()

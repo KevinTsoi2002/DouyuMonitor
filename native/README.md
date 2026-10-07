@@ -106,10 +106,10 @@ native/out/build/windows-x64-release/douyu_monitor_native.exe
 输出文件：
 
 ```text
-native/out/installer/DouyuMonitor-Setup-V0.2.16.exe
+native/out/installer/DouyuMonitor-Setup-V0.2.17.exe
 ```
 
-安装器使用 Inno Setup 6。正式版安装包名为 `DouyuMonitor-Setup-V0.2.16.exe`；24 路全解码测试版使用 `-Version 0.2.16-beta.24` 生成独立文件名。安装时可选择目标目录；选择 `D:\` 等磁盘根目录时会自动归一化到 `D:\DouyuMonitor`。安装完成后创建开始菜单和可选的桌面快捷方式，并登记到 Windows 设置的“已安装的应用”。安装目录中的 `unins000.exe` 是标准卸载入口。运行时载荷校验会拒绝测试程序、构建残留以及 Electron、Chromium、Node、Qt WebEngine 文件。
+安装器使用 Inno Setup 6。正式版安装包名为 `DouyuMonitor-Setup-V0.2.17.exe`；24 路全解码测试版使用 `-Version 0.2.17-beta.24` 生成独立文件名。安装时可选择目标目录；选择 `D:\` 等磁盘根目录时会自动归一化到 `D:\DouyuMonitor`。安装完成后创建开始菜单和可选的桌面快捷方式，并登记到 Windows 设置的“已安装的应用”。安装目录中的 `unins000.exe` 是标准卸载入口。运行时载荷校验会拒绝测试程序、构建残留以及 Electron、Chromium、Node、Qt WebEngine 文件。
 
 安装器脚本回归检查：
 

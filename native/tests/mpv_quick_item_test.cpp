@@ -65,7 +65,79 @@ private slots:
     void observesAdvancingVideoFramesWithoutForcingUpdates();
     void detectsVideoFreezeWhilePlaybackClockStillMoves();
     void propagatesNaturalLiveEofFromMpv();
+    void handsRemoteEofToFreshSourceBeforeFailure();
+    void avoidsFailureAfterSynchronousEofReplacement();
+    void doesNotFailAfterReleaseFromEofObserver();
 };
+
+void MpvQuickItemTest::handsRemoteEofToFreshSourceBeforeFailure()
+{
+    MpvQuickItem item;
+    StreamVariant variant{"auto", "auto", StreamQuality::Auto, "flv",
+                          QUrl("https://unit-test.douyucdn.cn/live.flv")};
+    const auto source = MediaSource::fromRemoteVariant("123", variant);
+    QVERIFY(source);
+    QVERIFY(item.loadSource(*source));
+    item.activePlaylistEntryId_ = 101;
+    QSignalSpy endings(&item, SIGNAL(remoteStreamEnded()));
+    QVERIFY(endings.isValid());
+    QSignalSpy failures(&item, &MpvQuickItem::playbackFailed);
+    mpv_event_end_file ended{};
+    ended.reason = MPV_END_FILE_REASON_EOF;
+    ended.playlist_entry_id = 101;
+    mpv_event event{};
+    event.event_id = MPV_EVENT_END_FILE;
+    event.data = &ended;
+    item.handleMpvEvent(&event);
+    QCOMPARE(endings.count(), 1);
+    QCOMPARE(failures.count(), 1); // No replacement observer has supplied a source.
+}
+
+void MpvQuickItemTest::avoidsFailureAfterSynchronousEofReplacement()
+{
+    MpvQuickItem item;
+    StreamVariant variant{"auto", "auto", StreamQuality::Auto, "flv",
+                          QUrl("https://unit-test.douyucdn.cn/live.flv")};
+    const auto source = MediaSource::fromRemoteVariant("123", variant);
+    QVERIFY(source);
+    QVERIFY(item.loadSource(*source));
+    item.activePlaylistEntryId_ = 101;
+    QObject::connect(&item, &MpvQuickItem::remoteStreamEnded, &item, [&] {
+        QVERIFY(item.loadSource(*source));
+    });
+    QSignalSpy failures(&item, &MpvQuickItem::playbackFailed);
+    mpv_event_end_file ended{};
+    ended.reason = MPV_END_FILE_REASON_EOF;
+    ended.playlist_entry_id = 101;
+    mpv_event event{};
+    event.event_id = MPV_EVENT_END_FILE;
+    event.data = &ended;
+    item.handleMpvEvent(&event);
+    QCOMPARE(failures.count(), 0);
+    QCOMPARE(item.playbackState(), MpvQuickItem::PlaybackState::Loading);
+}
+
+void MpvQuickItemTest::doesNotFailAfterReleaseFromEofObserver()
+{
+    MpvQuickItem item;
+    StreamVariant variant{"auto", "auto", StreamQuality::Auto, "flv",
+                          QUrl("https://unit-test.douyucdn.cn/live.flv")};
+    const auto source = MediaSource::fromRemoteVariant("123", variant);
+    QVERIFY(source);
+    QVERIFY(item.loadSource(*source));
+    item.activePlaylistEntryId_ = 101;
+    QObject::connect(&item, &MpvQuickItem::remoteStreamEnded, &item, [&] { item.release(); });
+    QSignalSpy failures(&item, &MpvQuickItem::playbackFailed);
+    mpv_event_end_file ended{};
+    ended.reason = MPV_END_FILE_REASON_EOF;
+    ended.playlist_entry_id = 101;
+    mpv_event event{};
+    event.event_id = MPV_EVENT_END_FILE;
+    event.data = &ended;
+    item.handleMpvEvent(&event);
+    QCOMPARE(failures.count(), 0);
+    QCOMPARE(item.playbackState(), MpvQuickItem::PlaybackState::Idle);
+}
 
 void MpvQuickItemTest::detectsProgressDeadlineWithoutBlockingOrDuplicateRequests()
 {

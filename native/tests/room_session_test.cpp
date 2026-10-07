@@ -1,5 +1,8 @@
 #include <QSignalSpy>
 #include <QTimer>
+#include <QQuickWindow>
+#include <QSGRendererInterface>
+#include <QImage>
 #include <QtTest/QtTest>
 
 #include "service/streamget_process_client.h"
@@ -45,7 +48,189 @@ private slots:
     void boundsConsecutiveRecoveryAndResetsOnManualResolve();
     void retriesResolutionFailureDuringRecovery();
     void doesNotRecoverLocalPlayerFailure();
+    void schedulesSourcePrefetchAfterPlaybackProgress();
+    void isolatesPrefetchFailureAndCancelsOnStop();
+    void prefetchesWithoutChangingActivePlaybackOrQuality();
+    void boundsPrefetchRetriesAndInvalidatesOnQualityChange();
+    void rejectsLatePrefetchAfterOfflineAndDetach();
+    void sustainsLivePlaybackAcrossTwoSourceRotations();
 };
+
+void RoomSessionTest::prefetchesWithoutChangingActivePlaybackOrQuality()
+{
+    StreamgetProcessClient client(fakeServicePath());
+    RoomSession session(&client, "63136", StreamQuality::High, nullptr, {}, 8);
+    MpvQuickItem player;
+    QVERIFY(session.attachPlayer(&player));
+    QVERIFY(session.resolve());
+    QTRY_VERIFY(session.hasPendingSourceForTest());
+    session.activeSource_ = session.pendingSource_;
+    session.pendingSource_.reset();
+    session.setState(RoomSession::State::Ready);
+    session.setPlaybackHealth(RoomPlaybackHealth::Playing);
+    player.playbackProgress();
+    auto *timer = session.findChild<QTimer *>("sourcePrefetchTimer");
+    QVERIFY(timer->isActive());
+    const int delay = timer->remainingTime();
+    player.playbackProgress();
+    QVERIFY(timer->remainingTime() <= delay);
+    QSignalSpy states(&session, &RoomSession::stateChanged);
+    QSignalSpy failures(&session, &RoomSession::failed);
+    timer->start(1);
+    QTRY_VERIFY(session.prefetchedSource_.has_value());
+    QCOMPARE(session.state(), RoomSession::State::Ready);
+    QCOMPARE(session.playbackHealth(), RoomPlaybackHealth::Playing);
+    QCOMPARE(states.count(), 0);
+    QCOMPARE(failures.count(), 0);
+    QCOMPARE(session.effectiveQuality(), StreamQuality::High);
+    QCOMPARE(session.effectiveQualityRate(), 8);
+    QVERIFY(session.activeSource_);
+    session.stop();
+    QVERIFY(!session.prefetchedSource_);
+    client.shutdown();
+}
+
+void RoomSessionTest::boundsPrefetchRetriesAndInvalidatesOnQualityChange()
+{
+    StreamgetProcessClient client(fakeServicePath());
+    RoomSession session(&client, "63136", StreamQuality::High, nullptr, {}, 8);
+    MpvQuickItem player;
+    QVERIFY(session.attachPlayer(&player));
+    StreamVariant variant{"auto", "auto", StreamQuality::Auto, "flv",
+                          QUrl("https://unit-test.douyucdn.cn/live.flv")};
+    session.activeSource_ = MediaSource::fromRemoteVariant("63136", variant);
+    session.setState(RoomSession::State::Ready);
+    session.prefetchAttempts_ = 3;
+    session.onPrefetchFailed("TIMEOUT");
+    QVERIFY(!session.sourcePrefetchTimer_->isActive());
+    session.prefetchedSource_ = session.activeSource_;
+    session.prefetchAge_.start();
+    QVERIFY(session.setEffectiveQualityRate(4));
+    QVERIFY(!session.prefetchedSource_);
+    QCOMPARE(session.prefetchController_->state(), RemotePlaybackController::State::Idle);
+    QVERIFY(!session.sourcePrefetchTimer_->isActive());
+    session.stop();
+    client.shutdown();
+}
+
+void RoomSessionTest::rejectsLatePrefetchAfterOfflineAndDetach()
+{
+    StreamgetProcessClient client(fakeServicePath(), {"--delay-ms", "150", "--ignore-cancel"});
+    RoomSession session(&client, "63136", StreamQuality::Auto);
+    MpvQuickItem player;
+    QVERIFY(session.attachPlayer(&player));
+    QVERIFY(session.resolve());
+    QTRY_VERIFY(session.hasPendingSourceForTest());
+    session.activeSource_ = session.pendingSource_;
+    session.pendingSource_.reset();
+    session.setState(RoomSession::State::Ready);
+    session.beginSourcePrefetch();
+    session.setLiveStatus(RoomLiveStatus::Offline);
+    QTest::qWait(250);
+    QVERIFY(!session.prefetchedSource_);
+    session.setLiveStatus(RoomLiveStatus::Online);
+    session.beginSourcePrefetch();
+    session.detachPlayer(&player);
+    QTest::qWait(250);
+    QVERIFY(!session.prefetchedSource_);
+    QVERIFY(!session.sourcePrefetchTimer_->isActive());
+    client.shutdown();
+}
+
+void RoomSessionTest::sustainsLivePlaybackAcrossTwoSourceRotations()
+{
+    const QString service = qEnvironmentVariable("DOUYU_LIVE_VERIFY_SERVICE");
+    if (service.isEmpty()) QSKIP("Set DOUYU_LIVE_VERIFY_SERVICE for opt-in real-network verification.");
+    StreamgetProcessClient client(service);
+    RoomSession session(&client, "217331", StreamQuality::Auto);
+    QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
+    QQuickWindow window;
+    window.resize(640, 360);
+    auto *player = new MpvQuickItem(window.contentItem());
+    player->setSize(QSizeF(640, 360));
+    QVERIFY(session.attachPlayer(player));
+    QVERIFY(session.setVolume(37));
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    QTRY_VERIFY_WITH_TIMEOUT(player->isRenderContextReady(), 10000);
+    QSignalSpy endings(player, &MpvQuickItem::remoteStreamEnded);
+    QSignalSpy failures(&session, &RoomSession::failed);
+    QSignalSpy progress(player, &MpvQuickItem::playbackProgress);
+    QVERIFY(session.resolve());
+    QTRY_VERIFY_WITH_TIMEOUT(player->isFirstFrameRendered(), 30000);
+    QElapsedTimer elapsed;
+    elapsed.start();
+    int previousEndings = 0;
+    qint64 lastRotationAt = 0;
+    int framesAfterRotation = 0;
+    while (elapsed.elapsed() < 670'000) {
+        QTest::qWait(1000);
+        QVERIFY2(failures.isEmpty(), "Real stream entered delayed error recovery.");
+        QVERIFY(session.state() == RoomSession::State::Ready);
+        if (endings.count() != previousEndings) {
+            previousEndings = endings.count();
+            lastRotationAt = elapsed.elapsed();
+            framesAfterRotation = 0;
+            qInfo() << "live source rotation" << previousEndings << "elapsedMs" << lastRotationAt;
+        }
+        const QImage frame = window.grabWindow();
+        QVERIFY(!frame.isNull());
+        int lit = 0;
+        for (int y = 0; y < frame.height(); y += 24) {
+            for (int x = 0; x < frame.width(); x += 24) {
+                const QColor pixel = frame.pixelColor(x, y);
+                if (pixel.red() + pixel.green() + pixel.blue() > 45) ++lit;
+            }
+        }
+        if (previousEndings > 0 && lit > 20 && player->isFirstFrameRendered()) ++framesAfterRotation;
+        if (previousEndings >= 2 && elapsed.elapsed() - lastRotationAt > 12000) break;
+    }
+    QVERIFY(endings.count() >= 2);
+    QVERIFY(framesAfterRotation >= 5);
+    QVERIFY(progress.count() > 150);
+    QCOMPARE(player->volume(), 37);
+    QVERIFY(player->isMuted());
+    session.stop();
+    client.shutdown();
+}
+
+void RoomSessionTest::schedulesSourcePrefetchAfterPlaybackProgress()
+{
+    StreamgetProcessClient client(fakeServicePath());
+    RoomSession session(&client, "63136", StreamQuality::High, nullptr, {}, 8);
+    MpvQuickItem player;
+    QVERIFY(session.attachPlayer(&player));
+    QVERIFY(session.resolve());
+    QTRY_VERIFY(session.hasPendingSourceForTest());
+    player.playbackProgress();
+    auto *timer = session.findChild<QTimer *>("sourcePrefetchTimer");
+    QVERIFY(timer);
+    QVERIFY(!timer->isActive()); // No renderer has started this source yet.
+    session.stop();
+    QVERIFY(!timer->isActive());
+    client.shutdown();
+}
+
+void RoomSessionTest::isolatesPrefetchFailureAndCancelsOnStop()
+{
+    StreamgetProcessClient client(fakeServicePath());
+    RoomSession session(&client, "63136", StreamQuality::High, nullptr, {}, 8);
+    MpvQuickItem player;
+    QVERIFY(session.attachPlayer(&player));
+    QVERIFY(session.resolve());
+    QTRY_VERIFY(session.hasPendingSourceForTest());
+    const auto previousState = session.state();
+    QSignalSpy failures(&session, &RoomSession::failed);
+    QVERIFY(QMetaObject::invokeMethod(&session, "onPrefetchFailed", Qt::DirectConnection,
+                                      Q_ARG(QString, QStringLiteral("TIMEOUT"))));
+    QCOMPARE(session.state(), previousState);
+    QCOMPARE(failures.count(), 0);
+    session.stop();
+    auto *timer = session.findChild<QTimer *>("sourcePrefetchTimer");
+    QVERIFY(timer);
+    QVERIFY(!timer->isActive());
+    client.shutdown();
+}
 
 void RoomSessionTest::boundsConsecutiveRecoveryAndResetsOnManualResolve()
 {
@@ -443,6 +628,6 @@ void RoomSessionTest::mapsControllerErrorsWithoutRawDiagnostics()
     client.shutdown();
 }
 
-QTEST_GUILESS_MAIN(RoomSessionTest)
+QTEST_MAIN(RoomSessionTest)
 
 #include "room_session_test.moc"

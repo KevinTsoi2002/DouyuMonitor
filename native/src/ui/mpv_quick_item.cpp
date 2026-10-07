@@ -779,6 +779,16 @@ void MpvQuickItem::handleMpvEvent(const mpv_event *event)
                  || endFile->reason == MPV_END_FILE_REASON_ERROR))
             || (endFile->error < 0
                 && renderState_->playbackState.load() != PlaybackState::Ended)) {
+            if (remotePlayback_) {
+                const quint64 nextRequestBeforeHandover = nextLoadRequestId_;
+                emit remoteStreamEnded();
+                if (!remotePlayback_ || playbackState() == PlaybackState::Idle
+                    || playbackState() == PlaybackState::Ended) return;
+                // RoomSession may synchronously install a prefetched source from
+                // the signal. In that case the original end event is retired.
+                if (nextLoadRequestId_ != nextRequestBeforeHandover
+                    && pendingLoadRequestId_ != 0) return;
+            }
             setAsyncPlaybackError(QStringLiteral("PLAYBACK_FAILED"));
         } else {
             renderState_->playbackState.store(PlaybackState::Ended);

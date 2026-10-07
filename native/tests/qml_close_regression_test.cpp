@@ -304,6 +304,27 @@ void QmlCloseRegressionTest::appliesPresetAndRefreshesAllRoomDelegates()
     QTRY_COMPARE_WITH_TIMEOUT(roomItemModel->rowCount(), 5, 5000);
     QTRY_COMPARE_WITH_TIMEOUT(roomList->property("count").toInt(), 5, 5000);
 
+    for (int index = 0; index < 5; ++index) {
+        QQuickItem *row = nullptr;
+        QTRY_VERIFY_WITH_TIMEOUT(QMetaObject::invokeMethod(roomList, "itemAtIndex",
+            Q_RETURN_ARG(QQuickItem *, row), Q_ARG(int, index)) && row, 5000);
+        QCOMPARE(row->property("roomId").toString(), QString::number(63136 + index));
+    }
+    QCOMPARE(controller.setPrimaryRoom("63140"), QString());
+    QCOMPARE(controller.removeRoom("63138"), QString());
+    QCOMPARE(controller.removeRoom("63139"), QString());
+    QCOMPARE(controller.applyWorkspacePreset("p1"), QString());
+    QTRY_COMPARE_WITH_TIMEOUT(roomList->property("count").toInt(), 5, 5000);
+    QQuickItem *firstRow = nullptr;
+    QTRY_VERIFY_WITH_TIMEOUT(QMetaObject::invokeMethod(roomList, "itemAtIndex",
+        Q_RETURN_ARG(QQuickItem *, firstRow), Q_ARG(int, 0)) && firstRow, 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(firstRow->property("primary").toBool(), 5000);
+    for (const QVariant &value : sidebar->property("libraryRooms").toList()) {
+        const QVariantMap entry = value.toMap();
+        QVERIFY(entry.value("active").toBool());
+        QVERIFY(entry.value("lastOpenedAtMs").toLongLong() > 0);
+    }
+
     controller.closeToTray();
     QTRY_VERIFY_WITH_TIMEOUT(!window->isVisible(), 5000);
     QVERIFY(controller.serviceProcessRunningForTest());

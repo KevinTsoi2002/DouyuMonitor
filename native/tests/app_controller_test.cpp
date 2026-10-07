@@ -955,6 +955,11 @@ void AppControllerTest::restoresPresetRoomsMissingFromLibrary()
     QCOMPARE(controller.workspace()->presets().size(), 1);
     QCOMPARE(controller.applyWorkspacePreset(QStringLiteral("p1")), QString());
     QCOMPARE(controller.rooms()->rowCount(), 5);
+    for (const QVariant &value : controller.libraryRooms()) {
+        const auto entry = value.toMap();
+        QVERIFY(entry.value("active").toBool());
+        QVERIFY(entry.value("lastOpenedAtMs").toLongLong() > 0);
+    }
     QCOMPARE(controller.workspace()->primaryRoomId(), QStringLiteral("63136"));
     QCOMPARE(controller.rooms()->data(controller.rooms()->index(4, 0), RoomListModel::RoomIdRole).toString(),
              QStringLiteral("63140"));
