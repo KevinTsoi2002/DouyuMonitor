@@ -1,5 +1,6 @@
 #include <QQmlApplicationEngine>
 #include <QQmlComponent>
+#include <QQmlProperty>
 #include <QQuickWindow>
 #include <QQuickItem>
 #include <QPointF>
@@ -635,6 +636,9 @@ private slots:
     void closesToastFromQml();
     void autoDismissesToastBySeverity();
     void usesFramelessWindowWithTitleBarInteractions();
+    void keepsTaskbarMinimizeCapabilityForFramelessWindow();
+    void updatesMaximizeIconWithWindowState();
+    void doubleClicksOnlyRoomPictureForFullscreen();
     void doesNotExposeGroupManagementControls();
     void rendersAndAddsSearchCandidate();
     void exposesSupportedLayoutOptions();
@@ -1866,6 +1870,131 @@ void QmlInteractionTest::usesFramelessWindowWithTitleBarInteractions()
 
     QVERIFY(window->flags().testFlag(Qt::FramelessWindowHint));
     QVERIFY(window->findChild<QObject *>(QStringLiteral("titleBarDragArea")) != nullptr);
+}
+
+void QmlInteractionTest::keepsTaskbarMinimizeCapabilityForFramelessWindow()
+{
+    QQmlApplicationEngine engine;
+    QQuickWindow *window = loadWindow(engine);
+    QVERIFY(window != nullptr);
+
+    QVERIFY(window->flags().testFlag(Qt::FramelessWindowHint));
+    QVERIFY2(window->flags().testFlag(Qt::WindowMinimizeButtonHint),
+             "frameless window must retain the native minimize capability used by the taskbar");
+}
+
+void QmlInteractionTest::doubleClicksOnlyRoomPictureForFullscreen()
+{
+    registerQmlTypes();
+    QQmlApplicationEngine engine;
+    QQmlComponent component(&engine, QUrl("qrc:/qml/components/RoomTile.qml"));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    QQuickWindow window;
+    window.resize(800, 600);
+    window.show();
+    auto properties = roomTileProperties("idle");
+    properties["parent"] = QVariant::fromValue(window.contentItem());
+    properties["width"] = 640;
+    properties["height"] = 400;
+    properties["avatarUrl"] = QUrl();
+    std::unique_ptr<QObject> tile(component.createWithInitialProperties(properties));
+    QVERIFY2(tile != nullptr, qPrintable(component.errorString()));
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    QSignalSpy fullscreen(tile.get(), SIGNAL(fullScreenToggleRequested()));
+    QVERIFY(fullscreen.isValid());
+    const QPoint pictureCenter(320, 200);
+    QTest::mouseClick(&window, Qt::LeftButton, Qt::NoModifier, pictureCenter);
+    QCOMPARE(fullscreen.count(), 0);
+    QTest::mouseDClick(&window, Qt::RightButton, Qt::NoModifier, pictureCenter);
+    QCOMPARE(fullscreen.count(), 0);
+    QTest::mouseDClick(&window, Qt::LeftButton, Qt::NoModifier, pictureCenter);
+    QCOMPARE(fullscreen.count(), 1);
+
+    for (const QString &name : {QStringLiteral("roomVolumeSlider"),
+                                QStringLiteral("roomQualitySelector"),
+                                QStringLiteral("roomTopActions")}) {
+        QVERIFY(QMetaObject::invokeMethod(tile.get(), "revealControls"));
+        QQuickItem *control = tile->findChild<QQuickItem *>(name);
+        QVERIFY(control != nullptr);
+        const QPoint position = control->mapToScene(
+            QPointF(control->width() / 2, control->height() / 2)).toPoint();
+        QTest::mouseDClick(&window, Qt::LeftButton, Qt::NoModifier, position);
+        QCOMPARE(fullscreen.count(), 1);
+        QObject *popup = tile->findChild<QObject *>(QStringLiteral("roomQualityPopup"));
+        QVERIFY(popup != nullptr);
+        QVERIFY(QMetaObject::invokeMethod(popup, "close"));
+        tile->setProperty("menuOpen", false);
+    }
+    tile->setProperty("menuOpen", true);
+    QTest::mouseDClick(&window, Qt::LeftButton, Qt::NoModifier, pictureCenter);
+    QCOMPARE(fullscreen.count(), 1);
+    tile->setProperty("menuOpen", false);
+    QObject *popup = tile->findChild<QObject *>(QStringLiteral("roomQualityPopup"));
+    QVERIFY(popup != nullptr);
+    QVERIFY(QMetaObject::invokeMethod(popup, "open"));
+    QTRY_VERIFY(popup->property("visible").toBool());
+    QTest::mouseDClick(&window, Qt::LeftButton, Qt::NoModifier, pictureCenter);
+    QCOMPARE(fullscreen.count(), 1);
+}
+
+void QmlInteractionTest::updatesMaximizeIconWithWindowState()
+{
+    QQmlApplicationEngine engine;
+    QQuickWindow *window = loadWindow(engine);
+    QVERIFY(window != nullptr);
+    QObject *button = window->findChild<QObject *>(QStringLiteral("maximizeButton"));
+    QObject *icon = window->findChild<QObject *>(QStringLiteral("maximizeIcon"));
+    QVERIFY(button != nullptr);
+    QVERIFY(icon != nullptr);
+    const QSizeF buttonSize(button->property("width").toReal(),
+                            button->property("height").toReal());
+    const QSizeF iconSize(icon->property("width").toReal(),
+                          icon->property("height").toReal());
+
+    for (int cycle = 0; cycle < 3; ++cycle) {
+        window->showMaximized();
+        QTRY_COMPARE(window->visibility(), QWindow::Maximized);
+        QTRY_VERIFY(icon->property("source").toUrl().path().endsWith(
+            QStringLiteral("window-restore.svg")));
+        QCOMPARE(button->property("accessibilityLabel").toString(), QStringLiteral("还原窗口"));
+        QCOMPARE(QQmlProperty::read(button, "Accessible.name", qmlContext(button)).toString(), QStringLiteral("还原窗口"));
+        QCOMPARE(QQmlProperty::read(button, "ToolTip.text", qmlContext(button)).toString(), QStringLiteral("还原窗口"));
+        QTRY_COMPARE(icon->property("status").toInt(), 1);
+        QCOMPARE(QSizeF(button->property("width").toReal(),
+                        button->property("height").toReal()), buttonSize);
+        QCOMPARE(QSizeF(icon->property("width").toReal(),
+                        icon->property("height").toReal()), iconSize);
+        if (cycle == 0 && qEnvironmentVariableIsSet("DOUYU_WINDOW_CONTROLS_CAPTURE_DIR")) {
+            QVERIFY(QTest::qWaitForWindowExposed(window));
+            const QImage capture = window->grabWindow();
+            QVERIFY(!capture.isNull());
+            const QString directory = qEnvironmentVariable("DOUYU_WINDOW_CONTROLS_CAPTURE_DIR");
+            QVERIFY(QDir().mkpath(directory));
+            QVERIFY(capture.copy(capture.width() - 150, 0, 150, 50).save(
+                QDir(directory).filePath(QStringLiteral("maximized.png"))));
+        }
+
+        window->showNormal();
+        QTRY_COMPARE(window->visibility(), QWindow::Windowed);
+        QTRY_VERIFY(icon->property("source").toUrl().path().endsWith(
+            QStringLiteral("window-maximize.svg")));
+        QCOMPARE(button->property("accessibilityLabel").toString(), QStringLiteral("最大化窗口"));
+        QCOMPARE(QQmlProperty::read(button, "Accessible.name", qmlContext(button)).toString(), QStringLiteral("最大化窗口"));
+        QCOMPARE(QQmlProperty::read(button, "ToolTip.text", qmlContext(button)).toString(), QStringLiteral("最大化窗口"));
+        QTRY_COMPARE(icon->property("status").toInt(), 1);
+        QCOMPARE(QSizeF(button->property("width").toReal(),
+                        button->property("height").toReal()), buttonSize);
+        QCOMPARE(QSizeF(icon->property("width").toReal(),
+                        icon->property("height").toReal()), iconSize);
+        if (cycle == 0 && qEnvironmentVariableIsSet("DOUYU_WINDOW_CONTROLS_CAPTURE_DIR")) {
+            QVERIFY(QTest::qWaitForWindowExposed(window));
+            const QImage capture = window->grabWindow();
+            QVERIFY(!capture.isNull());
+            QVERIFY(capture.copy(capture.width() - 150, 0, 150, 50).save(
+                QDir(qEnvironmentVariable("DOUYU_WINDOW_CONTROLS_CAPTURE_DIR"))
+                    .filePath(QStringLiteral("normal.png"))));
+        }
+    }
 }
 
 void QmlInteractionTest::doesNotExposeGroupManagementControls()

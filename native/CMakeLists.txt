@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(DouyuMonitorNative VERSION 0.2.17 LANGUAGES CXX)
+project(DouyuMonitorNative VERSION 0.2.18 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -77,6 +77,7 @@ set(DOUYU_QML_ICON_ASSETS
     app/qml/assets/icons/volume-2.svg
     app/qml/assets/icons/x.svg
     app/qml/assets/icons/window-maximize.svg
+    app/qml/assets/icons/window-restore.svg
     app/qml/assets/icons/window-fullscreen.svg
     app/qml/assets/icons/window-minimize.svg
     app/qml/assets/icons/window-close.svg

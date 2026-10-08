@@ -34,6 +34,7 @@ FocusScope {
     required property int index
     required property var availableQualities
     property var controller: null
+    signal fullScreenToggleRequested()
     property color borderColor: Theme.border
     property color accentColor: Theme.accent
     property color textColor: Theme.text
@@ -74,6 +75,12 @@ FocusScope {
         case "standard": return 4
         default: return 0
         }
+    }
+
+    Timer {
+        id: pictureDoubleClickGuard
+        interval: Qt.styleHints.mouseDoubleClickInterval
+        repeat: false
     }
 
     Timer {
@@ -392,6 +399,7 @@ FocusScope {
 
         Rectangle {
             id: bottomBar
+            objectName: "roomBottomBar"
             anchors.bottom: parent.bottom
             anchors.left: parent.left
             anchors.right: parent.right
@@ -594,6 +602,7 @@ FocusScope {
                     }
                     popup: Popup {
                         objectName: "roomQualityPopup"
+                        onClosed: pictureDoubleClickGuard.restart()
                         y: qualityBox.height + 2
                         width: Math.max(qualityBox.width, Math.min(150, qualityBox.implicitContentWidth + 30))
                         implicitHeight: contentItem.implicitHeight
@@ -647,6 +656,17 @@ FocusScope {
 
     }
 
+    MouseArea {
+        objectName: "roomPictureDoubleClickArea"
+        anchors.fill: parent
+        anchors.topMargin: topBar.height
+        anchors.bottomMargin: bottomBar.visible ? bottomBar.height : 0
+        enabled: !root.menuOpen && !qualityBox.popup.visible
+                 && !pictureDoubleClickGuard.running
+        acceptedButtons: Qt.LeftButton
+        onDoubleClicked: root.fullScreenToggleRequested()
+    }
+
     HoverHandler {
         onHoveredChanged: {
             if (hovered) root.revealControls()
@@ -657,7 +677,10 @@ FocusScope {
 
     onMenuOpenChanged: {
         if (menuOpen) revealControls()
-        else controlsTimer.restart()
+        else {
+            controlsTimer.restart()
+            pictureDoubleClickGuard.restart()
+        }
     }
 
     onActiveFocusChanged: {

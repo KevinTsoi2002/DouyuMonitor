@@ -1527,6 +1527,19 @@ void AppController::restoreFromMinimized()
 void AppController::toggleMaximizedWindow()
 {
     if (mainWindow_.isNull()) return;
+
+    // A fullscreen QWindow cannot reliably transition to maximized with a
+    // single showMaximized() call on Windows. Leave fullscreen first, then
+    // apply the requested maximized state so the next click can restore it.
+    if (mainWindow_->visibility() == QWindow::FullScreen) {
+        exitFullScreen();
+        if (!mainWindow_.isNull()
+            && mainWindow_->visibility() != QWindow::Maximized) {
+            mainWindow_->showMaximized();
+        }
+        return;
+    }
+
     if (mainWindow_->visibility() == QWindow::Maximized) {
         mainWindow_->showNormal();
     } else {

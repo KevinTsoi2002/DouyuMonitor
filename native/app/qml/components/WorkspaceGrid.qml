@@ -6,6 +6,7 @@ Item {
     id: root
 
     property var controller: null
+    signal fullScreenToggleRequested()
     property var roomModel: null
     property string layoutMode: "auto"
     property string primaryRoomId: ""
@@ -215,6 +216,7 @@ Item {
                 width: tileGeometry.width
                 height: tileGeometry.height
                 controller: root.controller
+                onFullScreenToggleRequested: root.fullScreenToggleRequested()
                 secondaryPrimary: roomId === root.secondaryPrimaryRoomId
                 borderColor: root.borderColor
                 accentColor: root.accentColor

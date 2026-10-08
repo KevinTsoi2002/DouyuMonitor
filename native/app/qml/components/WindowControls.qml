@@ -6,6 +6,7 @@ Row {
     id: root
 
     property var controller: null
+    readonly property bool maximized: root.Window.visibility === Window.Maximized
     signal closeRequested()
     height: Theme.controlHeight
 
@@ -28,12 +29,22 @@ Row {
         objectName: "maximizeButton"
         width: Theme.controlHeight
         height: Theme.controlHeight
-        property string accessibilityLabel: "最大化窗口"
+        property string accessibilityLabel: root.maximized ? qsTr("还原窗口") : qsTr("最大化窗口")
         Accessible.name: accessibilityLabel
         ToolTip.visible: hovered
         ToolTip.text: Accessible.name
         onClicked: if (root.controller) root.controller.toggleMaximizedWindow()
-        contentItem: Image { objectName: "maximizeIcon"; anchors.centerIn: parent; width: 15; height: 15; source: Qt.resolvedUrl("../assets/icons/window-maximize.svg"); opacity: parent.hovered ? 1 : 0.82 }
+        contentItem: Image {
+            objectName: "maximizeIcon"
+            anchors.centerIn: parent
+            width: 15
+            height: 15
+            sourceSize: Qt.size(15, 15)
+            source: root.maximized
+                    ? Qt.resolvedUrl("../assets/icons/window-restore.svg")
+                    : Qt.resolvedUrl("../assets/icons/window-maximize.svg")
+            opacity: parent.hovered ? 1 : 0.82
+        }
         background: Rectangle {
             radius: Theme.radiusSmall
             color: parent.down ? Theme.well : (parent.hovered ? Theme.controlSurface : "transparent")

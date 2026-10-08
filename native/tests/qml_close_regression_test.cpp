@@ -11,6 +11,10 @@
 
 #include <memory>
 
+#ifdef Q_OS_WIN
+#include <qt_windows.h>
+#endif
+
 #include "ui/app_controller.h"
 #include "ui/mpv_quick_item.h"
 #include "workspace/room_capacity.h"
@@ -91,7 +95,165 @@ private slots:
     void appliesPresetAndRefreshesAllRoomDelegates();
     void closeDialogHasNonOverlappingRememberRow();
     void cancelCloseDialogLeavesControllerStateUnchanged();
+    void nativeMinimizeRestoreKeepsControllerInSync();
+    void doubleClicksRoomPictureToToggleFullscreen();
+    void maximizesAndRestoresAfterFullscreen();
 };
+
+void QmlCloseRegressionTest::doubleClicksRoomPictureToToggleFullscreen()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSettings settings(directory.filePath(QStringLiteral("workspace.ini")), QSettings::IniFormat);
+    AppController controller(fakeServicePath(), &settings);
+    QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
+    QQmlApplicationEngine engine;
+    QQuickWindow *window = loadWindowWithFakeRooms(engine, controller, 2);
+    QVERIFY(window != nullptr);
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+    QQuickItem *surface = window->findChild<QQuickItem *>(QStringLiteral("layoutSurface"));
+    QVERIFY(surface != nullptr);
+    const auto tiles = [surface] {
+        QList<QQuickItem *> result;
+        for (QQuickItem *child : surface->childItems()) {
+            if (child->property("roomId").isValid()) result.append(child);
+        }
+        return result;
+    };
+    QTRY_COMPARE(tiles().size(), 2);
+    const QString layout = controller.workspace()->layoutMode();
+    const QString primaryRoom = controller.workspace()->primaryRoomId();
+    const auto doubleClickPicture = [window](QQuickItem *tile) {
+        const QPoint position = tile->mapToScene(
+            QPointF(tile->width() / 2, tile->height() / 2)).toPoint();
+        QTest::mouseDClick(window, Qt::LeftButton, Qt::NoModifier, position);
+    };
+
+    for (QWindow::Visibility initial : {QWindow::Windowed, QWindow::Maximized}) {
+        if (initial == QWindow::Maximized) window->showMaximized();
+        else window->showNormal();
+        QTRY_COMPARE(window->visibility(), initial);
+        doubleClickPicture(tiles().at(0));
+        QTRY_COMPARE(window->visibility(), QWindow::FullScreen);
+        doubleClickPicture(tiles().at(1));
+        QTRY_COMPARE(window->visibility(), initial);
+        doubleClickPicture(tiles().at(1));
+        QTRY_COMPARE(window->visibility(), QWindow::FullScreen);
+        window->requestActivate();
+        QTRY_VERIFY(window->isActive());
+        QTest::keyClick(window, Qt::Key_Escape);
+        QTRY_COMPARE(window->visibility(), initial);
+        QCOMPARE(controller.rooms()->rowCount(), 2);
+        QCOMPARE(controller.workspace()->layoutMode(), layout);
+        QCOMPARE(controller.workspace()->primaryRoomId(), primaryRoom);
+        QVERIFY(!controller.backgroundHosted());
+        QVERIFY(!controller.windowMinimized());
+    }
+    window->showNormal();
+    QTRY_COMPARE(window->visibility(), QWindow::Windowed);
+    QSignalSpy restoredFrame(window, &QQuickWindow::frameSwapped);
+    window->update();
+    QVERIFY(restoredFrame.wait(2000));
+    QQuickItem *tile = tiles().at(0);
+    QQuickItem *pictureArea = tile->findChild<QQuickItem *>(
+        QStringLiteral("roomPictureDoubleClickArea"));
+    QVERIFY(pictureArea != nullptr);
+    QCOMPARE(pictureArea->property("acceptedButtons").value<Qt::MouseButtons>(),
+             Qt::LeftButton);
+    QQuickItem *topBar = tile->findChild<QQuickItem *>(QStringLiteral("roomTopBar"));
+    QQuickItem *bottomBar = tile->findChild<QQuickItem *>(QStringLiteral("roomBottomBar"));
+    QVERIFY(topBar != nullptr);
+    QVERIFY(bottomBar != nullptr);
+    const QRectF pictureRect = pictureArea->mapRectToItem(
+        tile, QRectF(0, 0, pictureArea->width(), pictureArea->height()));
+    const QRectF topBarRect = topBar->mapRectToItem(
+        tile, QRectF(0, 0, topBar->width(), topBar->height()));
+    const QRectF bottomBarRect = bottomBar->mapRectToItem(
+        tile, QRectF(0, 0, bottomBar->width(), bottomBar->height()));
+    QVERIFY(!pictureRect.intersects(topBarRect));
+    QVERIFY(!pictureRect.intersects(bottomBarRect));
+
+    for (const QString &name : {QStringLiteral("roomVolumeSlider"),
+                                QStringLiteral("roomQualitySelector"),
+                                QStringLiteral("roomTopActions")}) {
+        QQuickItem *control = tile->findChild<QQuickItem *>(name);
+        QVERIFY(control != nullptr);
+        const QRectF controlRect = control->mapRectToItem(
+            tile, QRectF(0, 0, control->width(), control->height()));
+        QVERIFY(!pictureRect.intersects(controlRect));
+    }
+    QTRY_VERIFY(pictureArea->property("enabled").toBool());
+    tile->setProperty("menuOpen", true);
+    QTRY_VERIFY(!pictureArea->property("enabled").toBool());
+    tile->setProperty("menuOpen", false);
+    QObject *popup = tile->findChild<QObject *>(QStringLiteral("roomQualityPopup"));
+    QVERIFY(popup != nullptr);
+    QVERIFY(QMetaObject::invokeMethod(popup, "open"));
+    QTRY_VERIFY(popup->property("visible").toBool());
+    QTRY_VERIFY(!pictureArea->property("enabled").toBool());
+    QVERIFY(QMetaObject::invokeMethod(popup, "close"));
+    controller.requestQuit();
+}
+
+void QmlCloseRegressionTest::maximizesAndRestoresAfterFullscreen()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSettings settings(directory.filePath(QStringLiteral("workspace.ini")), QSettings::IniFormat);
+    AppController controller(fakeServicePath(), &settings);
+    QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
+    QQmlApplicationEngine engine;
+    QQuickWindow *window = loadWindowWithFakeRooms(engine, controller, 0);
+    QVERIFY(window != nullptr);
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+
+    controller.toggleFullScreen();
+    QTRY_COMPARE(window->visibility(), QWindow::FullScreen);
+
+    controller.toggleMaximizedWindow();
+    QTRY_COMPARE(window->visibility(), QWindow::Maximized);
+
+    controller.toggleMaximizedWindow();
+    QTRY_COMPARE(window->visibility(), QWindow::Windowed);
+    controller.requestQuit();
+}
+
+void QmlCloseRegressionTest::nativeMinimizeRestoreKeepsControllerInSync()
+{
+#ifdef Q_OS_WIN
+    if (QGuiApplication::platformName() != QStringLiteral("windows")) {
+        QSKIP("native taskbar window state requires the Windows platform backend");
+    }
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSettings settings(directory.filePath(QStringLiteral("workspace.ini")), QSettings::IniFormat);
+    AppController controller(fakeServicePath(), &settings);
+    QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
+    QQmlApplicationEngine engine;
+    QQuickWindow *window = loadWindowWithFakeRooms(engine, controller, 0);
+    QVERIFY(window != nullptr);
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+    const HWND handle = reinterpret_cast<HWND>(window->winId());
+    QVERIFY2((GetWindowLongPtrW(handle, GWL_STYLE) & WS_MINIMIZEBOX) != 0,
+             "taskbar minimize requires WS_MINIMIZEBOX on the native window");
+
+    for (int cycle = 0; cycle < 3; ++cycle) {
+        SendMessageW(handle, WM_SYSCOMMAND, SC_MINIMIZE, 0);
+        QTRY_COMPARE(window->visibility(), QWindow::Minimized);
+        QTRY_VERIFY(controller.windowMinimized());
+        QVERIFY(!controller.backgroundHosted());
+        QVERIFY(IsIconic(handle));
+
+        SendMessageW(handle, WM_SYSCOMMAND, SC_RESTORE, 0);
+        QTRY_COMPARE(window->visibility(), QWindow::Windowed);
+        QTRY_VERIFY(!controller.windowMinimized());
+        QVERIFY(!controller.backgroundHosted());
+        QVERIFY(!IsIconic(handle));
+    }
+#else
+    QSKIP("native taskbar window state is Windows-only");
+#endif
+}
 
 void QmlCloseRegressionTest::closeDialogHasNonOverlappingRememberRow()
 {

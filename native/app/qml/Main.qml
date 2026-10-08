@@ -17,7 +17,7 @@ ApplicationWindow {
     visible: true
     color: Theme.canvas
     title: "斗鱼多房间监控"
-    flags: Qt.Window | Qt.FramelessWindowHint
+    flags: Qt.Window | Qt.FramelessWindowHint | Qt.WindowMinimizeButtonHint
 
     property var appController: null
     property bool refreshRequested: false
@@ -381,6 +381,7 @@ ApplicationWindow {
     WorkspaceGrid {
         id: grid
         objectName: "workspaceGrid"
+        onFullScreenToggleRequested: root.toggleFullScreen()
         anchors.top: header.bottom
         anchors.left: leftPanelBoundary.right
         anchors.right: parent.right
