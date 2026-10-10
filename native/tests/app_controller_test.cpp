@@ -1517,7 +1517,7 @@ void AppControllerTest::persistsIndependentTeamsAndNavigationVisibility()
     {
         QSettings settings(settingsPath, QSettings::IniFormat);
         AppController controller(fakeServicePath(), &settings, &sink);
-        QCOMPARE(controller.guildRoster().size(), 58);
+        QCOMPARE(controller.guildRoster().size(), 57);
         const QVariantMap firstMember = controller.guildRoster().first().toMap();
         QCOMPARE(firstMember.value(QStringLiteral("id")).toString(),
                  QStringLiteral("hamster-001"));

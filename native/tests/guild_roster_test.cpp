@@ -19,7 +19,9 @@ private slots:
 void GuildRosterTest::loadsBundledRosterWithoutRoleLabels()
 {
     const QVector<GuildMember> members = GuildRoster::bundled();
-    QCOMPARE(members.size(), 58);
+    QCOMPARE(members.size(), 57);
+    QVERIFY(GuildRoster::findById(QStringLiteral("hamster-046")) == nullptr);
+    QVERIFY(GuildRoster::findByName(QStringLiteral("白小帅子")) == nullptr);
     for (const GuildMember &member : members) {
         QVERIFY(!member.id.isEmpty());
         QVERIFY(!member.anchorName.isEmpty());
@@ -44,7 +46,7 @@ void GuildRosterTest::sharesCachedBundledRosterWithoutReparsing()
 void GuildRosterTest::exposesStablePinyinKeysForEveryMember()
 {
     const QVector<GuildMember> members = GuildRoster::bundled();
-    QCOMPARE(members.size(), 58);
+    QCOMPARE(members.size(), 57);
 
     for (const GuildMember &member : members) {
         QVERIFY2(!member.pinyinKey.isEmpty(), qPrintable(member.anchorName));
