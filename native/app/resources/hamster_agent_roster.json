@@ -58,6 +58,8 @@
     { "id": "hamster-055", "name": "羊咩咩ee", "roomId": "", "pinyinKey": "Y" },
     { "id": "hamster-056", "name": "筱青o", "roomId": "", "pinyinKey": "X" },
     { "id": "hamster-057", "name": "安然Aqr", "roomId": "", "pinyinKey": "A" },
-    { "id": "hamster-058", "name": "火山同学呀", "roomId": "", "pinyinKey": "H" }
+    { "id": "hamster-058", "name": "火山同学呀", "roomId": "", "pinyinKey": "H" },
+    { "id": "hamster-059", "name": "优优or", "roomId": "12906996", "pinyinKey": "Y" },
+    { "id": "hamster-060", "name": "小月牙ing", "roomId": "12106059", "pinyinKey": "X" }
   ]
 }

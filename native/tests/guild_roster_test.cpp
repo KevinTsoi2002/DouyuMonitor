@@ -9,6 +9,7 @@ private slots:
     void loadsBundledRosterWithoutRoleLabels();
     void sharesCachedBundledRosterWithoutReparsing();
     void exposesStablePinyinKeysForEveryMember();
+    void includesNewMembersWithVerifiedRoomIds();
     void stripsRoleSuffixOnlyForSearch();
     void rejectsInvalidRoomIdsFromResource();
     void rejectsMalformedRootAndUnsupportedVersion();
@@ -19,7 +20,7 @@ private slots:
 void GuildRosterTest::loadsBundledRosterWithoutRoleLabels()
 {
     const QVector<GuildMember> members = GuildRoster::bundled();
-    QCOMPARE(members.size(), 57);
+    QCOMPARE(members.size(), 59);
     QVERIFY(GuildRoster::findById(QStringLiteral("hamster-046")) == nullptr);
     QVERIFY(GuildRoster::findByName(QStringLiteral("白小帅子")) == nullptr);
     for (const GuildMember &member : members) {
@@ -46,7 +47,7 @@ void GuildRosterTest::sharesCachedBundledRosterWithoutReparsing()
 void GuildRosterTest::exposesStablePinyinKeysForEveryMember()
 {
     const QVector<GuildMember> members = GuildRoster::bundled();
-    QCOMPARE(members.size(), 57);
+    QCOMPARE(members.size(), 59);
 
     for (const GuildMember &member : members) {
         QVERIFY2(!member.pinyinKey.isEmpty(), qPrintable(member.anchorName));
@@ -66,6 +67,22 @@ void GuildRosterTest::exposesStablePinyinKeysForEveryMember()
              QStringLiteral("A"));
     QCOMPARE(GuildRoster::findByName(QStringLiteral("bulaQoQ"))->pinyinKey,
              QStringLiteral("B"));
+}
+
+void GuildRosterTest::includesNewMembersWithVerifiedRoomIds()
+{
+    const GuildMember *youyou = GuildRoster::findByName(QStringLiteral("优优or"));
+    QVERIFY(youyou != nullptr);
+    QCOMPARE(youyou->id, QStringLiteral("hamster-059"));
+    QCOMPARE(youyou->roomId, QStringLiteral("12906996"));
+    QCOMPARE(youyou->pinyinKey, QStringLiteral("Y"));
+    QVERIFY(GuildRoster::findByName(QStringLiteral("优优77989")) == nullptr);
+
+    const GuildMember *yueya = GuildRoster::findByName(QStringLiteral("小月牙ing"));
+    QVERIFY(yueya != nullptr);
+    QCOMPARE(yueya->id, QStringLiteral("hamster-060"));
+    QCOMPARE(yueya->roomId, QStringLiteral("12106059"));
+    QCOMPARE(yueya->pinyinKey, QStringLiteral("X"));
 }
 
 void GuildRosterTest::stripsRoleSuffixOnlyForSearch()

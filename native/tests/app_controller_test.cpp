@@ -166,6 +166,7 @@ private slots:
     void persistsTeamDeletion();
     void enforcesTeamLimitsAndRosterMembership();
     void persistsIndependentTeamsAndNavigationVisibility();
+    void mapsNewGuildMembersToLiveRankIdentities();
     void addsResolvedGuildMemberWithoutUsingOrdinarySearchState();
     void rejectsGuildQuickAddWithoutRoomOrCapacity();
     void enforcesGuildQuickAddLayoutCapacity();
@@ -1517,7 +1518,7 @@ void AppControllerTest::persistsIndependentTeamsAndNavigationVisibility()
     {
         QSettings settings(settingsPath, QSettings::IniFormat);
         AppController controller(fakeServicePath(), &settings, &sink);
-        QCOMPARE(controller.guildRoster().size(), 57);
+        QCOMPARE(controller.guildRoster().size(), 59);
         const QVariantMap firstMember = controller.guildRoster().first().toMap();
         QCOMPARE(firstMember.value(QStringLiteral("id")).toString(),
                  QStringLiteral("hamster-001"));
@@ -1541,6 +1542,57 @@ void AppControllerTest::persistsIndependentTeamsAndNavigationVisibility()
     QCOMPARE(restored.workspace()->teams().first().memberIds,
              QStringList({QStringLiteral("hamster-001")}));
     QVERIFY(restored.workspace()->navigationVisible());
+}
+
+void AppControllerTest::mapsNewGuildMembersToLiveRankIdentities()
+{
+    ImportRankServer server;
+    server.hosts = QJsonArray{
+        QJsonObject{{"id", "31af9433-4119-49b2-a74f-8f16c728733a"},
+                    {"name", QStringLiteral("优优77989")},
+                    {"douyu_id", "12906996"}, {"team", 3}},
+        QJsonObject{{"id", "5e85d336-dee0-498f-abc1-1f7c8f845808"},
+                    {"name", QStringLiteral("小月牙ing")},
+                    {"douyu_id", "12106059"}, {"team", 0}},
+    };
+    QTemporaryDir directory;
+    QSettings settings(directory.filePath("workspace.ini"), QSettings::IniFormat);
+    FakeNotificationSink sink;
+    AppController controller(fakeServicePath(), &settings, &sink, {}, nullptr, server.client());
+    const auto memberForId = [&controller](const QString &id) {
+        for (const auto &value : controller.guildRoster()) {
+            const auto member = value.toMap();
+            if (member.value("id").toString() == id) return member;
+        }
+        return QVariantMap{};
+    };
+    QVERIFY(!memberForId(QStringLiteral("hamster-059")).isEmpty());
+    QVERIFY(!memberForId(QStringLiteral("hamster-060")).isEmpty());
+    QCOMPARE(memberForId(QStringLiteral("hamster-059")).value("anchorName").toString(),
+             QStringLiteral("优优or"));
+    controller.maoziRank()->refresh();
+    QTRY_VERIFY(!controller.maoziRank()->loading());
+    for (int index = 0; index < 2; ++index) {
+        const auto member = memberForId(QStringLiteral("hamster-%1").arg(59 + index, 3, 10, QLatin1Char('0')));
+        QVERIFY(member.value("rankMatched").toBool());
+        QCOMPARE(member.value("rankHostId").toString(), server.hosts.at(index).toObject().value("id").toString());
+        QCOMPARE(member.value("role").toString(), QStringLiteral("member"));
+        QCOMPARE(member.value("roomId").toString(), server.hosts.at(index).toObject().value("douyu_id").toString());
+    }
+
+    auto renamed = server.hosts.at(0).toObject();
+    renamed.insert("name", QStringLiteral("优优or"));
+    renamed.insert("team", 0);
+    server.hosts[0] = renamed;
+    QSignalSpy changed(&controller, &AppController::guildRosterChanged);
+    controller.maoziRank()->refresh();
+    QTRY_VERIFY(!controller.maoziRank()->loading());
+    QTRY_VERIFY(!changed.isEmpty());
+    const auto member = memberForId(QStringLiteral("hamster-059"));
+    QVERIFY(member.value("rankMatched").toBool());
+    QCOMPARE(member.value("rankHostId").toString(), renamed.value("id").toString());
+    QCOMPARE(controller.maoziRank()->entryForRoomId(QStringLiteral("12906996"))
+                 .value("teamId").toString(), QStringLiteral("0"));
 }
 
 void AppControllerTest::addsResolvedGuildMemberWithoutUsingOrdinarySearchState()
