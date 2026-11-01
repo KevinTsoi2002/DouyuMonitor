@@ -98,3 +98,8 @@
 - 112–113：GitHub正式发布、latest/stable API状态、远端附件大小/digest、About更新、Playwright仓库/Release4图加载、实际回下载安装器的哈希与校验文本一致结果已保存并回读。106–113共8条无缺号。
 - V1.0.0标签指向e1debccdc2f47c48323746f496efd12952edce79；发布后的收尾提交仅更新本索引和验证文档，最终推送结果继续记录于同一Notion项目页。
 - 发布证据文档：[V1.0.0-verification.md](../../native/docs/releases/V1.0.0-verification.md)。真实安装/卸载、长时间直播和DPI矩阵尚未执行。
+
+## 2026-11-01 安装器图标与新增预览
+
+- 本轮读取项目页时 Notion 返回 `Authentication required`，未写入远端记录；115起的编号未占用，不称已同步。
+- 调查、图标生成器与RC依赖修正、新截图及后续构建/发布证据保存在 [V1.0.0-icon-correction.md](../../native/docs/releases/V1.0.0-icon-correction.md)，待连接恢复后逐项同步。

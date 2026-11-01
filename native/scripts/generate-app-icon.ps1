@@ -1,5 +1,6 @@
 param(
-    [string]$OutputPath = (Join-Path $PSScriptRoot '..\app\assets\douyu_monitor.ico')
+    [string]$OutputPath = (Join-Path $PSScriptRoot '..\app\assets\douyu_monitor.ico'),
+    [string]$SourcePath = (Join-Path $PSScriptRoot '..\app\qml\assets\brand\icon-app.png')
 )
 
 $ErrorActionPreference = 'Stop'
@@ -14,65 +15,44 @@ using System.IO;
 
 public static class DouyuMonitorIconGenerator
 {
-    private static GraphicsPath RoundedRectangle(RectangleF bounds, float radius)
-    {
-        var path = new GraphicsPath();
-        var diameter = radius * 2f;
-        path.AddArc(bounds.X, bounds.Y, diameter, diameter, 180, 90);
-        path.AddArc(bounds.Right - diameter, bounds.Y, diameter, diameter, 270, 90);
-        path.AddArc(bounds.Right - diameter, bounds.Bottom - diameter, diameter, diameter, 0, 90);
-        path.AddArc(bounds.X, bounds.Bottom - diameter, diameter, diameter, 90, 90);
-        path.CloseFigure();
-        return path;
-    }
-
-    private static Bitmap CreateBitmap(int size)
+    private static Bitmap CreateBitmap(Image source, int size)
     {
         var bitmap = new Bitmap(size, size, PixelFormat.Format32bppArgb);
         using (var graphics = Graphics.FromImage(bitmap))
         {
-            graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            graphics.CompositingMode = CompositingMode.SourceCopy;
             graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+            graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
             graphics.Clear(Color.Transparent);
-
-            float scale = size / 256f;
-            Func<float, float> value = unit => unit * scale;
-            using (var background = RoundedRectangle(new RectangleF(value(12), value(12), value(232), value(232)), value(58)))
-            using (var brush = new SolidBrush(Color.FromArgb(242, 117, 34)))
-                graphics.FillPath(brush, background);
-
-            using (var border = RoundedRectangle(new RectangleF(value(24), value(24), value(208), value(208)), value(46)))
-            using (var pen = new Pen(Color.FromArgb(255, 196, 155), value(12)))
-                graphics.DrawPath(pen, border);
-
-            using (var screen = RoundedRectangle(new RectangleF(value(57), value(71), value(142), value(106)), value(24)))
-            using (var pen = new Pen(Color.White, value(14)))
-                graphics.DrawPath(pen, screen);
-
-            using (var white = new SolidBrush(Color.White))
+            // Preserve the approved artwork and alpha without adding a matte.
+            using (var attributes = new ImageAttributes())
             {
-                graphics.FillEllipse(white, value(84), value(102), value(20), value(20));
-                graphics.FillEllipse(white, value(152), value(102), value(20), value(20));
-                using (var signal = RoundedRectangle(new RectangleF(value(93), value(138), value(70), value(12)), value(6)))
-                    graphics.FillPath(white, signal);
-                using (var baseLine = RoundedRectangle(new RectangleF(value(105), value(190), value(46), value(12)), value(6)))
-                    graphics.FillPath(white, baseLine);
+                attributes.SetWrapMode(WrapMode.TileFlipXY);
+                graphics.DrawImage(source, new Rectangle(0, 0, size, size),
+                    0, 0, source.Width, source.Height, GraphicsUnit.Pixel, attributes);
             }
         }
         return bitmap;
     }
 
-    public static void Write(string outputPath)
+    public static void Write(string sourcePath, string outputPath)
     {
         int[] sizes = { 16, 24, 32, 48, 64, 128, 256 };
         var pngLayers = new byte[sizes.Length][];
-        for (int index = 0; index < sizes.Length; index++)
+        using (var source = Image.FromFile(sourcePath))
         {
-            using (var bitmap = CreateBitmap(sizes[index]))
-            using (var stream = new MemoryStream())
+            if (source.Width != source.Height)
+                throw new ArgumentException("The source icon must have a square canvas.");
+            if (!Image.IsAlphaPixelFormat(source.PixelFormat))
+                throw new ArgumentException("Use the approved transparent brand PNG as the source.");
+            for (int index = 0; index < sizes.Length; index++)
             {
-                bitmap.Save(stream, ImageFormat.Png);
-                pngLayers[index] = stream.ToArray();
+                using (var bitmap = CreateBitmap(source, sizes[index]))
+                using (var stream = new MemoryStream())
+                {
+                    bitmap.Save(stream, ImageFormat.Png);
+                    pngLayers[index] = stream.ToArray();
+                }
             }
         }
 
@@ -103,4 +83,10 @@ public static class DouyuMonitorIconGenerator
 }
 '@
 
-[DouyuMonitorIconGenerator]::Write((Resolve-Path -LiteralPath (Split-Path -Parent $OutputPath)).Path + '\\' + (Split-Path -Leaf $OutputPath))
+$sourceFile = (Resolve-Path -LiteralPath $SourcePath).Path
+$outputFile = [System.IO.Path]::GetFullPath($OutputPath)
+if ([string]::Equals($sourceFile, $outputFile, [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw 'SourcePath and OutputPath must be different files.'
+}
+[DouyuMonitorIconGenerator]::Write($sourceFile, $outputFile)
+Write-Output "Generated CSTG application icon: $outputFile"

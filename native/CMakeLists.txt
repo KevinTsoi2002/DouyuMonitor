@@ -1134,6 +1134,9 @@ set_target_properties(douyu_monitor_native PROPERTIES
 )
 
 if(WIN32)
+    set_source_files_properties(app/resources/app_icon.rc PROPERTIES
+        OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/app/assets/douyu_monitor.ico"
+    )
     target_sources(douyu_monitor_native PRIVATE app/resources/app_icon.rc)
     qt_add_resources(douyu_monitor_native native_app_icon
         PREFIX "/app"

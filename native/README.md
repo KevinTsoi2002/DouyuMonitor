@@ -149,7 +149,7 @@ native/out/installer/DouyuMonitor-Setup-V1.0.0.exe
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-installer-script.ps1
 ```
 
-重新生成应用图标：
+重新生成应用图标（从已批准的透明品牌资源 `app/qml/assets/brand/icon-app.png` 派生多尺寸 ICO，随后重新构建应用与安装器）：
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\generate-app-icon.ps1
