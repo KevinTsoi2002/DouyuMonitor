@@ -104,4 +104,4 @@
 - 本轮读取项目页时 Notion 返回 `Authentication required`，未写入远端记录；115起的编号未占用，不称已同步。
 - 调查、图标生成器与RC依赖修正、新截图、构建/发布及回下载证据保存在 [V1.0.0-icon-correction.md](../../native/docs/releases/V1.0.0-icon-correction.md)，待连接恢复后逐项同步。本地图标和预览修正已推送为8a4f505；V1.0.0安装器已替换，新SHA-256为 `05c8edadbfe5902dc3c58ad78adbd7de9103140106c7847c6e9eb5bc2b608816`。Notion本轮状态仍为未同步。
 
-- 后续“桌面仍显示橙色图标”调查、本机5个快捷方式备份及定向修正、按图标内容命名的安装路径、164/164回归及新包证据见 [V1.0.0-shortcut-correction.md](../../native/docs/releases/V1.0.0-shortcut-correction.md)。当前工具发现未提供Notion工具，本次继续本地待同步，不把115起编号标为已写入。
+- 后续“桌面仍显示橙色图标”调查、本机5个快捷方式备份及定向修正、按图标内容命名的安装路径、164/164回归及新包证据见 [V1.0.0-shortcut-correction.md](../../native/docs/releases/V1.0.0-shortcut-correction.md)。修正提交0facf2c已推送，新包SHA-256为 `3310399d6419c7857e1302f4e1800de72757a43b6e26ef3edb20815a9022c889`，GitHub回下载校验通过。当前工具发现未提供Notion工具，本次继续本地待同步，不把115起编号标为已写入。
