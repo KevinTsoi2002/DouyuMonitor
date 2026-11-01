@@ -79,10 +79,22 @@ QByteArray encodeFrame(const QString &payload, quint16 protocol)
 
 FrameDecodeResult FrameDecoder::push(QByteArrayView chunk)
 {
-    pending_.append(chunk.data(), chunk.size());
-    FrameDecodeResult result;
+    return push(chunk, kMaxFramesPerDecode);
+}
 
-    while (pending_.size() >= 4) {
+FrameDecodeResult FrameDecoder::push(QByteArrayView chunk, qsizetype maxFrames)
+{
+    FrameDecodeResult result;
+    if (chunk.size() > kMaxWebSocketMessageBytes
+        || pending_.size() > kMaxWebSocketMessageBytes - chunk.size()) {
+        result.error = FrameError::PendingDataTooLarge;
+        pending_.clear();
+        return result;
+    }
+    pending_.append(chunk.data(), chunk.size());
+    if (maxFrames <= 0) return result;
+
+    while (pending_.size() >= 4 && result.frames.size() < maxFrames) {
         const quint32 bodyLength = readLe32(pending_.constData());
         if (bodyLength < static_cast<quint32>(kLengthAfterFirstField + 1)) {
             result.error = FrameError::InvalidLength;
@@ -126,8 +138,19 @@ FrameDecodeResult FrameDecoder::push(QByteArrayView chunk)
         result.frames.push_back(decoded);
         pending_.remove(0, static_cast<qsizetype>(totalLength));
     }
+    result.hasMoreFrames = result.frames.size() >= maxFrames && pending_.size() >= 4;
 
     return result;
+}
+
+bool FrameDecoder::hasPending() const
+{
+    return !pending_.isEmpty();
+}
+
+qsizetype FrameDecoder::pendingBytes() const
+{
+    return pending_.size();
 }
 
 void FrameDecoder::clear()

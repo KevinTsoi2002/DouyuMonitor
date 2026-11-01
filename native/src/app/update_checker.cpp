@@ -12,6 +12,8 @@
 
 namespace {
 
+constexpr qint64 kMaxResponseBytes = 1024 * 1024;
+
 QString stateMessage(const QNetworkReply *reply)
 {
     if (reply->error() == QNetworkReply::TimeoutError) return QStringLiteral("检查更新超时");
@@ -82,6 +84,7 @@ void UpdateChecker::check()
     latestVersion_.clear();
     releaseUrl_ = {};
     errorMessage_.clear();
+    responseBody_.clear();
     emit resultChanged();
     setState(State::Checking);
 
@@ -90,14 +93,44 @@ void UpdateChecker::check()
     request.setRawHeader("Accept", "application/vnd.github+json");
     reply_ = manager_->get(request);
     QNetworkReply *requestReply = reply_;
+    requestReply->setReadBufferSize(kMaxResponseBytes + 1);
+    connect(requestReply, &QNetworkReply::metaDataChanged, this, [this, requestReply] {
+        if (reply_ != requestReply) return;
+        bool lengthIsValid = false;
+        const qint64 contentLength = requestReply->header(QNetworkRequest::ContentLengthHeader)
+                                         .toLongLong(&lengthIsValid);
+        if (lengthIsValid && contentLength > kMaxResponseBytes) {
+            finishError(QStringLiteral("更新信息过大"));
+            requestReply->abort();
+        }
+    });
+    connect(requestReply, &QNetworkReply::downloadProgress, this,
+            [this, requestReply](qint64 receivedBytes, qint64) {
+                if (reply_ != requestReply || receivedBytes <= kMaxResponseBytes) return;
+                finishError(QStringLiteral("更新信息过大"));
+                requestReply->abort();
+            });
+    connect(requestReply, &QIODevice::readyRead, this, [this, requestReply] {
+        if (reply_ != requestReply) return;
+        if (!collectResponseData(requestReply)) {
+            finishError(QStringLiteral("更新信息过大"));
+            requestReply->abort();
+        }
+    });
     connect(requestReply, &QNetworkReply::finished, this, [this, requestReply] {
         if (reply_ != requestReply) {
             // The replacement path already scheduled this stale reply for deletion.
             return;
         }
+        if (!collectResponseData(requestReply)) {
+            finishError(QStringLiteral("更新信息过大"));
+            requestReply->abort();
+            return;
+        }
         reply_ = nullptr;
         timeoutTimer_->stop();
         handleReply(requestReply);
+        responseBody_.clear();
         requestReply->deleteLater();
     });
     timeoutTimer_->start(timeoutMs_);
@@ -117,9 +150,20 @@ void UpdateChecker::finishError(const QString &message)
         reply_ = nullptr;
     }
     timeoutTimer_->stop();
+    responseBody_.clear();
     errorMessage_ = message;
     emit resultChanged();
     setState(State::Error);
+}
+
+bool UpdateChecker::collectResponseData(QNetworkReply *reply)
+{
+    while (reply->bytesAvailable() > 0) {
+        const qint64 remainingBytes = kMaxResponseBytes - responseBody_.size();
+        responseBody_.append(reply->read(remainingBytes + 1));
+        if (responseBody_.size() > kMaxResponseBytes) return false;
+    }
+    return responseBody_.size() <= kMaxResponseBytes;
 }
 
 void UpdateChecker::handleReply(QNetworkReply *reply)
@@ -134,7 +178,7 @@ void UpdateChecker::handleReply(QNetworkReply *reply)
         return;
     }
     QJsonParseError parseError;
-    const QJsonDocument document = QJsonDocument::fromJson(reply->readAll(), &parseError);
+    const QJsonDocument document = QJsonDocument::fromJson(responseBody_, &parseError);
     if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
         finishError(QStringLiteral("更新信息格式无效"));
         return;

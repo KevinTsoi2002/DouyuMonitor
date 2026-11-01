@@ -1,0 +1,431 @@
+{
+  "date": "2026-10-29T15:03:24.940Z",
+  "checks": 106,
+  "results": [
+    {
+      "name": "a: scheme selection",
+      "passed": true
+    },
+    {
+      "name": "a: name search",
+      "passed": true
+    },
+    {
+      "name": "a: room search",
+      "passed": true
+    },
+    {
+      "name": "a: search empty state",
+      "passed": true
+    },
+    {
+      "name": "a: online filter",
+      "passed": true
+    },
+    {
+      "name": "a: combined team filter",
+      "passed": true
+    },
+    {
+      "name": "a: member selection",
+      "passed": true
+    },
+    {
+      "name": "a: unresolved room guard",
+      "passed": true
+    },
+    {
+      "name": "a: demo join feedback",
+      "passed": true
+    },
+    {
+      "name": "a: directory loading",
+      "passed": true
+    },
+    {
+      "name": "a: directory empty",
+      "passed": true
+    },
+    {
+      "name": "a: directory error",
+      "passed": true
+    },
+    {
+      "name": "a: retry recovery",
+      "passed": true
+    },
+    {
+      "name": "a: rank search",
+      "passed": true
+    },
+    {
+      "name": "a: rank detail selection",
+      "passed": true
+    },
+    {
+      "name": "a: missing score marker",
+      "passed": true
+    },
+    {
+      "name": "a: ranking loading",
+      "passed": true
+    },
+    {
+      "name": "a: ranking empty",
+      "passed": true
+    },
+    {
+      "name": "a: ranking error",
+      "passed": true
+    },
+    {
+      "name": "a: 常规赛 switch",
+      "passed": true
+    },
+    {
+      "name": "a: 总决赛 switch",
+      "passed": true
+    },
+    {
+      "name": "a: 足球赛 switch",
+      "passed": true
+    },
+    {
+      "name": "a: 定级赛 switch",
+      "passed": true
+    },
+    {
+      "name": "a: four composition previews",
+      "passed": true
+    },
+    {
+      "name": "a: danmaku preview toggle",
+      "passed": true
+    },
+    {
+      "name": "a: mute preview",
+      "passed": true
+    },
+    {
+      "name": "a: layout preview",
+      "passed": true
+    },
+    {
+      "name": "a: settings teams",
+      "passed": true
+    },
+    {
+      "name": "a: settings updates",
+      "passed": true
+    },
+    {
+      "name": "a: settings roles",
+      "passed": true
+    },
+    {
+      "name": "a: settings general",
+      "passed": true
+    },
+    {
+      "name": "a: close dialog",
+      "passed": true
+    },
+    {
+      "name": "a: import preview gate",
+      "passed": true
+    },
+    {
+      "name": "a: preference survives reload",
+      "passed": true
+    },
+    {
+      "name": "b: scheme selection",
+      "passed": true
+    },
+    {
+      "name": "b: name search",
+      "passed": true
+    },
+    {
+      "name": "b: room search",
+      "passed": true
+    },
+    {
+      "name": "b: search empty state",
+      "passed": true
+    },
+    {
+      "name": "b: online filter",
+      "passed": true
+    },
+    {
+      "name": "b: combined team filter",
+      "passed": true
+    },
+    {
+      "name": "b: member selection",
+      "passed": true
+    },
+    {
+      "name": "b: unresolved room guard",
+      "passed": true
+    },
+    {
+      "name": "b: demo join feedback",
+      "passed": true
+    },
+    {
+      "name": "b: directory loading",
+      "passed": true
+    },
+    {
+      "name": "b: directory empty",
+      "passed": true
+    },
+    {
+      "name": "b: directory error",
+      "passed": true
+    },
+    {
+      "name": "b: retry recovery",
+      "passed": true
+    },
+    {
+      "name": "b: rank search",
+      "passed": true
+    },
+    {
+      "name": "b: rank detail selection",
+      "passed": true
+    },
+    {
+      "name": "b: missing score marker",
+      "passed": true
+    },
+    {
+      "name": "b: ranking loading",
+      "passed": true
+    },
+    {
+      "name": "b: ranking empty",
+      "passed": true
+    },
+    {
+      "name": "b: ranking error",
+      "passed": true
+    },
+    {
+      "name": "b: 常规赛 switch",
+      "passed": true
+    },
+    {
+      "name": "b: 总决赛 switch",
+      "passed": true
+    },
+    {
+      "name": "b: 足球赛 switch",
+      "passed": true
+    },
+    {
+      "name": "b: 定级赛 switch",
+      "passed": true
+    },
+    {
+      "name": "b: four composition previews",
+      "passed": true
+    },
+    {
+      "name": "b: danmaku preview toggle",
+      "passed": true
+    },
+    {
+      "name": "b: mute preview",
+      "passed": true
+    },
+    {
+      "name": "b: layout preview",
+      "passed": true
+    },
+    {
+      "name": "b: settings teams",
+      "passed": true
+    },
+    {
+      "name": "b: settings updates",
+      "passed": true
+    },
+    {
+      "name": "b: settings roles",
+      "passed": true
+    },
+    {
+      "name": "b: settings general",
+      "passed": true
+    },
+    {
+      "name": "b: close dialog",
+      "passed": true
+    },
+    {
+      "name": "b: import preview gate",
+      "passed": true
+    },
+    {
+      "name": "b: preference survives reload",
+      "passed": true
+    },
+    {
+      "name": "c: scheme selection",
+      "passed": true
+    },
+    {
+      "name": "c: name search",
+      "passed": true
+    },
+    {
+      "name": "c: room search",
+      "passed": true
+    },
+    {
+      "name": "c: search empty state",
+      "passed": true
+    },
+    {
+      "name": "c: online filter",
+      "passed": true
+    },
+    {
+      "name": "c: combined team filter",
+      "passed": true
+    },
+    {
+      "name": "c: member selection",
+      "passed": true
+    },
+    {
+      "name": "c: unresolved room guard",
+      "passed": true
+    },
+    {
+      "name": "c: demo join feedback",
+      "passed": true
+    },
+    {
+      "name": "c: directory loading",
+      "passed": true
+    },
+    {
+      "name": "c: directory empty",
+      "passed": true
+    },
+    {
+      "name": "c: directory error",
+      "passed": true
+    },
+    {
+      "name": "c: retry recovery",
+      "passed": true
+    },
+    {
+      "name": "c: rank search",
+      "passed": true
+    },
+    {
+      "name": "c: rank detail selection",
+      "passed": true
+    },
+    {
+      "name": "c: missing score marker",
+      "passed": true
+    },
+    {
+      "name": "c: ranking loading",
+      "passed": true
+    },
+    {
+      "name": "c: ranking empty",
+      "passed": true
+    },
+    {
+      "name": "c: ranking error",
+      "passed": true
+    },
+    {
+      "name": "c: 常规赛 switch",
+      "passed": true
+    },
+    {
+      "name": "c: 总决赛 switch",
+      "passed": true
+    },
+    {
+      "name": "c: 足球赛 switch",
+      "passed": true
+    },
+    {
+      "name": "c: 定级赛 switch",
+      "passed": true
+    },
+    {
+      "name": "c: four composition previews",
+      "passed": true
+    },
+    {
+      "name": "c: danmaku preview toggle",
+      "passed": true
+    },
+    {
+      "name": "c: mute preview",
+      "passed": true
+    },
+    {
+      "name": "c: layout preview",
+      "passed": true
+    },
+    {
+      "name": "c: settings teams",
+      "passed": true
+    },
+    {
+      "name": "c: settings updates",
+      "passed": true
+    },
+    {
+      "name": "c: settings roles",
+      "passed": true
+    },
+    {
+      "name": "c: settings general",
+      "passed": true
+    },
+    {
+      "name": "c: close dialog",
+      "passed": true
+    },
+    {
+      "name": "c: import preview gate",
+      "passed": true
+    },
+    {
+      "name": "c: preference survives reload",
+      "passed": true
+    },
+    {
+      "name": "keyboard: slash search",
+      "passed": true
+    },
+    {
+      "name": "keyboard: dialog focus stays inside",
+      "passed": true
+    },
+    {
+      "name": "keyboard: escape closes dialog",
+      "passed": true
+    },
+    {
+      "name": "keyboard: dialog returns focus",
+      "passed": true
+    }
+  ],
+  "temporaryPreferenceRestored": true
+}

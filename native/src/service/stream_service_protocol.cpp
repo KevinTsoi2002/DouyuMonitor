@@ -189,6 +189,7 @@ std::optional<ServiceRequest> decodeRequest(const QByteArray &line)
 
 std::optional<ServiceResponse> decodeResponse(const QByteArray &line)
 {
+    if (line.size() > kMaxServiceJsonLineBytes) return std::nullopt;
     QJsonParseError parseError;
     const QJsonDocument document = QJsonDocument::fromJson(line, &parseError);
     if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
@@ -203,6 +204,12 @@ std::optional<ServiceResponse> decodeResponse(const QByteArray &line)
 
     ServiceResponse response;
     response.requestId = static_cast<quint64>(object.value(QStringLiteral("requestId")).toDouble());
+    if (object.contains(QStringLiteral("op"))) {
+        const QJsonValue operationValue = object.value(QStringLiteral("op"));
+        if (!operationValue.isString()) return std::nullopt;
+        response.operation = operationFromString(operationValue.toString());
+        if (!response.operation.has_value()) return std::nullopt;
+    }
     response.ok = object.value(QStringLiteral("ok")).toBool();
     if (!response.ok) {
         const QJsonObject error = object.value(QStringLiteral("error")).toObject();

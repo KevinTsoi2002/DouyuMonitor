@@ -78,6 +78,7 @@ signals:
     void failed(QString errorCode);
     void stateChanged(RoomSession::State state);
     void liveStatusChanged(RoomLiveStatus status);
+    void playbackHealthChanged(RoomPlaybackHealth health);
     void qualityChanged(StreamQuality quality);
 
 private slots:
@@ -86,6 +87,8 @@ private slots:
     void onControllerSourceReady(MediaSource source);
     void onControllerFailed(QString errorCode);
     void onControllerStateChanged(RemotePlaybackController::State state);
+    void onSurfaceRenderContextFailed(QString errorCode);
+    void onSurfacePlaybackStarted();
     void onSurfacePlaybackFailed();
     void onSurfaceRemoteStreamEnded();
     void beginSourcePrefetch();

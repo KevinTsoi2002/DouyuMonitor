@@ -11,15 +11,46 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
+#include <QPointer>
+#include <QJSValue>
 #include <QtTest/QtTest>
 
 #include "ui/mpv_quick_item.h"
+#include "app/s1_archive.h"
 #include "ui/room_list_model.h"
 #include "ui/workspace_model.h"
+#include "test_font_support.h"
 
 #include <memory>
 
 namespace {
+
+class FakeMonitoringModel final : public QObject {
+    Q_OBJECT
+    Q_PROPERTY(int onlineCount READ onlineCount CONSTANT)
+    Q_PROPERTY(int offlineCount READ offlineCount CONSTANT)
+    Q_PROPERTY(int errorCount READ errorCount CONSTANT)
+    Q_PROPERTY(QString notificationStatus READ notificationStatus WRITE setNotificationStatus
+               NOTIFY notificationStatusChanged)
+
+public:
+    int onlineCount() const { return 0; }
+    int offlineCount() const { return 0; }
+    int errorCount() const { return 0; }
+    QString notificationStatus() const { return status_; }
+    void setNotificationStatus(const QString &status)
+    {
+        if (status_ == status) return;
+        status_ = status;
+        emit notificationStatusChanged();
+    }
+
+signals:
+    void notificationStatusChanged();
+
+private:
+    QString status_ = QStringLiteral("disabled");
+};
 
 class FakeSearchController final : public QObject {
     Q_OBJECT
@@ -44,7 +75,11 @@ public:
 
     QString searchStatus() const { return QStringLiteral("success"); }
     QString searchError() const { return {}; }
-    Q_INVOKABLE void searchRooms(const QString &) {}
+    Q_INVOKABLE void searchRooms(const QString &query)
+    {
+        ++searchCount;
+        lastSearch = query;
+    }
     Q_INVOKABLE QString addRoomCandidate(const QString &roomId)
     {
         addedRoomId = roomId;
@@ -52,6 +87,8 @@ public:
     }
 
     QString addedRoomId;
+    QString lastSearch;
+    int searchCount = 0;
     bool statusKnown = true;
 };
 
@@ -130,10 +167,38 @@ signals:
     void workspaceSaveStateChanged();
 };
 
-class FakeRoomController final : public QObject {
+class FakeRoomDanmakuController final : public QObject {
     Q_OBJECT
 
 public:
+    explicit FakeRoomDanmakuController(QObject *parent = nullptr)
+        : QObject(parent)
+    {
+    }
+
+    Q_INVOKABLE void retry(const QString &roomId)
+    {
+        retryRoom = roomId;
+        ++retryCount;
+    }
+
+    QString retryRoom;
+    int retryCount = 0;
+};
+
+class FakeRoomController final : public QObject {
+    Q_OBJECT
+
+    Q_PROPERTY(QObject *workspace READ workspaceObject CONSTANT)
+
+public:
+    FakeRoomController() : workspaceModel(nullptr, this), danmaku(this) {}
+
+    Q_PROPERTY(QObject *danmaku READ danmakuObject CONSTANT)
+
+    QObject *workspaceObject() noexcept { return &workspaceModel; }
+    QObject *danmakuObject() noexcept { return &danmaku; }
+
     Q_INVOKABLE void attachPlayer(const QString &roomId, MpvQuickItem *player)
     {
         Q_UNUSED(player);
@@ -184,6 +249,24 @@ public:
         removedRoom = roomId;
     }
 
+    Q_INVOKABLE void setFavorite(const QString &roomId, bool favorite)
+    {
+        favoriteRoom = roomId;
+        favoriteValue = favorite;
+    }
+
+    Q_INVOKABLE QString setAudioRoom(const QString &roomId)
+    {
+        audioRoom = roomId;
+        return audioError;
+    }
+
+    Q_INVOKABLE void setPrimaryRoom(const QString &roomId)
+    {
+        primaryRoom = roomId;
+        ++setPrimaryRoomCount;
+    }
+
     QString lastVolumeRoom;
     int lastVolume = -1;
     QString lastQualityRoom;
@@ -193,6 +276,14 @@ public:
     QString movedRoom;
     int movedDelta = 0;
     QString removedRoom;
+    QString favoriteRoom;
+    bool favoriteValue = false;
+    QString audioRoom;
+    QString audioError;
+    WorkspaceModel workspaceModel;
+    QString primaryRoom;
+    int setPrimaryRoomCount = 0;
+    FakeRoomDanmakuController danmaku;
     QStringList attachedRooms;
     QStringList detachedRooms;
 };
@@ -201,7 +292,10 @@ class FakePresetController final : public QObject {
     Q_OBJECT
 
 public:
-    Q_INVOKABLE QString saveWorkspacePreset(const QString &) { return {}; }
+    Q_INVOKABLE QString saveWorkspacePreset(const QString &name) { savedName = name; ++saveCount; return saveResult; }
+    QString saveResult;
+    QString savedName;
+    int saveCount = 0;
     Q_INVOKABLE QString applyWorkspacePreset(const QString &presetId)
     {
         appliedPresetId = presetId;
@@ -257,6 +351,7 @@ class FakeGuildHoverController final : public QObject {
     Q_PROPERTY(QVariantList teams READ teams CONSTANT)
 
 public:
+    bool missingMetrics = false;
     QVariantList guildRoster() const
     {
         return {
@@ -280,9 +375,9 @@ public:
                                  {QStringLiteral("average"), 12.0},
                                  {QStringLiteral("count"), 100}},
                  }},
-                {QStringLiteral("placementAverage"), 88.5},
+                {QStringLiteral("placementAverage"), missingMetrics ? QVariant() : QVariant(88.5)},
                 {QStringLiteral("placementScoredSessions"), 3},
-                {QStringLiteral("playValue"), 6.4},
+                {QStringLiteral("playValue"), missingMetrics ? QVariant() : QVariant(6.4)},
                 {QStringLiteral("playValueBombed"), 1},
                 {QStringLiteral("playValueUpdatedAt"),
                  QStringLiteral("2026-09-30T12:26:01+08:00")},
@@ -361,12 +456,56 @@ signals:
 private:
     QVector<NativeTeam> teams_;
 };
+
+class FakeNotificationPreferencesController final : public QObject {
+    Q_OBJECT
+    Q_PROPERTY(QVariantMap notificationPreferences READ notificationPreferences
+                   NOTIFY notificationPreferencesChanged)
+
+public:
+    QVariantMap notificationPreferences() const { return preferences_; }
+
+    Q_INVOKABLE void setNotificationPreferences(bool enabled,
+                                                bool roomOnline,
+                                                bool roomOffline,
+                                                bool playbackFailed,
+                                                bool playbackRecovered,
+                                                bool favoriteTitleChanged)
+    {
+        ++saveCount;
+        preferences_ = {{QStringLiteral("enabled"), enabled},
+                        {QStringLiteral("roomOnline"), roomOnline},
+                        {QStringLiteral("roomOffline"), roomOffline},
+                        {QStringLiteral("playbackFailed"), playbackFailed},
+                        {QStringLiteral("playbackRecovered"), playbackRecovered},
+                        {QStringLiteral("favoriteTitleChanged"), favoriteTitleChanged}};
+        emit notificationPreferencesChanged();
+    }
+
+    int saveCount = 0;
+
+signals:
+    void notificationPreferencesChanged();
+
+private:
+    QVariantMap preferences_{{QStringLiteral("enabled"), true},
+                            {QStringLiteral("roomOnline"), true},
+                            {QStringLiteral("roomOffline"), true},
+                            {QStringLiteral("playbackFailed"), true},
+                            {QStringLiteral("playbackRecovered"), true},
+                            {QStringLiteral("favoriteTitleChanged"), true}};
+};
+
 class FakeUpdateController final : public QObject {
     Q_OBJECT
     Q_PROPERTY(QString updateState READ updateState NOTIFY updateStateChanged)
     Q_PROPERTY(QString updateMessage READ updateMessage NOTIFY updateStateChanged)
     Q_PROPERTY(QUrl updateReleaseUrl READ updateReleaseUrl NOTIFY updateStateChanged)
-    Q_PROPERTY(QString closeBehavior READ closeBehavior CONSTANT)
+    Q_PROPERTY(QString closeBehavior READ closeBehavior NOTIFY closeBehaviorChanged)
+    Q_PROPERTY(bool closeBehaviorUnsaved READ closeBehaviorUnsaved
+               NOTIFY closeBehaviorSaveStateChanged)
+    Q_PROPERTY(QString closeBehaviorError READ closeBehaviorError
+               NOTIFY closeBehaviorSaveStateChanged)
     Q_PROPERTY(QString eventMappingJson READ eventMappingJson CONSTANT)
     Q_PROPERTY(QVariantList guildRoster READ guildRoster CONSTANT)
 
@@ -374,10 +513,50 @@ public:
     QString updateState() const { return updateState_; }
     QString updateMessage() const { return updateMessage_; }
     QUrl updateReleaseUrl() const { return updateReleaseUrl_; }
-    QString closeBehavior() const { return QStringLiteral("ask"); }
+    QString closeBehavior() const { return closeBehavior_; }
+    bool closeBehaviorUnsaved() const { return closeBehaviorUnsaved_; }
+    QString closeBehaviorError() const { return closeBehaviorError_; }
     QString eventMappingJson() const {
-        return QStringLiteral(R"({"version":1,"event":"fixture","members":[{"roomId":"123","name":"Anchor","role":"member","team":null}]})");
+        QJsonArray members;
+        for (int index = 0; index < memberCount; ++index) {
+            members.append(QJsonObject{
+                {QStringLiteral("roomId"), QString::number(123 + index)},
+                {QStringLiteral("name"), index == 0 ? QStringLiteral("Anchor")
+                                                    : QStringLiteral("Anchor %1").arg(index)},
+                {QStringLiteral("role"), QStringLiteral("member")},
+                {QStringLiteral("team"), QJsonValue::Null}});
+        }
+        return QString::fromUtf8(QJsonDocument(QJsonObject{
+            {QStringLiteral("version"), 1}, {QStringLiteral("event"), QStringLiteral("fixture")},
+            {QStringLiteral("members"), members}}).toJson(QJsonDocument::Compact));
     }
+    Q_INVOKABLE void setCloseBehavior(const QString &value, bool remember) {
+        closeBehavior_ = value;
+        rememberedChoice = remember;
+        emit closeBehaviorChanged();
+    }
+    Q_INVOKABLE void clearCloseBehavior() {
+        closeBehavior_ = QStringLiteral("ask");
+        ++clearCount;
+        emit closeBehaviorChanged();
+    }
+    Q_INVOKABLE bool retryCloseBehaviorSave() {
+        ++closeRetryCount;
+        closeBehaviorUnsaved_ = false;
+        closeBehaviorError_.clear();
+        emit closeBehaviorSaveStateChanged();
+        return true;
+    }
+    Q_INVOKABLE void closeToTray() { ++closeToTrayCount; }
+    Q_INVOKABLE void requestQuit() { ++requestQuitCount; }
+    Q_INVOKABLE void failCloseBehaviorSave() {
+        closeBehaviorUnsaved_ = true;
+        closeBehaviorError_ = QStringLiteral("关闭行为保存失败，请重试");
+        emit closeBehaviorSaveStateChanged();
+    }
+    int memberCount = 1;
+    int clearCount = 0;
+    bool rememberedChoice = false;
     QVariantList guildRoster() const { return roster; }
     QVariantList roster;
     Q_INVOKABLE QString saveEventMapping(const QString &mapping) { savedMapping = mapping; return {}; }
@@ -402,12 +581,125 @@ public:
     int openCount = 0;
 
 signals:
+    void closeBehaviorChanged();
+    void closeBehaviorSaveStateChanged();
     void updateStateChanged();
 
 private:
+    QString closeBehavior_ = QStringLiteral("ask");
+    bool closeBehaviorUnsaved_ = false;
+    QString closeBehaviorError_;
+public:
+    int closeRetryCount = 0;
+    int closeToTrayCount = 0;
+    int requestQuitCount = 0;
     QString updateState_ = QStringLiteral("idle");
     QString updateMessage_;
     QUrl updateReleaseUrl_;
+};
+
+class FakeDanmakuSettingsController final : public QObject {
+    Q_OBJECT
+    Q_PROPERTY(QVariantMap governanceSettings READ governanceSettings NOTIFY settingsChanged)
+    Q_PROPERTY(QVariantMap displaySettings READ displaySettings CONSTANT)
+    Q_PROPERTY(bool globalEnabled READ globalEnabled CONSTANT)
+
+public:
+    explicit FakeDanmakuSettingsController(QObject *parent = nullptr)
+        : QObject(parent)
+    {
+    }
+
+    QVariantMap governanceSettings() const { return globalSettings_; }
+    QVariantMap displaySettings() const
+    {
+        return {{QStringLiteral("durationSeconds"), 8},
+                {QStringLiteral("fontSize"), 24},
+                {QStringLiteral("opacity"), 0.9},
+                {QStringLiteral("region"), QStringLiteral("full")},
+                {QStringLiteral("density"), QStringLiteral("normal")},
+                {QStringLiteral("fontFamily"), QStringLiteral("microsoft-yahei")},
+                {QStringLiteral("rendering"), QStringLiteral("native")}};
+    }
+    bool globalEnabled() const { return true; }
+
+    Q_INVOKABLE QVariantMap governanceSettingsForRoom(const QString &roomId) const
+    {
+        QVariantMap result = globalSettings_;
+        const QVariantMap override = roomOverrides_.value(roomId);
+        for (auto it = override.cbegin(); it != override.cend(); ++it) result.insert(it.key(), it.value());
+        return result;
+    }
+
+    Q_INVOKABLE void setGovernanceSetting(const QString &roomId,
+                                          const QString &key,
+                                          const QVariant &value)
+    {
+        (roomId.isEmpty() ? globalSettings_ : roomOverrides_[roomId]).insert(key, value);
+        emit settingsChanged();
+    }
+
+    Q_INVOKABLE void clearRoomGovernanceOverride(const QString &roomId)
+    {
+        roomOverrides_.remove(roomId);
+        emit settingsChanged();
+    }
+
+    Q_INVOKABLE QVariantMap statsForRoom(const QString &roomId) const
+    {
+        return stats_.value(roomId,
+                            QVariantMap{{QStringLiteral("level"), QStringLiteral("normal")},
+                                        {QStringLiteral("recentRate"), 0},
+                                        {QStringLiteral("peakRate"), 0},
+                                        {QStringLiteral("filtered"), 0},
+                                        {QStringLiteral("duplicates"), 0},
+                                        {QStringLiteral("rateLimited"), 0},
+                                        {QStringLiteral("queueOverflow"), 0},
+                                        {QStringLiteral("upstreamDropped"), 0}});
+    }
+
+    Q_INVOKABLE void clearStats(const QString &roomId)
+    {
+        stats_.remove(roomId);
+        emit statisticsChanged(roomId);
+    }
+
+    void setStats(const QString &roomId, QVariantMap stats)
+    {
+        QVariantMap normalized{{QStringLiteral("level"), QStringLiteral("normal")},
+                               {QStringLiteral("recentRate"), 0},
+                               {QStringLiteral("peakRate"), 0},
+                               {QStringLiteral("filtered"), 0},
+                               {QStringLiteral("duplicates"), 0},
+                               {QStringLiteral("rateLimited"), 0},
+                               {QStringLiteral("queueOverflow"), 0},
+                               {QStringLiteral("upstreamDropped"), 0}};
+        for (auto it = stats.cbegin(); it != stats.cend(); ++it) normalized.insert(it.key(), it.value());
+        stats_.insert(roomId, std::move(normalized));
+        emit statisticsChanged(roomId);
+    }
+
+signals:
+    void settingsChanged();
+    void statisticsChanged(const QString &roomId);
+
+private:
+    QVariantMap globalSettings_{{QStringLiteral("enabled"), true},
+                                {QStringLiteral("keywordBlacklist"), QStringList{}},
+                                {QStringLiteral("duplicateWindowSeconds"), 3},
+                                {QStringLiteral("peakProtectionEnabled"), true}};
+    QHash<QString, QVariantMap> roomOverrides_;
+    QHash<QString, QVariantMap> stats_;
+};
+
+class FakeDanmakuAppController final : public QObject {
+    Q_OBJECT
+    Q_PROPERTY(QObject *danmaku READ danmaku CONSTANT)
+
+public:
+    FakeDanmakuAppController() : danmaku_(this) {}
+    QObject *danmaku() noexcept { return &danmaku_; }
+    FakeDanmakuSettingsController danmaku_;
 };
 
 class FakeMaoziRankClient final : public QObject {
@@ -422,6 +714,7 @@ class FakeMaoziRankClient final : public QObject {
 public:
     QVariantList entries() const
     {
+        if (hasEntriesOverride) return entriesOverride;
         return {
             QVariantMap{
                 {QStringLiteral("id"), QStringLiteral("host-1")},
@@ -511,6 +804,14 @@ public:
     }
 
     int refreshCount = 0;
+    bool hasEntriesOverride = false;
+    QVariantList entriesOverride;
+    void setEntries(QVariantList entries)
+    {
+        hasEntriesOverride = true;
+        entriesOverride = std::move(entries);
+        emit entriesChanged();
+    }
 
 signals:
     void entriesChanged();
@@ -522,9 +823,38 @@ private:
 class FakeMaoziController final : public QObject {
     Q_OBJECT
     Q_PROPERTY(FakeMaoziRankClient *maoziRank READ maoziRank CONSTANT)
+    Q_PROPERTY(QVariantMap s1Archive READ s1Archive CONSTANT)
+    Q_PROPERTY(QVariantList guildRoster READ guildRoster NOTIFY guildRosterChanged)
 
 public:
     FakeMaoziRankClient *maoziRank() noexcept { return &rank; }
+    QVariantList guildRoster() const { return roster; }
+    void setRoster(QVariantList value) { roster = std::move(value); emit guildRosterChanged(); }
+    QVariantMap s1Archive() const
+    {
+        if (useBundledArchive) return S1Archive::bundled();
+        const QVariantMap regular{{QStringLiteral("id"), QStringLiteral("match-a")},
+                                  {QStringLiteral("title"), QStringLiteral("常规测试赛")},
+                                  {QStringLiteral("detail"), QStringLiteral("逐场详情")}};
+        const QVariantMap final{{QStringLiteral("id"), QStringLiteral("final-a")},
+                                {QStringLiteral("title"), QStringLiteral("决赛测试赛")},
+                                {QStringLiteral("detail"), QStringLiteral("决赛详情")}};
+        const QVariantMap football{{QStringLiteral("id"), QStringLiteral("g0")},
+                                   {QStringLiteral("summary"), QStringLiteral("G1 测试赛")},
+                                   {QStringLiteral("detail"), QVariantMap{{QStringLiteral("sections"),
+                                       QVariantList{QVariantMap{{QStringLiteral("text"),
+                                           QStringLiteral("进球事件")}}}}}}};
+        return {
+            {QStringLiteral("version"), 1},
+            {QStringLiteral("capturedAt"), QStringLiteral("2026-10-27")},
+            {QStringLiteral("ranking"), QVariantMap{{QStringLiteral("participants"), rank.entries()}}},
+            {QStringLiteral("regularSeason"), QVariantMap{{QStringLiteral("matches"), QVariantList{regular}}}},
+            {QStringLiteral("finals"), QVariantMap{{QStringLiteral("matches"), QVariantList{final}}}},
+            {QStringLiteral("football"), QVariantMap{{QStringLiteral("matches"), QVariantList{football}}}},
+            {QStringLiteral("placement"), QVariantMap{{QStringLiteral("participants"), rank.placementEntries()},
+                                                       {QStringLiteral("sessions"), QVariantList{}}}},
+        };
+    }
     Q_INVOKABLE bool openExternalUrl(const QString &url)
     {
         lastExternalUrl = url;
@@ -532,7 +862,11 @@ public:
     }
 
     FakeMaoziRankClient rank;
+    bool useBundledArchive = false;
     QString lastExternalUrl;
+    QVariantList roster;
+signals:
+    void guildRosterChanged();
 };
 
 void registerQmlTypes()
@@ -559,6 +893,24 @@ void click(QObject *object)
 {
     QVERIFY(object != nullptr);
     QVERIFY(QMetaObject::invokeMethod(object, "clicked"));
+}
+
+void pointerClick(QQuickWindow *window, QQuickItem *item)
+{
+    QVERIFY(item != nullptr);
+    QVERIFY(item->isVisible());
+    QVERIFY(item->isEnabled());
+    window->requestActivate();
+    QTRY_VERIFY(window->isActive());
+    // Settle the popup/section layout before converting the target to scene coordinates.
+    QTest::qWait(50);
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
+                      item->mapToScene(QPointF(item->width() / 2, item->height() / 2)).toPoint());
+}
+
+QRectF sceneBounds(QQuickItem *item)
+{
+    return {item->mapToScene(QPointF()), item->size()};
 }
 
 QVariantMap roomTileProperties(const QString &danmakuState)
@@ -615,20 +967,59 @@ QQuickItem *quickItemByObjectName(QQuickItem *root, const QString &objectName)
     return nullptr;
 }
 
+QList<QQuickItem *> quickItemsByObjectName(QQuickItem *root, const QString &objectName)
+{
+    QList<QQuickItem *> items;
+    if (root->objectName() == objectName) items.append(root);
+    for (QQuickItem *child : root->childItems()) items.append(quickItemsByObjectName(child, objectName));
+    return items;
+}
+
+QVariant qmlData(QObject *object, const char *property)
+{
+    const QVariant value = object->property(property);
+    return value.metaType() == QMetaType::fromType<QJSValue>() ? value.value<QJSValue>().toVariant() : value;
+}
+
+QQuickItem *archiveDetailRoot(QQuickItem *child)
+{
+    for (auto *item = child; item != nullptr; item = item->parentItem()) {
+        if (item->property("record").isValid() && item->property("matchRecord").isValid()) return item;
+    }
+    return nullptr;
+}
+
 } // namespace
 
 class QmlInteractionTest final : public QObject {
     Q_OBJECT
 
 private slots:
+    void keepsBottomRowRoomMenuInsideWindowAndClosesOutside();
+    void preservesPresetNameUntilSaveSucceeds();
+    void keepsKeyboardRoomControlsVisibleAndHiddenBarsInactive();
+    void watchToolsOverlayPreservesWorkspaceGeometry();
+    void navigatesWatchToolsInlineWithPointerAndKeyboard();
+    void roomDrawerHasOneAddEntry();
+    void watchSurfacesReplaceEachOtherAndLayoutSupportsKeyboard();
+    void watchToolsShortcutProtectsUnnamedEditableControls();
+    void immersiveToolsCloseBeforeFullscreenAndRestoreFocus();
+    void themeChangesKeepWorkspaceInstances();
+    void countsConnectedDanmakuFromRoomStates();
+    void initTestCase();
     void opensAddRoomDialogAndRejectsInvalidRoomId();
     void opensMonitoringDanmakuAndWorkspaceSurfaces();
+    void reusesSurfacesAcrossRepeatedViewSwitches();
+    void rendersUnavailableNotificationStatus();
     void closesTransientSurfacesFromExplicitActions();
     void togglesSidebarAndHandlesRetainedShortcuts();
     void handlesLegacyShortcutParity();
     void rendersOnlineStatusForOnlineToken();
     void showsDanmakuDisplayGovernanceAndStatsTabs();
+    void readsSelectedRoomGovernanceOverride();
+    void refreshesSelectedRoomStatsFromRoomSignal();
     void showsDanmakuStatusOnRoomTile();
+    void reportsAudioFocusCommandErrorsFromRoomActions();
     void rendersRoomAvatarFromModelRole();
     void placesSidebarToggleBeforeBrandAndOpensHistory();
     void placesNavigationEntryAfterSidebarToggleAndBeforeBrand();
@@ -642,6 +1033,7 @@ private slots:
     void doesNotExposeGroupManagementControls();
     void rendersAndAddsSearchCandidate();
     void exposesSupportedLayoutOptions();
+    void alignsLayoutMenuSelectionIndicator();
     void enablesDualPrimaryLayoutAfterFourthRoomIsAdded();
     void laysOutFiveAutomaticRoomsInThreeAndTwoRows();
     void laysOutPrimaryRoomsAcrossFullHeight();
@@ -652,6 +1044,9 @@ private slots:
     void positionsSoundPopoverLikeDanmakuPanel();
     void truncatesLongRoomTitleBeforeActions();
     void keepsSidebarMetadataClearOfActionsForLongTitles();
+    void keepsCurrentRoomHoverClearOfActions();
+    void keepsHistoryHoverClearOfActions();
+    void keepsFavoritesHoverClearOfActions();
     void exposesRoomVolumeAndRefreshControls();
     void hidesInactiveRoomControlsWithRetainedFocus();
     void hidesRoomControlsAfterMenuCloses();
@@ -659,6 +1054,7 @@ private slots:
     void hidesInitiallyVisibleRoomControlsWithoutPointerEntry();
     void switchesRoomQualityByStreamRate();
     void keepsQualityLabelGeometryWhileHoveringSelector();
+    void hidesRoomQualitySelectorIndicator();
     void rendersQualityPopupOptions();
     void rendersAvailableQualitiesFromModelRole();
     void defersRoomRemovalUntilAfterQmlHandlerReturns();
@@ -666,6 +1062,8 @@ private slots:
     void rendersFallbackMetadataAndUnknownStatus();
     void exposesRoomOrderingControls();
     void disablesOrderingAtListBoundaries();
+    void keepsSidebarActionsWithinRoomRows();
+    void groupsHeaderActionsWithStableTooltips();
     void doesNotExposeRoomDragAndDropSurface();
     void deletesWorkspacePresetFromPanel();
     void defersWorkspacePresetApplyUntilPopupHandlerReturns();
@@ -673,230 +1071,220 @@ private slots:
     void keepsTransientDialogSurfacesDark();
     void keepsInputAndMenuControlsOnDarkTheme();
     void exposesFavoriteTitleNotificationPreference();
+    void preservesDialogEscapeCancelAndFocusSemantics();
+    void keepsTeamManagerReachableAtShortViewport();
     void checksForUpdatesFromSettingsPage();
     void managesTeamsOnlyFromSettings();
     void deletesTeamFromManagerRow();
     void previewsAndConfirmsTeamImport();
-    void groupsGuildNavigationByTeamsWithoutRoleLabels();
-    void filtersGuildNavigationWithoutChangingTeamOrder();
+    void listsGuildNavigationWithoutTeamGroups();
+    void filtersGuildNavigationByGenderStatusAndSearch();
+    void clearsFilteredGuildSelectionButKeepsMatchingLiveUpdates();
     void quickAddsResolvedGuildMember();
     void submitsManualGuildRoomId();
     void rendersGuildMemberAvatarAndLiveState();
-    void ordersGuildNavigationByRoleTeamAndPinyin();
+    void ordersGuildNavigationByPublicDirectory();
     void checksRankVersionOnlyWhileGuildNavigationIsVisible();
     void hoverCardOmitsDetailsButton();
+    void highlightsWholeGuildRowWithoutNameStrip();
+    void compactsGuildHoverCardWithoutRankData();
     void opensMaoziRankPageFromHeader();
     void filtersAndRefreshesMaoziRankPage();
+    void browsesCompleteS1Archive();
+    void updatesRankPortraitsWithoutChangingArchiveOrGuessingNames();
+    void retriesFailedRankPortraitsAndResetsForNewSources();
+    void preservesMissingRadarValuesAndValidZero();
+    void keepsAllStructuredArchiveDetailsAndReturnContext();
+    void keepsVideoControlsDarkAndQualityKeyboardUsableAcrossThemes();
+    void showsCstgTerminalName();
     void editsEventMappingFromSettings();
+    void laysOutSettingsAcrossWidths();
+    void scrollsLongSettingsRosterWithoutClipping();
+    void preservesSettingsCloseBehaviorActions();
+    void showsCloseBehaviorPersistenceRetry();
     void eventMappingPopupsUseDarkTheme();
     void updatesGuildStatusWithoutRecreatingRows();
-    void closesGuildHoverWhenNavigationHidden();
+    void keepsGuildAddHoverStableWithoutDataPopup();
+    void showsHoverMetricsInKeyboardMemberDetails_data();
+    void showsHoverMetricsInKeyboardMemberDetails();
     void rendersUnknownSearchStatus();
     void retriesUnsavedWorkspaceFromPersistentWarning();
 };
 
-void QmlInteractionTest::groupsGuildNavigationByTeamsWithoutRoleLabels()
+void QmlInteractionTest::initTestCase()
+{
+    QVERIFY2(DouyuTestSupport::prepareTestFonts(),
+             "No Simplified Chinese font is available for QML tests (check QT_QPA_FONTDIR)");
+}
+
+void QmlInteractionTest::listsGuildNavigationWithoutTeamGroups()
 {
     FakeGuildNavigationController controller;
-    controller.roster = QVariantList{
-        QVariantMap{{QStringLiteral("id"), QStringLiteral("hamster-001")},
-                    {QStringLiteral("anchorName"), QStringLiteral("寅子")},
-                    {QStringLiteral("roomId"), QStringLiteral("71415")},
-                    {QStringLiteral("status"), QStringLiteral("resolved")},
-                    {QStringLiteral("active"), false}},
-        QVariantMap{{QStringLiteral("id"), QStringLiteral("hamster-004")},
-                    {QStringLiteral("anchorName"), QStringLiteral("主播阿郎")},
-                    {QStringLiteral("roomId"), QStringLiteral("320155")},
-                    {QStringLiteral("status"), QStringLiteral("resolved")},
-                    {QStringLiteral("active"), false}},
+    controller.roster = {
+        QVariantMap{{"id", "one"}, {"anchorName", "主播一"}, {"roomId", "101"}, {"role", "member"},
+                    {"avatarUrl", "qrc:/missing/guild-avatar.png"},
+                    {"fallbackAvatarUrl", "qrc:/qml/assets/brand/icon-navigation.png"},
+                    {"portraitIdentityVerified", true}},
+        QVariantMap{{"id", "two"}, {"anchorName", "主播二"}, {"roomId", "102"}, {"role", "leader"}},
     };
-    controller.teamItems = QVariantList{
-        QVariantMap{{QStringLiteral("id"), QStringLiteral("team-a")},
-                    {QStringLiteral("name"), QStringLiteral("一队")},
-                    {QStringLiteral("memberIds"), QStringList{QStringLiteral("hamster-004")}}},
-        QVariantMap{{QStringLiteral("id"), QStringLiteral("team-b")},
-                    {QStringLiteral("name"), QStringLiteral("二队")},
-                    {QStringLiteral("memberIds"), QStringList{QStringLiteral("hamster-001")}}},
-    };
-
+    controller.teamItems = {QVariantMap{{"id", "team"}, {"name", "旧队伍"}, {"memberIds", QStringList{"two", "one"}}}};
     QQmlApplicationEngine engine;
-    QQmlComponent component(&engine,
-                            QUrl(QStringLiteral("qrc:/qml/components/GuildNavigationPanel.qml")));
+    QQmlComponent component(&engine, QUrl("qrc:/qml/components/GuildNavigationPanel.qml"));
     QVERIFY2(component.isReady(), qPrintable(component.errorString()));
-    QQuickWindow hostWindow;
-    hostWindow.resize(QSize(284, 720));
-    hostWindow.show();
-    std::unique_ptr<QObject> panel(component.createWithInitialProperties({
-        {QStringLiteral("parent"), QVariant::fromValue(hostWindow.contentItem())},
-        {QStringLiteral("width"), 284},
-        {QStringLiteral("height"), 720},
-        {QStringLiteral("controller"),
-         QVariant::fromValue(static_cast<QObject *>(&controller))},
-    }));
-    QVERIFY2(panel != nullptr, qPrintable(component.errorString()));
-
-    QObject *teamsList = panel->findChild<QObject *>(QStringLiteral("guildTeamSections"));
-    QVERIFY(teamsList != nullptr);
-    QTRY_COMPARE(teamsList->property("count").toInt(), 3);
-    QCOMPARE(panel->property("visibleMemberCount").toInt(), 2);
-    QVERIFY(panel->findChild<QObject *>(QStringLiteral("guildMemberRole")) == nullptr);
-
-    QObject *visibleRows = panel->findChild<QObject *>(QStringLiteral("guildVisibleRows"));
-    QVERIFY(visibleRows != nullptr);
-    QCOMPARE(visibleRows->property("count").toInt(), 7);
-
-    QStringList renderedNames;
-    for (const int rowIndex : {2, 5}) {
-        QQuickItem *memberRow = nullptr;
-        QVERIFY(QMetaObject::invokeMethod(visibleRows,
-                                          "itemAt",
-                                          Q_RETURN_ARG(QQuickItem *, memberRow),
-                                          Q_ARG(int, rowIndex)));
-        QVERIFY2(memberRow != nullptr,
-                 qPrintable(QStringLiteral("navigation row %1 is null").arg(rowIndex)));
-        QObject *nameLabel = memberRow->findChild<QObject *>(QStringLiteral("guildMemberName"));
-        QVERIFY2(nameLabel != nullptr,
-                 qPrintable(QStringLiteral("navigation row %1 has no name label").arg(rowIndex)));
-        QVERIFY2(nameLabel->property("visible").toBool(),
-                 qPrintable(QStringLiteral("navigation row %1 name is hidden").arg(rowIndex)));
-        QVERIFY2(nameLabel->property("width").toDouble() > 0,
-                 qPrintable(QStringLiteral("navigation row %1 name width is zero").arg(rowIndex)));
-        QVERIFY2(nameLabel->property("height").toDouble() > 0,
-                 qPrintable(QStringLiteral("navigation row %1 name height is zero").arg(rowIndex)));
-
-        const QString name = nameLabel->property("text").toString();
-        QVERIFY2(!name.isEmpty(),
-                 qPrintable(QStringLiteral("navigation row %1 name text is empty").arg(rowIndex)));
-        renderedNames.append(name);
+    std::unique_ptr<QObject> panel(component.createWithInitialProperties({{"width", 880}, {"height", 564},
+        {"controller", QVariant::fromValue(static_cast<QObject *>(&controller))}}));
+    QVERIFY(panel);
+    auto *rows = panel->findChild<QObject *>("guildVisibleRows");
+    QVERIFY(rows);
+    QCOMPARE(rows->property("count").toInt(), 2);
+    QVERIFY(!panel->findChild<QObject *>("guildTeamTitle"));
+    QVERIFY(!panel->findChild<QObject *>("guildRoleTitle"));
+    QVERIFY(!panel->findChild<QObject *>("guildTeamFilter"));
+    for (int i=0; i<2; ++i) {
+        QQuickItem *row = nullptr;
+        QVERIFY(QMetaObject::invokeMethod(rows, "itemAt", Q_RETURN_ARG(QQuickItem *, row), Q_ARG(int, i)));
+        QVERIFY(row);
+        auto *member = row->findChild<QObject *>("guildMemberRow");
+        QVERIFY(member);
+        QCOMPARE(member->property("memberId").toString(), i == 0 ? QString("one") : QString("two"));
+        if (i == 0) {
+            auto *avatar = member->findChild<QObject *>("guildMemberAvatarImage");
+            QVERIFY(avatar);
+            QTRY_COMPARE(avatar->property("source").toString(),
+                         QStringLiteral("qrc:/qml/assets/brand/icon-navigation.png"));
+            QTRY_COMPARE(avatar->property("status").toInt(), 1);
+    QSignalSpy avatarSourceChanges(avatar, SIGNAL(sourceChanged(const QUrl &)));
+            QVERIFY(avatarSourceChanges.isValid());
+            QVariantMap updatedMember = controller.roster.at(0).toMap();
+            updatedMember.insert(QStringLiteral("liveState"), QStringLiteral("online"));
+            controller.roster[0] = updatedMember;
+            emit controller.guildRosterChanged();
+            QTRY_COMPARE(avatar->property("source").toString(),
+                         QStringLiteral("qrc:/qml/assets/brand/icon-navigation.png"));
+            QCOMPARE(avatarSourceChanges.count(), 0);
+        }
     }
-    renderedNames.sort();
-    QCOMPARE(renderedNames,
-             QStringList({QStringLiteral("主播阿郎"), QStringLiteral("寅子")}));
 }
 
-void QmlInteractionTest::filtersGuildNavigationWithoutChangingTeamOrder()
+void QmlInteractionTest::filtersGuildNavigationByGenderStatusAndSearch()
 {
     FakeGuildNavigationController controller;
-    controller.roster = QVariantList{
-        QVariantMap{{QStringLiteral("id"), QStringLiteral("hamster-001")},
-                    {QStringLiteral("anchorName"), QStringLiteral("寅子")},
-                    {QStringLiteral("roomId"), QStringLiteral("71415")},
-                    {QStringLiteral("status"), QStringLiteral("resolved")},
-                    {QStringLiteral("active"), false}},
-        QVariantMap{{QStringLiteral("id"), QStringLiteral("hamster-002")},
-                    {QStringLiteral("anchorName"), QStringLiteral("主播阿飞")},
-                    {QStringLiteral("roomId"), QStringLiteral("84452")},
-                    {QStringLiteral("status"), QStringLiteral("resolved")},
-                    {QStringLiteral("active"), false}},
+    controller.roster = {
+        QVariantMap{{"id", "m"}, {"anchorName", "男主播"}, {"roomId", "101"}, {"gender", "m"}, {"liveState", "online"}},
+        QVariantMap{{"id", "f"}, {"anchorName", "女主播"}, {"roomId", "102"}, {"gender", "f"}, {"liveState", "offline"}, {"active", true}},
+        QVariantMap{{"id", "old"}, {"anchorName", "旧成员"}, {"gender", "f"}, {"directoryListed", false}}
     };
-    controller.teamItems = QVariantList{
-        QVariantMap{{QStringLiteral("id"), QStringLiteral("team-a")},
-                    {QStringLiteral("name"), QStringLiteral("一队")},
-                    {QStringLiteral("memberIds"), QStringList{QStringLiteral("hamster-001")}}},
-        QVariantMap{{QStringLiteral("id"), QStringLiteral("team-b")},
-                    {QStringLiteral("name"), QStringLiteral("二队")},
-                    {QStringLiteral("memberIds"), QStringList{}}},
-    };
-
     QQmlApplicationEngine engine;
-    QQmlComponent component(&engine,
-                            QUrl(QStringLiteral("qrc:/qml/components/GuildNavigationPanel.qml")));
+    QQmlComponent component(&engine, QUrl("qrc:/qml/components/GuildNavigationPanel.qml"));
     QVERIFY2(component.isReady(), qPrintable(component.errorString()));
-    QQuickWindow hostWindow;
-    hostWindow.resize(QSize(284, 720));
-    hostWindow.show();
-    std::unique_ptr<QObject> panel(component.createWithInitialProperties({
-        {QStringLiteral("parent"), QVariant::fromValue(hostWindow.contentItem())},
-        {QStringLiteral("width"), 284},
-        {QStringLiteral("height"), 720},
-        {QStringLiteral("controller"),
-         QVariant::fromValue(static_cast<QObject *>(&controller))},
-    }));
-    QVERIFY(panel != nullptr);
-
-    QObject *search = panel->findChild<QObject *>(QStringLiteral("guildNavigationSearch"));
-    QVERIFY(search != nullptr);
-    search->setProperty("text", QStringLiteral("阿飞"));
+    std::unique_ptr<QObject> panel(component.createWithInitialProperties({{"width", 880}, {"height", 564},
+        {"controller", QVariant::fromValue(static_cast<QObject *>(&controller))}}));
+    QVERIFY(panel);
+    auto *search = panel->findChild<QObject *>("guildNavigationSearch");
+    QVERIFY(search);
+    auto *rows = panel->findChild<QObject *>("guildVisibleRows");
+    QVERIFY(rows);
+    QQuickItem *male = nullptr;
+    QQuickItem *female = nullptr;
+    QVERIFY(QMetaObject::invokeMethod(rows, "itemAt", Q_RETURN_ARG(QQuickItem *, male), Q_ARG(int, 0)));
+    QVERIFY(QMetaObject::invokeMethod(rows, "itemAt", Q_RETURN_ARG(QQuickItem *, female), Q_ARG(int, 1)));
+    QVERIFY(male && female);
+    QPointer<QQuickItem> originalMale(male), originalFemale(female);
+    QCOMPARE(panel->property("visibleMemberCount").toInt(), 2);
+    QVERIFY(panel->setProperty("genderFilter", "f"));
     QTRY_COMPARE(panel->property("visibleMemberCount").toInt(), 1);
-    QCOMPARE(panel->property("visibleTeamCount").toInt(), 3);
+    QVERIFY(!originalMale.isNull() && !originalFemale.isNull());
+    QVERIFY(!male->isVisible() && !male->isEnabled());
+    QVERIFY(female->isVisible() && female->isEnabled());
+    panel->setProperty("statusFilter", "online");
+    QTRY_COMPARE(panel->property("visibleMemberCount").toInt(), 0);
+    panel->setProperty("statusFilter", "active");
+    QTRY_COMPARE(panel->property("visibleMemberCount").toInt(), 1);
+    search->setProperty("text", "101");
+    QTRY_COMPARE(panel->property("visibleMemberCount").toInt(), 0);
+    search->setProperty("text", "102");
+    QTRY_COMPARE(panel->property("visibleMemberCount").toInt(), 1);
+    panel->setProperty("genderFilter", "all");
+    panel->setProperty("statusFilter", "all");
+    search->setProperty("text", "");
+    QTRY_COMPARE(panel->property("visibleMemberCount").toInt(), 2);
+    for (int cycle = 0; cycle < 4; ++cycle) {
+        for (const char *filter : {"m", "f", "all"}) {
+            panel->setProperty("genderFilter", filter);
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+            QVERIFY(!originalMale.isNull() && !originalFemale.isNull());
+            QCOMPARE(rows->property("count").toInt(), 2);
+            QQuickItem *current = nullptr;
+            QVERIFY(QMetaObject::invokeMethod(rows, "itemAt", Q_RETURN_ARG(QQuickItem *, current), Q_ARG(int, 0)));
+            QCOMPARE(current, originalMale.data());
+            QVERIFY(QMetaObject::invokeMethod(rows, "itemAt", Q_RETURN_ARG(QQuickItem *, current), Q_ARG(int, 1)));
+            QCOMPARE(current, originalFemale.data());
+        }
+    }
 }
 
-void QmlInteractionTest::ordersGuildNavigationByRoleTeamAndPinyin()
+void QmlInteractionTest::clearsFilteredGuildSelectionButKeepsMatchingLiveUpdates()
 {
     FakeGuildNavigationController controller;
-    controller.roster = QVariantList{
-        QVariantMap{{QStringLiteral("id"), QStringLiteral("hamster-004")},
-                    {QStringLiteral("anchorName"), QStringLiteral("主播阿郎")},
-                    {QStringLiteral("pinyinKey"), QStringLiteral("Z")},
-                    {QStringLiteral("roomId"), QStringLiteral("320155")},
-                    {QStringLiteral("role"), QStringLiteral("leader")}},
-        QVariantMap{{QStringLiteral("id"), QStringLiteral("hamster-005")},
-                    {QStringLiteral("anchorName"), QStringLiteral("尐表哥")},
-                    {QStringLiteral("pinyinKey"), QStringLiteral("S")},
-                    {QStringLiteral("roomId"), QStringLiteral("217331")},
-                    {QStringLiteral("role"), QStringLiteral("captain")}},
-        QVariantMap{{QStringLiteral("id"), QStringLiteral("hamster-001")},
-                    {QStringLiteral("anchorName"), QStringLiteral("阿飞")},
-                    {QStringLiteral("pinyinKey"), QStringLiteral("A")},
-                    {QStringLiteral("roomId"), QStringLiteral("84452")},
-                    {QStringLiteral("role"), QStringLiteral("member")}},
-        QVariantMap{{QStringLiteral("id"), QStringLiteral("hamster-046")},
-                    {QStringLiteral("anchorName"), QStringLiteral("白小帅子")},
-                    {QStringLiteral("pinyinKey"), QStringLiteral("B")},
-                    {QStringLiteral("roomId"), QString()},
-                    {QStringLiteral("role"), QStringLiteral("other")}},
-    };
-    controller.teamItems = QVariantList{
-        QVariantMap{{QStringLiteral("id"), QStringLiteral("team-a")},
-                    {QStringLiteral("name"), QStringLiteral("一队")},
-                    {QStringLiteral("memberIds"),
-                     QStringList{QStringLiteral("hamster-005"),
-                                 QStringLiteral("hamster-001"),
-                                 QStringLiteral("hamster-046")}}},
-    };
-
+    controller.roster = {
+        QVariantMap{{"id", "m"}, {"anchorName", "男主播"}, {"roomId", "101"}, {"gender", "m"}, {"liveState", "online"}},
+        QVariantMap{{"id", "f"}, {"anchorName", "女主播"}, {"roomId", "102"}, {"gender", "f"}, {"liveState", "offline"}}};
     QQmlApplicationEngine engine;
-    QQmlComponent component(&engine,
-                            QUrl(QStringLiteral("qrc:/qml/components/GuildNavigationPanel.qml")));
+    QSignalSpy warnings(&engine, &QQmlEngine::warnings);
+    QQmlComponent component(&engine, QUrl("qrc:/qml/components/GuildNavigationPanel.qml"));
     QVERIFY2(component.isReady(), qPrintable(component.errorString()));
-    std::unique_ptr<QObject> panel(component.createWithInitialProperties({
-        {QStringLiteral("controller"), QVariant::fromValue(static_cast<QObject *>(&controller))},
-    }));
-    QVERIFY2(panel != nullptr, qPrintable(component.errorString()));
+    std::unique_ptr<QObject> panel(component.createWithInitialProperties({{"width", 880}, {"height", 564},
+        {"controller", QVariant::fromValue(static_cast<QObject *>(&controller))}}));
+    QVERIFY(panel);
+    auto *details = panel->findChild<QQuickItem *>("guildMemberDetails");
+    auto *search = panel->findChild<QObject *>("guildNavigationSearch");
+    QVERIFY(details && search);
+    QVERIFY(panel->setProperty("selectedMemberId", "m"));
+    QTRY_VERIFY(details->isVisible());
+    auto member = controller.roster[0].toMap();
+    member["liveState"] = "offline";
+    controller.roster[0] = member;
+    emit controller.guildRosterChanged();
+    QCOMPARE(panel->property("selectedMemberId").toString(), QStringLiteral("m"));
+    QVERIFY(details->isVisible());
+    QVERIFY(panel->setProperty("genderFilter", "f"));
+    QTRY_COMPARE(panel->property("selectedMemberId").toString(), QString());
+    QTRY_VERIFY(!details->isVisible());
+    QCOMPARE(panel->property("visibleMemberCount").toInt(), 1);
+    QVERIFY(panel->setProperty("selectedMemberId", "f"));
+    QVERIFY(search->setProperty("text", "101"));
+    QTRY_COMPARE(panel->property("selectedMemberId").toString(), QString());
+    QVERIFY(search->setProperty("text", ""));
+    QVERIFY(panel->setProperty("selectedMemberId", "f"));
+    QVERIFY(panel->setProperty("statusFilter", "online"));
+    QTRY_COMPARE(panel->property("selectedMemberId").toString(), QString());
+    QCOMPARE(warnings.count(), 0);
+}
 
-    QObject *rows = panel->findChild<QObject *>(QStringLiteral("guildVisibleRows"));
-    QVERIFY(rows != nullptr);
-    QTRY_COMPARE(rows->property("count").toInt(), 10);
-
-    QQuickItem *teamHeader = nullptr;
-    QVERIFY(QMetaObject::invokeMethod(rows, "itemAt",
-                                      Q_RETURN_ARG(QQuickItem *, teamHeader),
-                                      Q_ARG(int, 0)));
-    QVERIFY(teamHeader != nullptr);
-    QObject *teamHeaderText =
-        teamHeader->findChild<QObject *>(QStringLiteral("guildTeamTitle"));
-    QVERIFY(teamHeaderText != nullptr);
-    QCOMPARE(teamHeaderText->property("text").toString(), QStringLiteral("团长"));
-    QVERIFY(component.errorString().isEmpty());
-
-    QQuickItem *captainTitle = nullptr;
-    QVERIFY(QMetaObject::invokeMethod(rows, "itemAt",
-                                      Q_RETURN_ARG(QQuickItem *, captainTitle),
-                                      Q_ARG(int, 3)));
-    QVERIFY(captainTitle != nullptr);
-    QObject *captainTitleText =
-        captainTitle->findChild<QObject *>(QStringLiteral("guildRoleTitle"));
-    QVERIFY(captainTitleText != nullptr);
-    QCOMPARE(captainTitleText->property("text").toString(), QStringLiteral("队长"));
-    QQuickItem *teamCaptainRow = nullptr;
-    QVERIFY(QMetaObject::invokeMethod(rows, "itemAt",
-                                      Q_RETURN_ARG(QQuickItem *, teamCaptainRow),
-                                      Q_ARG(int, 4)));
-    QVERIFY(teamCaptainRow != nullptr);
-    QObject *teamCaptainName =
-        teamCaptainRow->findChild<QObject *>(QStringLiteral("guildMemberName"));
-    QVERIFY(teamCaptainName != nullptr);
-    QCOMPARE(teamCaptainName->property("text").toString(), QStringLiteral("尐表哥"));
+void QmlInteractionTest::ordersGuildNavigationByPublicDirectory()
+{
+    FakeGuildNavigationController controller;
+    controller.roster = {
+        QVariantMap{{"id", "third"}, {"anchorName", "A团长"}, {"pinyinKey", "A"}, {"role", "leader"}, {"directoryOrder", 2}},
+        QVariantMap{{"id", "first"}, {"anchorName", "Z队员"}, {"pinyinKey", "Z"}, {"role", "member"}, {"directoryOrder", 0}},
+        QVariantMap{{"id", "second"}, {"anchorName", "M队长"}, {"pinyinKey", "M"}, {"role", "captain"}, {"directoryOrder", 1}}
+    };
+    QQmlApplicationEngine engine;
+    QQmlComponent component(&engine, QUrl("qrc:/qml/components/GuildNavigationPanel.qml"));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    std::unique_ptr<QObject> panel(component.createWithInitialProperties({{"width", 880}, {"height", 564},
+        {"controller", QVariant::fromValue(static_cast<QObject *>(&controller))}}));
+    QVERIFY(panel);
+    auto *rows = panel->findChild<QObject *>("guildVisibleRows");
+    QVERIFY(rows);
+    QCOMPARE(rows->property("count").toInt(), 3);
+    const QStringList expected{"first", "second", "third"};
+    for (int i=0; i<expected.size(); ++i) {
+        QQuickItem *row = nullptr;
+        QVERIFY(QMetaObject::invokeMethod(rows, "itemAt", Q_RETURN_ARG(QQuickItem *, row), Q_ARG(int, i)));
+        QVERIFY(row);
+        QCOMPARE(row->findChild<QObject *>("guildMemberRow")->property("memberId").toString(), expected[i]);
+    }
 }
 
 void QmlInteractionTest::checksRankVersionOnlyWhileGuildNavigationIsVisible()
@@ -967,26 +1355,99 @@ void QmlInteractionTest::updatesGuildStatusWithoutRecreatingRows()
     QCOMPARE(updated, original.data());
     QCOMPARE(updated->findChild<QObject *>("guildMemberLiveStateLabel")->property("text").toString(),
              QStringLiteral("直播中"));
-    QSignalSpy hoverExited(panel.get(), SIGNAL(memberHoverExited()));
     panel->setProperty("visible", false);
-    QVERIFY(hoverExited.count() > 0);
+    QVERIFY(!panel->property("visible").toBool());
 }
 
-void QmlInteractionTest::closesGuildHoverWhenNavigationHidden()
+void QmlInteractionTest::keepsGuildAddHoverStableWithoutDataPopup()
 {
+    FakeGuildNavigationController controller;
+    controller.roster = {QVariantMap{{"id", "fixture"}, {"anchorName", "测试主播"}, {"roomId", "101"}, {"status", "resolved"}}};
     QQmlApplicationEngine engine;
     auto *window = loadWindow(engine);
-    QVERIFY(window != nullptr);
+    QVERIFY(window);
+    window->resize(1280, 800);
+    window->show();
+    QVERIFY(QTest::qWaitForWindowExposed(window));
     click(window->findChild<QObject *>("hamsterNavigationButton"));
-    auto *card = window->findChild<QObject *>("guildRankHoverCard");
-    QVERIFY(card != nullptr);
-    window->setProperty("hoveredGuildMemberId", "fixture");
-    card->setProperty("visible", true);
-    QTRY_VERIFY(card->property("visible").toBool());
+    auto *panel = window->findChild<QObject *>("guildNavigationPanel");
+    QVERIFY(panel);
+    panel->setProperty("controller", QVariant::fromValue(static_cast<QObject *>(&controller)));
+    QQuickItem *add = nullptr;
+    QTRY_VERIFY((add = quickItemByObjectName(qobject_cast<QQuickItem *>(panel), "guildQuickAddButton")) != nullptr);
+    QTRY_VERIFY(add->isEnabled());
+    // Wait for the opened page's layout; a newly created delegate initially uses its implicit width.
+    QTRY_COMPARE(panel->property("width").toReal(), qreal(window->width() - 80));
+    QTRY_COMPARE(add->mapToScene(add->boundingRect().center()).x(), qreal(window->width() - 68));
+    QSignalSpy hovered(add, SIGNAL(hoveredChanged()));
+    const QPoint point = add->mapToScene(QPointF(add->width()/2, add->height()/2)).toPoint();
+    QTest::mouseMove(window, point);
+    QTRY_VERIFY(add->property("hovered").toBool());
+    hovered.clear();
+    const QRectF original(add->mapToScene(QPointF()), add->size());
+    for (int i=0; i<12; ++i) {
+        QTest::qWait(100);
+        QVERIFY(add->property("hovered").toBool());
+        QCOMPARE(QRectF(add->mapToScene(QPointF()), add->size()), original);
+        QVERIFY(!window->findChild<QObject *>("guildRankHoverCard"));
+    }
+    QCOMPARE(hovered.count(), 0);
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, point);
+    QCOMPARE(controller.lastAddedMemberId, QString("fixture"));
     click(window->findChild<QObject *>("sidebarToggleButton"));
-    QTRY_VERIFY(!window->property("navigationVisible").toBool());
-    QTRY_VERIFY(!card->property("visible").toBool());
-    QCOMPARE(window->property("hoveredGuildMemberId").toString(), QString());
+    QTRY_VERIFY(!panel->property("visible").toBool());
+}
+
+void QmlInteractionTest::showsHoverMetricsInKeyboardMemberDetails_data()
+{
+    QTest::addColumn<bool>("missingMetrics");
+    QTest::newRow("recorded") << false;
+    QTest::newRow("missing") << true;
+}
+
+void QmlInteractionTest::showsHoverMetricsInKeyboardMemberDetails()
+{
+    QFETCH(bool, missingMetrics);
+    FakeGuildHoverController controller;
+    controller.missingMetrics = missingMetrics;
+    QQmlApplicationEngine engine;
+    QQuickWindow window;
+    window.resize(QSize(1200, 764));
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qml/components/GuildNavigationPanel.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    std::unique_ptr<QObject> panel(component.createWithInitialProperties({
+        {QStringLiteral("parent"), QVariant::fromValue(window.contentItem())},
+        {QStringLiteral("width"), 1200}, {QStringLiteral("height"), 764},
+        {QStringLiteral("controller"), QVariant::fromValue(static_cast<QObject *>(&controller))},
+    }));
+    QVERIFY2(panel != nullptr, qPrintable(component.errorString()));
+    auto *rows = panel->findChild<QObject *>(QStringLiteral("guildVisibleRows"));
+    QVERIFY(rows != nullptr);
+    QQuickItem *nameButton = nullptr;
+    const auto findNameButton = [&]() {
+        for (int index = 0; index < rows->property("count").toInt(); ++index) {
+            QQuickItem *row = nullptr;
+            if (!QMetaObject::invokeMethod(rows, "itemAt", Q_RETURN_ARG(QQuickItem *, row),
+                                          Q_ARG(int, index)) || row == nullptr) continue;
+            auto *candidate = row->findChild<QQuickItem *>(QStringLiteral("guildMemberName"));
+            if (candidate && candidate->isVisible()) { nameButton = candidate; return true; }
+        }
+        return false;
+    };
+    QTRY_VERIFY(findNameButton());
+    nameButton->forceActiveFocus(Qt::TabFocusReason);
+    QTest::keyClick(&window, Qt::Key_Space);
+    QTRY_COMPARE(panel->property("selectedMemberId").toString(), QStringLiteral("hamster-001"));
+    auto *placement = panel->findChild<QQuickItem *>(QStringLiteral("guildSelectedPlacementSummary"));
+    auto *playValue = panel->findChild<QQuickItem *>(QStringLiteral("guildSelectedPlayValueSummary"));
+    QVERIFY(placement && playValue);
+    QTRY_VERIFY(placement->isVisible() && playValue->isVisible());
+    QCOMPARE(placement->property("text").toString(),
+             missingMetrics ? QStringLiteral("定级赛总评 —") : QStringLiteral("定级赛总评 88.50"));
+    QCOMPARE(playValue->property("text").toString(),
+             missingMetrics ? QStringLiteral("游乐值 —") : QStringLiteral("游乐值 6.4"));
 }
 
 void QmlInteractionTest::hoverCardOmitsDetailsButton()
@@ -998,6 +1459,88 @@ void QmlInteractionTest::hoverCardOmitsDetailsButton()
     std::unique_ptr<QObject> card(component.create());
     QVERIFY2(card != nullptr, qPrintable(component.errorString()));
     QVERIFY(card->findChild<QObject *>(QStringLiteral("guildRankDetailsButton")) == nullptr);
+}
+
+void QmlInteractionTest::highlightsWholeGuildRowWithoutNameStrip()
+{
+    FakeGuildHoverController controller;
+    QQmlApplicationEngine engine;
+    QQuickWindow window;
+    window.resize(1200, 764);
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    window.requestActivate();
+    QTRY_VERIFY(window.isActive());
+    QQmlComponent component(&engine, QUrl("qrc:/qml/components/GuildNavigationPanel.qml"));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    std::unique_ptr<QObject> panel(component.createWithInitialProperties({
+        {"parent", QVariant::fromValue(window.contentItem())},
+        {"width", 1200}, {"height", 764},
+        {"controller", QVariant::fromValue(static_cast<QObject *>(&controller))},
+    }));
+    QVERIFY2(panel != nullptr, qPrintable(component.errorString()));
+    QQuickItem *member = nullptr;
+    const auto findMember = [&]() {
+        const auto visit = [&](auto &&self, QQuickItem *item) -> QQuickItem * {
+            if (item->objectName() == "guildMemberRow" && item->isVisible()
+                && item->property("memberId").toString() == "hamster-001") return item;
+            for (auto *child : item->childItems())
+                if (auto *match = self(self, child)) return match;
+            return nullptr;
+        };
+        return visit(visit, qobject_cast<QQuickItem *>(panel.get()));
+    };
+    QTRY_VERIFY((member = findMember()) != nullptr);
+    auto *background = member->parentItem()->findChild<QQuickItem *>("guildMemberRowBackground");
+    auto *name = member->findChild<QQuickItem *>("guildMemberName");
+    auto *nameBackground = member->findChild<QQuickItem *>("guildMemberNameBackground");
+    auto *avatar = member->findChild<QQuickItem *>("guildMemberAvatar");
+    QVERIFY(background && name && nameBackground && avatar);
+    QSignalSpy frames(&window, &QQuickWindow::frameSwapped);
+    window.update();
+    QTRY_VERIFY(!frames.isEmpty());
+    QTest::mouseMove(&window, QPoint(1199, 763));
+    QTRY_VERIFY(!member->property("hovered").toBool());
+    const QColor normal = background->property("color").value<QColor>();
+    QTest::mouseMove(&window, avatar->mapToScene(QPointF(20, 20)).toPoint());
+    QTRY_VERIFY(member->property("hovered").toBool());
+    QTRY_VERIFY(background->property("color").value<QColor>() != normal);
+    QVERIFY(background->width() >= member->width());
+    QVERIFY(background->height() >= member->height());
+    QTest::mouseMove(&window, name->mapToScene(QPointF(name->width() / 2, name->height() / 2)).toPoint());
+    QTRY_VERIFY(name->property("hovered").toBool());
+    QCOMPARE(nameBackground->property("color").value<QColor>().alpha(), 0);
+    QTest::qWait(600);
+    for (QObject *child : name->findChildren<QObject *>()) {
+        if (QByteArray(child->metaObject()->className()).contains("ToolTip"))
+            QVERIFY(!child->property("visible").toBool());
+    }
+    QTest::mouseMove(&window, QPoint(1199, 763));
+    QTRY_COMPARE(background->property("color").value<QColor>(), normal);
+}
+
+void QmlInteractionTest::compactsGuildHoverCardWithoutRankData()
+{
+    QQmlApplicationEngine engine;
+    QQuickWindow window;
+    window.resize(640, 480);
+    window.show();
+    QQmlComponent component(&engine, QUrl("qrc:/qml/components/GuildRankHoverCard.qml"));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    QVariantMap member{{"anchorName", QStringLiteral("测试主播")}, {"rankMatched", false}};
+    std::unique_ptr<QObject> card(component.createWithInitialProperties({
+        {"parent", QVariant::fromValue(window.contentItem())}, {"member", member},
+    }));
+    QVERIFY2(card != nullptr, qPrintable(component.errorString()));
+    QVERIFY(QMetaObject::invokeMethod(card.get(), "open"));
+    QTRY_VERIFY(card->property("visible").toBool());
+    QTRY_VERIFY(card->property("height").toReal() > 60);
+    QVERIFY2(card->property("height").toReal() <= 120,
+             "Missing rank metrics must not leave the radar chart's empty vertical space");
+    const qreal compactHeight = card->property("height").toReal();
+    member.insert("rankMatched", true);
+    card->setProperty("member", member);
+    QTRY_VERIFY(card->property("height").toReal() > compactHeight + 100);
 }
 
 void QmlInteractionTest::quickAddsResolvedGuildMember()
@@ -1083,6 +1626,15 @@ void QmlInteractionTest::submitsManualGuildRoomId()
     QCOMPARE(submitted.count(), 1);
     QCOMPARE(submitted.at(0).at(0).toString(), QStringLiteral("hamster-001"));
     QCOMPARE(submitted.at(0).at(1).toString(), QStringLiteral("71415"));
+    click(roomLabel);
+    QTRY_VERIFY(input->property("visible").toBool());
+    input->setProperty("text", QStringLiteral("99999"));
+    auto resolvedMember = row->property("member").toMap();
+    resolvedMember["roomId"] = QStringLiteral("71415");
+    row->setProperty("member", resolvedMember);
+    QTRY_VERIFY(!input->property("visible").toBool());
+    QVERIFY(QMetaObject::invokeMethod(input, "accepted"));
+    QCOMPARE(submitted.count(), 1);
 }
 
 void QmlInteractionTest::keepsTransientDialogSurfacesDark()
@@ -1102,10 +1654,10 @@ void QmlInteractionTest::keepsTransientDialogSurfacesDark()
     QVERIFY(notification != nullptr);
     QObject *notificationFooter = notification->findChild<QObject *>(QStringLiteral("notificationDialogFooter"));
     QVERIFY(notificationFooter != nullptr);
-    QCOMPARE(notificationFooter->property("color").value<QColor>(), QColor(QStringLiteral("#202731")));
+    QCOMPARE(notificationFooter->property("color").value<QColor>(), QColor(QStringLiteral("#161c1b")));
     QObject *notificationLabel = notification->findChild<QObject *>(QStringLiteral("notificationEnabledLabel"));
     QVERIFY(notificationLabel != nullptr);
-    QCOMPARE(notificationLabel->property("color").value<QColor>(), QColor(QStringLiteral("#eef2f7")));
+    QCOMPARE(notificationLabel->property("color").value<QColor>(), QColor(QStringLiteral("#9aa8a3")));
 
     QQmlComponent addRoomComponent(&engine,
                                    QUrl(QStringLiteral("qrc:/qml/dialogs/AddRoomDialog.qml")));
@@ -1116,7 +1668,7 @@ void QmlInteractionTest::keepsTransientDialogSurfacesDark()
     QVERIFY(addRoom != nullptr);
     QObject *addRoomFooter = addRoom->findChild<QObject *>(QStringLiteral("addRoomDialogFooter"));
     QVERIFY(addRoomFooter != nullptr);
-    QCOMPARE(addRoomFooter->property("color").value<QColor>(), QColor(QStringLiteral("#202731")));
+    QCOMPARE(addRoomFooter->property("color").value<QColor>(), QColor(QStringLiteral("#161c1b")));
 }
 
 void QmlInteractionTest::retriesUnsavedWorkspaceFromPersistentWarning()
@@ -1201,6 +1753,157 @@ void QmlInteractionTest::editsEventMappingFromSettings()
     QVERIFY(hostWindow.grabWindow().save(directory + "/event-mapping-settings.png"));
 }
 
+void QmlInteractionTest::laysOutSettingsAcrossWidths()
+{
+    FakeUpdateController controller;
+    QQmlApplicationEngine engine;
+    QSignalSpy warnings(&engine, &QQmlEngine::warnings);
+    QQuickWindow window;
+    window.resize(1600, 900);
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qml/pages/SettingsPage.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    std::unique_ptr<QObject> page(component.createWithInitialProperties({
+        {"parent", QVariant::fromValue(window.contentItem())},
+        {"controller", QVariant::fromValue(static_cast<QObject *>(&controller))},
+        {"width", 1600}, {"height", 900}}));
+    QVERIFY2(page != nullptr, qPrintable(component.errorString()));
+    auto *general = page->findChild<QQuickItem *>("closeBehaviorSection");
+    auto *team = page->findChild<QQuickItem *>("teamManagementSection");
+    auto *activity = page->findChild<QQuickItem *>("eventMappingSection");
+    auto *updates = page->findChild<QQuickItem *>("updateSection");
+    QVERIFY(general && team && activity && updates);
+    QTRY_VERIFY(activity->x() > general->x() + general->width());
+    QVERIFY(team->y() > general->y());
+    QVERIFY(updates->y() > team->y());
+    QVERIFY(activity->width() > general->width());
+    QVERIFY(activity->x() + activity->width() <= 1600 - 24);
+    const auto directory = QCoreApplication::applicationDirPath() + "/verification";
+    QVERIFY(QDir().mkpath(directory));
+    QVERIFY(window.grabWindow().save(directory + "/settings-wide-1600.png"));
+
+    auto *pageItem = qobject_cast<QQuickItem *>(page.get());
+    QVERIFY(pageItem != nullptr);
+    pageItem->setWidth(640);
+    window.resize(640, 720);
+    pageItem->setHeight(720);
+    QTRY_VERIFY(activity->y() > updates->y());
+    QVERIFY(qAbs(activity->x() - general->x()) < 2);
+    QVERIFY(activity->x() + activity->width() <= 640 - 16);
+    auto *field = page->findChild<QQuickItem *>("eventMappingName");
+    QVERIFY(field != nullptr);
+    QVERIFY(field->width() <= activity->width());
+    QVERIFY(window.grabWindow().save(directory + "/settings-narrow-640.png"));
+    QCOMPARE(warnings.count(), 0);
+}
+
+void QmlInteractionTest::scrollsLongSettingsRosterWithoutClipping()
+{
+    FakeUpdateController controller;
+    controller.memberCount = 26;
+    QQmlApplicationEngine engine;
+    QSignalSpy warnings(&engine, &QQmlEngine::warnings);
+    QQuickWindow window;
+    window.resize(920, 480);
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qml/pages/SettingsPage.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    std::unique_ptr<QObject> page(component.createWithInitialProperties({
+        {"parent", QVariant::fromValue(window.contentItem())},
+        {"controller", QVariant::fromValue(static_cast<QObject *>(&controller))},
+        {"width", 920}, {"height", 480}}));
+    QVERIFY2(page != nullptr, qPrintable(component.errorString()));
+    auto *rows = page->findChild<QObject *>("eventMappingRows");
+    auto *scroller = page->findChild<QQuickItem *>("settingsScrollArea");
+    QVERIFY(rows && scroller);
+    QTRY_COMPARE(rows->property("count").toInt(), 26);
+    QVERIFY(scroller->property("contentHeight").toReal() > scroller->height());
+    QQuickItem *first = nullptr;
+    QQuickItem *last = nullptr;
+    QVERIFY(QMetaObject::invokeMethod(rows, "itemAt", Q_RETURN_ARG(QQuickItem *, first), Q_ARG(int, 0)));
+    QVERIFY(QMetaObject::invokeMethod(rows, "itemAt", Q_RETURN_ARG(QQuickItem *, last), Q_ARG(int, 25)));
+    QVERIFY(first && last);
+    auto *role = last->findChild<QQuickItem *>("eventMappingRole_25");
+    auto *team = last->findChild<QQuickItem *>("eventMappingTeam_25");
+    QVERIFY(role && team);
+    const auto roleStart = role->mapToScene(QPointF(0, 0));
+    const auto teamStart = team->mapToScene(QPointF(0, 0));
+    QVERIFY(qAbs(roleStart.y() - teamStart.y()) < 2);
+    QVERIFY(roleStart.x() + role->width() <= teamStart.x());
+    QVERIFY(teamStart.x() + team->width() <= 920 - 16);
+    scroller->setProperty("contentY", scroller->property("contentHeight").toReal() - scroller->height());
+    QTRY_VERIFY(last->mapToScene(QPointF(0, last->height())).y() < 480);
+    auto *save = page->findChild<QQuickItem *>("saveEventMappingButton");
+    QVERIFY(save != nullptr);
+    QVERIFY(save->mapToScene(QPointF(0, save->height())).y() <= 480);
+    const auto directory = QCoreApplication::applicationDirPath() + "/verification";
+    QVERIFY(QDir().mkpath(directory));
+    QVERIFY(window.grabWindow().save(directory + "/settings-long-list-920.png"));
+    QCOMPARE(warnings.count(), 0);
+}
+
+void QmlInteractionTest::preservesSettingsCloseBehaviorActions()
+{
+    FakeUpdateController controller;
+    QQmlApplicationEngine engine;
+    QQuickWindow hostWindow;
+    hostWindow.resize(800, 600);
+    hostWindow.show();
+    QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qml/pages/SettingsPage.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    std::unique_ptr<QObject> page(component.createWithInitialProperties({
+        {"parent", QVariant::fromValue(hostWindow.contentItem())},
+        {"controller", QVariant::fromValue(static_cast<QObject *>(&controller))},
+        {"width", 800}, {"height", 600}}));
+    QVERIFY2(page != nullptr, qPrintable(component.errorString()));
+    auto *options = page->findChild<QObject *>("closeBehaviorOptions");
+    QVERIFY(options != nullptr);
+    QQuickItem *background = nullptr;
+    QQuickItem *quit = nullptr;
+    QQuickItem *ask = nullptr;
+    QVERIFY(QMetaObject::invokeMethod(options, "itemAt", Q_RETURN_ARG(QQuickItem *, ask), Q_ARG(int, 0)));
+    QVERIFY(QMetaObject::invokeMethod(options, "itemAt", Q_RETURN_ARG(QQuickItem *, background), Q_ARG(int, 1)));
+    QVERIFY(QMetaObject::invokeMethod(options, "itemAt", Q_RETURN_ARG(QQuickItem *, quit), Q_ARG(int, 2)));
+    QVERIFY(ask && background && quit);
+    click(background);
+    QCOMPARE(controller.closeBehavior(), QStringLiteral("background"));
+    QVERIFY(controller.rememberedChoice);
+    click(quit);
+    QCOMPARE(controller.closeBehavior(), QStringLiteral("quit"));
+    click(ask);
+    QCOMPARE(controller.closeBehavior(), QStringLiteral("ask"));
+    QCOMPARE(controller.clearCount, 1);
+}
+
+void QmlInteractionTest::showsCloseBehaviorPersistenceRetry()
+{
+    FakeUpdateController controller;
+    QQmlApplicationEngine engine;
+    QQuickWindow hostWindow;
+    hostWindow.resize(800, 600);
+    hostWindow.show();
+    QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qml/pages/SettingsPage.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    std::unique_ptr<QObject> page(component.createWithInitialProperties({
+        {"parent", QVariant::fromValue(hostWindow.contentItem())},
+        {"controller", QVariant::fromValue(static_cast<QObject *>(&controller))},
+        {"width", 800}, {"height", 600}}));
+    QVERIFY2(page != nullptr, qPrintable(component.errorString()));
+    auto *status = page->findChild<QObject *>("closeBehaviorSaveStatus");
+    auto *retry = page->findChild<QObject *>("retryCloseBehaviorSaveButton");
+    QVERIFY(status != nullptr);
+    QVERIFY(retry != nullptr);
+    QVERIFY(!status->property("visible").toBool());
+    controller.failCloseBehaviorSave();
+    QTRY_VERIFY(status->property("visible").toBool());
+    QCOMPARE(status->property("text").toString(), QStringLiteral("关闭行为保存失败，请重试"));
+    QVERIFY(QMetaObject::invokeMethod(retry, "click"));
+    QTRY_VERIFY(!status->property("visible").toBool());
+    QCOMPARE(controller.closeRetryCount, 1);
+}
+
 void QmlInteractionTest::eventMappingPopupsUseDarkTheme()
 {
     FakeUpdateController controller;
@@ -1234,17 +1937,18 @@ void QmlInteractionTest::eventMappingPopupsUseDarkTheme()
         QTRY_VERIFY(popup->property("visible").toBool());
         auto *background = popup->property("background").value<QQuickItem *>();
         QVERIFY(background != nullptr);
-        QCOMPARE(background->property("color").value<QColor>(), QColor("#12171e"));
+        QCOMPARE(background->property("color").value<QColor>(), QColor("#0e1312"));
         const auto directory = QCoreApplication::applicationDirPath() + "/verification";
         QVERIFY(QDir().mkpath(directory));
-        QTest::qWait(100);
+        QTest::qWait(200);
         const QImage capture = window.grabWindow();
         QVERIFY(!capture.isNull());
         const QPointF sample = background->mapToScene(QPointF(background->width() - 8, 8));
         const QPoint pixel = (sample * window.devicePixelRatio()).toPoint();
         QVERIFY(capture.rect().contains(pixel));
         const auto color = capture.pixelColor(pixel);
-        QVERIFY2(color == QColor("#202731") || color == QColor("#12171e"),
+        QVERIFY2(color == QColor("#1e2624") || color == QColor("#0e1312")
+                 || color == QColor("#25312e") || color == QColor("#1a342c"),
                  qPrintable(color.name()));
         QVERIFY(capture.save(directory + "/" + selector->objectName() + "-dark-popup.png"));
         QVERIFY(QMetaObject::invokeMethod(popup, "close"));
@@ -1440,23 +2144,24 @@ void QmlInteractionTest::keepsInputAndMenuControlsOnDarkTheme()
     QVERIFY(addRoom != nullptr);
     QObject *roomInput = addRoom->findChild<QObject *>(QStringLiteral("roomSearchInput"));
     QVERIFY(roomInput != nullptr);
-    QCOMPARE(roomInput->property("color").value<QColor>(), QColor(QStringLiteral("#eef2f7")));
+    QCOMPARE(roomInput->property("color").value<QColor>(), QColor(QStringLiteral("#e9f0ee")));
 
     QQmlApplicationEngine mainEngine;
     QQuickWindow *window = loadWindow(mainEngine);
     QVERIFY(window != nullptr);
     auto *layoutButton = window->findChild<QObject *>(QStringLiteral("layoutMenuButton"));
     QVERIFY(layoutButton != nullptr);
+    click(window->findChild<QObject *>(QStringLiteral("watchToolsButton")));
     QVERIFY(QMetaObject::invokeMethod(layoutButton, "clicked"));
     QObject *layoutMenu = window->findChild<QObject *>(QStringLiteral("layoutMenu"));
     QVERIFY(layoutMenu != nullptr);
     QTRY_VERIFY(layoutMenu->property("visible").toBool());
     QObject *menuBackground = layoutMenu->findChild<QObject *>(QStringLiteral("layoutMenuBackground"));
     QVERIFY(menuBackground != nullptr);
-    QCOMPARE(menuBackground->property("color").value<QColor>(), QColor(QStringLiteral("#202731")));
+    QCOMPARE(menuBackground->property("color").value<QColor>(), QColor(QStringLiteral("#1e2624")));
     QObject *menuItemLabel = layoutMenu->findChild<QObject *>(QStringLiteral("layoutMenuItemLabel"));
     QVERIFY(menuItemLabel != nullptr);
-    QCOMPARE(menuItemLabel->property("color").value<QColor>(), QColor(QStringLiteral("#eef2f7")));
+    QCOMPARE(menuItemLabel->property("color").value<QColor>(), QColor(QStringLiteral("#e9f0ee")));
 
     QObject *dualPrimary = layoutMenu->findChild<QObject *>(QStringLiteral("dualPrimaryLayoutOption"));
     QVERIFY(dualPrimary != nullptr);
@@ -1465,7 +2170,7 @@ void QmlInteractionTest::keepsInputAndMenuControlsOnDarkTheme()
     QVERIFY(dualPrimaryBackground != nullptr);
     dualPrimary->setProperty("highlighted", true);
     QCOMPARE(dualPrimaryBackground->property("color").value<QColor>(),
-             QColor(QStringLiteral("#12171e")));
+             QColor(QStringLiteral("#0e1312")));
 
     QObject *notification = nullptr;
     QQmlComponent notificationComponent(&engine,
@@ -1483,12 +2188,19 @@ void QmlInteractionTest::keepsInputAndMenuControlsOnDarkTheme()
     QObject *closeIcon = window->findChild<QObject *>(QStringLiteral("windowCloseIcon"));
     QObject *minimizeIcon = window->findChild<QObject *>(QStringLiteral("minimizeIcon"));
     QObject *maximizeIcon = window->findChild<QObject *>(QStringLiteral("maximizeIcon"));
-    QObject *fullscreenIcon = window->findChild<QObject *>(QStringLiteral("fullscreenIcon"));
+    QObject *fullscreenButton = window->findChild<QObject *>(QStringLiteral("fullscreenButton"));
     QVERIFY(closeIcon != nullptr);
     QVERIFY(minimizeIcon != nullptr);
     QVERIFY(maximizeIcon != nullptr);
-    QVERIFY(fullscreenIcon != nullptr);
-    for (QObject *icon : {closeIcon, minimizeIcon, maximizeIcon, fullscreenIcon}) {
+    QVERIFY(fullscreenButton != nullptr);
+    const QUrl fullscreenSource = QQmlProperty::read(
+        fullscreenButton, "icon.source", qmlContext(fullscreenButton)).toUrl();
+    QVERIFY(fullscreenSource.isValid());
+    QVERIFY(fullscreenSource.toString().endsWith(QStringLiteral("window-fullscreen.svg")));
+    auto *fullscreenContent = qvariant_cast<QQuickItem *>(fullscreenButton->property("contentItem"));
+    QVERIFY(fullscreenContent != nullptr);
+    QTRY_VERIFY(fullscreenContent->width() > 0 && fullscreenContent->height() > 0);
+    for (QObject *icon : {closeIcon, minimizeIcon, maximizeIcon}) {
         QVERIFY(icon->property("source").toUrl().isValid());
     }
 }
@@ -1505,6 +2217,579 @@ void QmlInteractionTest::exposesFavoriteTitleNotificationPreference()
     QVERIFY(dialog->findChild<QObject *>(QStringLiteral("notificationFavoriteTitleCheckBox")) != nullptr);
 }
 
+void QmlInteractionTest::preservesDialogEscapeCancelAndFocusSemantics()
+{
+    registerQmlTypes();
+    QQmlApplicationEngine engine;
+    QQuickWindow window;
+    window.resize(QSize(960, 720));
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+
+    auto *triggerItem = new QQuickItem(window.contentItem());
+    triggerItem->setObjectName(QStringLiteral("dialogFocusReturnTrigger"));
+    triggerItem->setSize(QSizeF(120, 32));
+
+    const auto focusTrigger = [&]() {
+        triggerItem->forceActiveFocus(Qt::TabFocusReason);
+        QTRY_VERIFY(window.activeFocusItem() == triggerItem);
+    };
+    const auto verifyFocusReturned = [&]() {
+        QTRY_VERIFY(window.activeFocusItem() == triggerItem);
+    };
+
+    FakeSearchController searchController;
+    QQmlComponent addRoomComponent(
+        &engine, QUrl(QStringLiteral("qrc:/qml/dialogs/AddRoomDialog.qml")));
+    QVERIFY2(addRoomComponent.isReady(), qPrintable(addRoomComponent.errorString()));
+    std::unique_ptr<QObject> addRoom(addRoomComponent.createWithInitialProperties({
+        {QStringLiteral("parent"), QVariant::fromValue(window.contentItem())},
+        {QStringLiteral("controller"),
+         QVariant::fromValue(static_cast<QObject *>(&searchController))},
+    }));
+    QVERIFY2(addRoom != nullptr, qPrintable(addRoomComponent.errorString()));
+    focusTrigger();
+    QVERIFY(QMetaObject::invokeMethod(addRoom.get(), "open"));
+    QTRY_VERIFY(addRoom->property("visible").toBool());
+    auto *roomInput = addRoom->findChild<QQuickItem *>(QStringLiteral("roomSearchInput"));
+    QVERIFY(roomInput != nullptr);
+    QTRY_VERIFY(roomInput->property("activeFocus").toBool());
+    roomInput->setProperty("text", QStringLiteral("63136"));
+    QTest::keyClick(&window, Qt::Key_Escape);
+    QTRY_VERIFY(!addRoom->property("visible").toBool());
+    QCOMPARE(searchController.searchCount, 0);
+    QVERIFY(searchController.addedRoomId.isEmpty());
+    verifyFocusReturned();
+
+    FakeNotificationPreferencesController notificationController;
+    QQmlComponent notificationComponent(
+        &engine, QUrl(QStringLiteral("qrc:/qml/dialogs/NotificationSettingsDialog.qml")));
+    QVERIFY2(notificationComponent.isReady(), qPrintable(notificationComponent.errorString()));
+    std::unique_ptr<QObject> notification(notificationComponent.createWithInitialProperties({
+        {QStringLiteral("parent"), QVariant::fromValue(window.contentItem())},
+        {QStringLiteral("controller"),
+         QVariant::fromValue(static_cast<QObject *>(&notificationController))},
+    }));
+    QVERIFY2(notification != nullptr, qPrintable(notificationComponent.errorString()));
+    focusTrigger();
+    QVERIFY(QMetaObject::invokeMethod(notification.get(), "open"));
+    QTRY_VERIFY(notification->property("visible").toBool());
+    auto *notificationsEnabled =
+        notification->findChild<QQuickItem *>(QStringLiteral("notificationEnabledCheckBox"));
+    QVERIFY(notificationsEnabled != nullptr);
+    QTRY_VERIFY(notificationsEnabled->property("activeFocus").toBool());
+    const QPoint notificationCheckCenter =
+        notificationsEnabled->mapToScene(QPointF(notificationsEnabled->width() / 2,
+                                                  notificationsEnabled->height() / 2))
+            .toPoint();
+    QTest::mouseClick(&window, Qt::LeftButton, Qt::NoModifier, notificationCheckCenter);
+    QTRY_COMPARE(notificationController.saveCount, 1);
+    QCOMPARE(notificationController.notificationPreferences()
+                 .value(QStringLiteral("enabled")).toBool(),
+             false);
+    QTest::keyClick(&window, Qt::Key_Escape);
+    QTRY_VERIFY(!notification->property("visible").toBool());
+    QCOMPARE(notificationController.saveCount, 1);
+    QCOMPARE(notificationController.notificationPreferences()
+                 .value(QStringLiteral("enabled")).toBool(),
+             false);
+    verifyFocusReturned();
+
+    FakeUpdateController closeController;
+    QQmlComponent closeBehaviorComponent(
+        &engine, QUrl(QStringLiteral("qrc:/qml/dialogs/CloseBehaviorDialog.qml")));
+    QVERIFY2(closeBehaviorComponent.isReady(),
+             qPrintable(closeBehaviorComponent.errorString()));
+    std::unique_ptr<QObject> closeBehavior(
+        closeBehaviorComponent.createWithInitialProperties({
+            {QStringLiteral("parent"), QVariant::fromValue(window.contentItem())},
+            {QStringLiteral("controller"),
+             QVariant::fromValue(static_cast<QObject *>(&closeController))},
+        }));
+    QVERIFY2(closeBehavior != nullptr, qPrintable(closeBehaviorComponent.errorString()));
+    auto *cancelClose = closeBehavior->findChild<QQuickItem *>(
+        QStringLiteral("cancelCloseButton"));
+    QVERIFY(cancelClose != nullptr);
+    focusTrigger();
+    QVERIFY(QMetaObject::invokeMethod(closeBehavior.get(), "open"));
+    QTRY_VERIFY(closeBehavior->property("visible").toBool());
+    QTRY_VERIFY(cancelClose->property("activeFocus").toBool());
+    QTest::keyClick(&window, Qt::Key_Escape);
+    QTRY_VERIFY(!closeBehavior->property("visible").toBool());
+    QCOMPARE(closeController.closeToTrayCount, 0);
+    QCOMPARE(closeController.requestQuitCount, 0);
+    QCOMPARE(closeController.closeBehavior(), QStringLiteral("ask"));
+    verifyFocusReturned();
+
+    focusTrigger();
+    QVERIFY(QMetaObject::invokeMethod(closeBehavior.get(), "open"));
+    QTRY_VERIFY(closeBehavior->property("visible").toBool());
+    click(cancelClose);
+    QTRY_VERIFY(!closeBehavior->property("visible").toBool());
+    QCOMPARE(closeController.closeToTrayCount, 0);
+    QCOMPARE(closeController.requestQuitCount, 0);
+    verifyFocusReturned();
+
+    focusTrigger();
+    QVERIFY(QMetaObject::invokeMethod(closeBehavior.get(), "open"));
+    QTRY_VERIFY(closeBehavior->property("visible").toBool());
+    auto *backgroundAction =
+        closeBehavior->findChild<QQuickItem *>(QStringLiteral("enterBackgroundButton"));
+    QVERIFY(backgroundAction != nullptr);
+    click(backgroundAction);
+    QCOMPARE(closeController.closeToTrayCount, 1);
+    QCOMPARE(closeController.requestQuitCount, 0);
+
+    focusTrigger();
+    QVERIFY(QMetaObject::invokeMethod(closeBehavior.get(), "open"));
+    QTRY_VERIFY(closeBehavior->property("visible").toBool());
+    auto *quitAction =
+        closeBehavior->findChild<QQuickItem *>(QStringLiteral("quitApplicationButton"));
+    QVERIFY(quitAction != nullptr);
+    click(quitAction);
+    QCOMPARE(closeController.closeToTrayCount, 1);
+    QCOMPARE(closeController.requestQuitCount, 1);
+
+    FakeTeamManagerController teamController;
+    teamController.addTeam(QStringLiteral("team-a"), QStringLiteral("保留队伍"));
+    QQmlComponent teamManagerComponent(
+        &engine, QUrl(QStringLiteral("qrc:/qml/dialogs/TeamManagerDialog.qml")));
+    QVERIFY2(teamManagerComponent.isReady(), qPrintable(teamManagerComponent.errorString()));
+    std::unique_ptr<QObject> teamManager(teamManagerComponent.createWithInitialProperties({
+        {QStringLiteral("parent"), QVariant::fromValue(window.contentItem())},
+        {QStringLiteral("controller"),
+         QVariant::fromValue(static_cast<QObject *>(&teamController))},
+        {QStringLiteral("workspaceModel"),
+         QVariant::fromValue(static_cast<QObject *>(&teamController.workspaceModel))},
+    }));
+    QVERIFY2(teamManager != nullptr, qPrintable(teamManagerComponent.errorString()));
+    focusTrigger();
+    QVERIFY(QMetaObject::invokeMethod(teamManager.get(), "open"));
+    QTRY_VERIFY(teamManager->property("visible").toBool());
+    auto *teamNameInput =
+        teamManager->findChild<QQuickItem *>(QStringLiteral("teamNameInput"));
+    auto *teamImport =
+        teamManager->findChild<QQuickItem *>(QStringLiteral("importMaoziTeamsButton"));
+    QVERIFY(teamNameInput != nullptr);
+    QVERIFY(teamImport != nullptr);
+    QTRY_VERIFY(teamNameInput->property("activeFocus").toBool());
+    click(teamImport);
+    QCOMPARE(teamController.previewCount, 1);
+    QTRY_VERIFY(teamManager->property("importing").toBool());
+    QTest::keyClick(&window, Qt::Key_Escape);
+    QTRY_VERIFY(!teamManager->property("visible").toBool());
+    QCOMPARE(teamController.cancelCount, 1);
+    QCOMPARE(teamController.confirmCount, 0);
+    QCOMPARE(teamController.workspaceModel.teams().size(), 1);
+    verifyFocusReturned();
+}
+
+void QmlInteractionTest::keepsTeamManagerReachableAtShortViewport()
+{
+    registerQmlTypes();
+    QQmlApplicationEngine engine;
+    QQuickWindow window;
+    window.resize(QSize(960, 600));
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    window.requestActivate();
+    QTRY_VERIFY(window.isActive());
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+
+    QQmlComponent component(
+        &engine, QUrl(QStringLiteral("qrc:/qml/dialogs/TeamManagerDialog.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    std::unique_ptr<QObject> dialog(component.createWithInitialProperties({
+        {QStringLiteral("parent"), QVariant::fromValue(window.contentItem())},
+    }));
+    QVERIFY2(dialog != nullptr, qPrintable(component.errorString()));
+    QVERIFY(QMetaObject::invokeMethod(dialog.get(), "open"));
+    QTRY_VERIFY(dialog->property("visible").toBool());
+
+    const qreal dialogY = dialog->property("y").toReal();
+    const qreal dialogHeight = dialog->property("height").toReal();
+    QVERIFY(dialogY >= 0);
+    QVERIFY(dialogY + dialogHeight <= window.height());
+
+    auto *scroll = dialog->findChild<QQuickItem *>(
+        QStringLiteral("teamManagerGeneralScroll"));
+    QVERIFY(scroll != nullptr);
+    QVERIFY(scroll->height() > 0);
+    if (scroll->property("contentHeight").toReal() > scroll->height()) {
+        scroll->setProperty("contentY", scroll->property("contentHeight").toReal()
+                                           - scroll->height());
+    }
+    auto *status = dialog->findChild<QQuickItem *>(
+        QStringLiteral("teamManagerStatus"));
+    QVERIFY(status != nullptr);
+    QTRY_VERIFY(status->mapToScene(QPointF(0, status->height())).y()
+                <= window.height());
+}
+
+void QmlInteractionTest::watchToolsOverlayPreservesWorkspaceGeometry()
+{
+    QQmlApplicationEngine engine;
+    QQuickWindow *window = loadWindow(engine);
+    QVERIFY(window != nullptr);
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+    auto *grid = window->findChild<QQuickItem *>(QStringLiteral("workspaceGrid"));
+    auto *rail = window->findChild<QQuickItem *>(QStringLiteral("appNavigationRail"));
+    QObject *tools = window->findChild<QObject *>(QStringLiteral("watchToolsPanel"));
+    QVERIFY(grid && rail && tools);
+    QCOMPARE(rail->width(), qreal(80));
+    const QRectF before(grid->position(), grid->size());
+    click(window->findChild<QObject *>(QStringLiteral("watchToolsButton")));
+    QTRY_VERIFY(tools->property("visible").toBool());
+    QCOMPARE(QRectF(grid->position(), grid->size()), before);
+    QVERIFY(QMetaObject::invokeMethod(tools, "close"));
+    QTRY_VERIFY(!tools->property("visible").toBool());
+    QCOMPARE(window->findChild<QQuickItem *>(QStringLiteral("workspaceGrid")), grid);
+    QCOMPARE(QRectF(grid->position(), grid->size()), before);
+}
+
+void QmlInteractionTest::navigatesWatchToolsInlineWithPointerAndKeyboard()
+{
+    FakeRoomController controller;
+    QQmlApplicationEngine engine;
+    auto *window = loadWindow(engine);
+    QVERIFY(window != nullptr);
+    window->setProperty("showPreviewRooms", true);
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+    auto *grid = window->findChild<QQuickItem *>("workspaceGrid");
+    auto *tools = window->findChild<QObject *>("watchToolsPanel");
+    auto *toolsButton = window->findChild<QQuickItem *>("watchToolsButton");
+    QVERIFY(grid && tools && toolsButton);
+    auto *overview = tools->findChild<QQuickItem *>("watchToolsOverview");
+    auto *sound = tools->findChild<QQuickItem *>("soundMasterPopover");
+    auto *layout = tools->findChild<QQuickItem *>("layoutMenu");
+    auto *back = tools->findChild<QQuickItem *>("watchToolsBackButton");
+    QVERIFY(grid && tools && toolsButton && overview && sound && layout && back);
+    auto *surface = grid->findChild<QQuickItem *>("layoutSurface");
+    QVERIFY(surface != nullptr);
+    QTRY_VERIFY(!roomTiles(surface).isEmpty());
+    const auto tiles = roomTiles(surface);
+    auto *firstTile = tiles.constFirst();
+    firstTile->setProperty("controller", QVariant::fromValue(static_cast<QObject *>(&controller)));
+    firstTile->setProperty("renderEnabled", true);
+    QTRY_COMPARE(controller.attachedRooms.size(), 1);
+    QPointer<MpvQuickItem> player = firstTile->findChild<MpvQuickItem *>();
+    QVERIFY(player != nullptr);
+    const QRectF gridGeometry = sceneBounds(grid);
+
+    pointerClick(window, toolsButton);
+    QTRY_VERIFY(tools->property("visible").toBool());
+    QCOMPARE(tools->property("currentSection").toString(), QStringLiteral("overview"));
+    QVERIFY(overview->isVisible() && !sound->isVisible() && !layout->isVisible());
+    QVERIFY(!back->isVisible());
+    QVERIFY(tools->findChild<QObject *>("watchAddRoomButton") == nullptr);
+
+    pointerClick(window, tools->findChild<QQuickItem *>("soundMasterButton"));
+    QTRY_COMPARE(tools->property("currentSection").toString(), QStringLiteral("sound"));
+    QVERIFY(sound->isVisible() && !overview->isVisible() && !layout->isVisible());
+    auto *content = qobject_cast<QQuickItem *>(tools->property("contentItem").value<QObject *>());
+    QVERIFY(content != nullptr);
+    QTRY_VERIFY(sceneBounds(content).contains(sceneBounds(sound)));
+    pointerClick(window, back);
+    QTRY_VERIFY(overview->isVisible() && !sound->isVisible());
+
+    pointerClick(window, tools->findChild<QQuickItem *>("layoutMenuButton"));
+    QTRY_COMPARE(tools->property("currentSection").toString(), QStringLiteral("layout"));
+    QVERIFY(layout->isVisible() && !overview->isVisible() && !sound->isVisible());
+    QTRY_VERIFY(sceneBounds(content).contains(sceneBounds(layout)));
+    QTest::keyClick(window, Qt::Key_Escape);
+    QTRY_VERIFY(overview->isVisible() && !layout->isVisible());
+    QVERIFY(tools->property("visible").toBool());
+    QTest::keyClick(window, Qt::Key_Escape);
+    QTRY_VERIFY(!tools->property("visible").toBool());
+    QTRY_VERIFY(toolsButton->hasActiveFocus());
+
+    pointerClick(window, toolsButton);
+    pointerClick(window, tools->findChild<QQuickItem *>("soundMasterButton"));
+    QTRY_VERIFY(sound->isVisible());
+    QTest::mouseMove(window, back->mapToScene(QPointF(back->width() / 2, back->height() / 2)).toPoint());
+    auto *backTip = back->findChild<QObject *>("consoleToolTip");
+    QVERIFY(backTip != nullptr);
+    QTest::qWait(650);
+    QVERIFY(!backTip->property("visible").toBool());
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, QPoint(100, 100));
+    QTRY_VERIFY(!tools->property("visible").toBool());
+    QTRY_VERIFY(toolsButton->hasActiveFocus());
+    QCOMPARE(window->findChild<QQuickItem *>("workspaceGrid"), grid);
+    QCOMPARE(sceneBounds(grid), gridGeometry);
+    QCOMPARE(roomTiles(surface), tiles);
+    QVERIFY(!player.isNull());
+    QCOMPARE(firstTile->findChild<MpvQuickItem *>(), player.data());
+    QCOMPARE(controller.attachedRooms.size(), 1);
+    QVERIFY(controller.detachedRooms.isEmpty());
+    firstTile->setProperty("controller", QVariant::fromValue(static_cast<QObject *>(nullptr)));
+    firstTile->setProperty("renderEnabled", false);
+}
+
+void QmlInteractionTest::watchSurfacesReplaceEachOtherAndLayoutSupportsKeyboard()
+{
+    FakeHeaderController controller;
+    QQmlApplicationEngine engine;
+    auto *window = loadWindow(engine);
+    QVERIFY(window != nullptr);
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+    auto *tools = window->findChild<QObject *>("watchToolsPanel");
+    auto *drawer = window->findChild<QObject *>("roomToolsDrawer");
+    auto *headerButton = window->findChild<QQuickItem *>("watchToolsButton");
+    QVERIFY(tools && drawer && headerButton);
+    for (const auto &name : {"danmakuSettingsPanel", "monitoringDrawer", "workspacePresetsPanel"}) {
+        auto *panel = window->findChild<QObject *>(name);
+        QVERIFY(panel != nullptr);
+        QVERIFY(QMetaObject::invokeMethod(panel, "open"));
+        QTRY_VERIFY(panel->property("visible").toBool());
+        window->requestActivate();
+        QTRY_VERIFY(window->isActive());
+        QTest::keyClick(window, Qt::Key_S, Qt::ControlModifier | Qt::ShiftModifier);
+        QTRY_VERIFY(drawer->property("visible").toBool());
+        QVERIFY(!panel->property("visible").toBool());
+        QTest::keyClick(window, Qt::Key_Escape);
+        QTRY_VERIFY(!drawer->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(panel, "open"));
+        QTRY_VERIFY(panel->property("visible").toBool());
+        pointerClick(window, headerButton);
+        QTRY_VERIFY(tools->property("visible").toBool());
+        QVERIFY(!panel->property("visible").toBool());
+        QTest::keyClick(window, Qt::Key_Escape);
+        QTRY_VERIFY(!tools->property("visible").toBool());
+    }
+    tools->setProperty("controller", QVariant::fromValue(static_cast<QObject *>(&controller)));
+    pointerClick(window, headerButton);
+    pointerClick(window, tools->findChild<QQuickItem *>("layoutMenuButton"));
+    auto *primary = tools->findChild<QQuickItem *>("primaryLayoutOption");
+    QVERIFY(primary != nullptr);
+    for (int i = 0; i < 5 && !primary->hasActiveFocus(); ++i)
+        QTest::keyClick(window, Qt::Key_Tab);
+    QTRY_VERIFY(primary->hasActiveFocus());
+    QVERIFY(primary->property("visualFocus").toBool());
+    auto *background = primary->property("background").value<QObject *>();
+    QVERIFY(background != nullptr);
+    QCOMPARE(QQmlProperty::read(background, "border.width").toInt(), 2);
+    QTest::keyClick(window, Qt::Key_Space);
+    QCOMPARE(controller.lastLayout, QStringLiteral("primary"));
+    QVERIFY(primary->property("checked").toBool());
+    QTest::keyClick(window, Qt::Key_Space);
+    QVERIFY(primary->property("checked").toBool());
+    QTest::keyClick(window, Qt::Key_Escape);
+    QTRY_COMPARE(tools->property("currentSection").toString(), QStringLiteral("overview"));
+}
+
+void QmlInteractionTest::roomDrawerHasOneAddEntry()
+{
+    QQmlApplicationEngine engine;
+    auto *window = loadWindow(engine);
+    QVERIFY(window != nullptr);
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+    pointerClick(window, window->findChild<QQuickItem *>("watchToolsButton"));
+    pointerClick(window, window->findChild<QQuickItem *>("sidebarToggleButton"));
+    auto *drawer = window->findChild<QObject *>("roomToolsDrawer");
+    auto *sidebar = window->findChild<QQuickItem *>("roomSidebar");
+    QVERIFY(drawer && sidebar);
+    QTRY_VERIFY(drawer->property("visible").toBool());
+    auto *add = sidebar->findChild<QQuickItem *>("quickAddButton");
+    auto *close = sidebar->findChild<QQuickItem *>("closeRoomToolsButton");
+    QVERIFY(add && close);
+    QCOMPARE(add->property("text").toString(), QStringLiteral("添加房间"));
+    QVERIFY(!sceneBounds(add).intersects(sceneBounds(close)));
+    int addEntries = 0;
+    for (auto *item : sidebar->findChildren<QQuickItem *>()) {
+        const QString label = QQmlProperty::read(item, "Accessible.name", qmlContext(item)).toString();
+        if (label.contains(QStringLiteral("添加房间"))) ++addEntries;
+        QVERIFY2(item->property("placeholderText").toString() != QStringLiteral("输入房间号"),
+                 "Room drawer still exposes the duplicate inline add-room input");
+    }
+    QCOMPARE(addEntries, 1);
+    pointerClick(window, add);
+    auto *dialog = window->findChild<QObject *>("addRoomDialog");
+    QVERIFY(dialog != nullptr);
+    QTRY_VERIFY(dialog->property("visible").toBool());
+    QTRY_VERIFY(!drawer->property("visible").toBool());
+    QTest::keyClick(window, Qt::Key_Escape);
+    QTRY_VERIFY(!dialog->property("visible").toBool());
+}
+
+void QmlInteractionTest::watchToolsShortcutProtectsUnnamedEditableControls()
+{
+    QQmlApplicationEngine engine;
+    QQuickWindow *window = loadWindow(engine);
+    QVERIFY(window != nullptr);
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+    QQmlComponent inputComponent(&engine);
+    inputComponent.setData("import QtQuick; TextInput { width: 180; height: 32 }", QUrl());
+    std::unique_ptr<QObject> input(inputComponent.create());
+    auto *inputItem = qobject_cast<QQuickItem *>(input.get());
+    QVERIFY(inputItem != nullptr);
+    inputItem->setParentItem(window->contentItem());
+    inputItem->forceActiveFocus();
+    QTRY_VERIFY(window->property("editableFocus").toBool());
+    QTest::keyClick(window, Qt::Key_T);
+    QCOMPARE(input->property("text").toString(), QStringLiteral("t"));
+    QObject *tools = window->findChild<QObject *>(QStringLiteral("watchToolsPanel"));
+    QVERIFY(tools != nullptr);
+    QVERIFY(!tools->property("visible").toBool());
+}
+
+void QmlInteractionTest::immersiveToolsCloseBeforeFullscreenAndRestoreFocus()
+{
+    QQmlApplicationEngine engine;
+    auto *window = loadWindow(engine);
+    QVERIFY(window != nullptr);
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+    auto *grid = window->findChild<QQuickItem *>("workspaceGrid");
+    auto *header = window->findChild<QQuickItem *>("appHeader");
+    auto *rail = window->findChild<QQuickItem *>("appNavigationRail");
+    auto *edge = window->findChild<QQuickItem *>("immersiveEdgeButton");
+    auto *tools = window->findChild<QObject *>("watchToolsPanel");
+    QVERIFY(grid && header && rail && edge && tools);
+    window->showFullScreen();
+    QTRY_COMPARE(window->visibility(), QWindow::FullScreen);
+    window->requestActivate();
+    QTRY_VERIFY(window->isActive());
+    QVERIFY(!header->isVisible());
+    QVERIFY(!rail->isVisible());
+    QTRY_COMPARE(grid->position(), QPointF(0, 0));
+    QTRY_COMPARE(grid->size(), QSizeF(window->size()));
+    edge->forceActiveFocus(Qt::TabFocusReason);
+    QTest::keyClick(window, Qt::Key_T);
+    QTRY_VERIFY(tools->property("visible").toBool());
+    click(tools->findChild<QObject *>("soundMasterButton"));
+    auto *sound = tools->findChild<QObject *>("soundMasterPopover");
+    QVERIFY(sound != nullptr);
+    QTRY_VERIFY(sound->property("visible").toBool());
+    QTest::keyClick(window, Qt::Key_Escape);
+    QTRY_VERIFY(!sound->property("visible").toBool());
+    QVERIFY(tools->property("visible").toBool());
+    QCOMPARE(window->visibility(), QWindow::FullScreen);
+    QTest::keyClick(window, Qt::Key_Escape);
+    QTRY_VERIFY(!tools->property("visible").toBool());
+    QCOMPARE(window->visibility(), QWindow::FullScreen);
+    QTRY_VERIFY(edge->hasActiveFocus());
+    auto *tooltip = edge->findChild<QObject *>("consoleToolTip");
+    QVERIFY(tooltip != nullptr);
+    QVERIFY(tooltip->setProperty("visible", true));
+    QTRY_VERIFY(tooltip->property("visible").toBool());
+    QVERIFY(!window->property("popupOpen").toBool());
+    QTest::keyClick(window, Qt::Key_Escape);
+    QTRY_COMPARE(window->visibility(), QWindow::Windowed);
+    QCOMPARE(window->findChild<QQuickItem *>("workspaceGrid"), grid);
+    auto *toolsButton = header->findChild<QQuickItem *>("watchToolsButton");
+    QVERIFY(toolsButton != nullptr);
+    QTRY_VERIFY(toolsButton->hasActiveFocus());
+}
+
+void QmlInteractionTest::themeChangesKeepWorkspaceInstances()
+{
+    QQmlApplicationEngine engine;
+    auto *window = loadWindow(engine);
+    QVERIFY(window != nullptr);
+    auto *grid = window->findChild<QQuickItem *>("workspaceGrid");
+    auto *brand = window->findChild<QObject *>("brandIcon");
+    QVERIFY(grid && brand);
+    const QRectF geometry(grid->position(), grid->size());
+    click(window->findChild<QObject *>("themeToggleButton"));
+    QTRY_COMPARE(window->color(), QColor("#f0f3ed"));
+    QTRY_VERIFY(brand->property("source").toUrl().toString().endsWith("wordmark-day.png"));
+    QCOMPARE(window->findChild<QQuickItem *>("workspaceGrid"), grid);
+    QCOMPARE(QRectF(grid->position(), grid->size()), geometry);
+    click(window->findChild<QObject *>("themeToggleButton"));
+    QTRY_COMPARE(window->color(), QColor("#0e1312"));
+}
+
+void QmlInteractionTest::countsConnectedDanmakuFromRoomStates()
+{
+    FakeHeaderController controller;
+    const auto snapshot = [](const QString &roomId) {
+        RoomSnapshot room;
+        room.roomId = roomId;
+        room.metadata.roomId = roomId;
+        room.metadata.anchorName = roomId;
+        room.renderEnabled = false;
+        return room;
+    };
+    const RoomSnapshot first = snapshot(QStringLiteral("room-a"));
+    const RoomSnapshot second = snapshot(QStringLiteral("room-b"));
+    const RoomSnapshot replacement = snapshot(QStringLiteral("room-c"));
+    controller.roomModel.applySnapshots({first, second});
+    QQmlApplicationEngine engine;
+    auto *window = loadWindow(engine);
+    QVERIFY(window != nullptr);
+    window->setProperty("appController", QVariant::fromValue(static_cast<QObject *>(&controller)));
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+    auto *grid = window->findChild<QQuickItem *>(QStringLiteral("workspaceGrid"));
+    auto *status = window->findChild<QObject *>(QStringLiteral("workspaceStatusBar"));
+    QVERIFY(grid && status);
+    grid->setProperty("controller", QVariant::fromValue(static_cast<QObject *>(nullptr)));
+    auto *surface = grid->findChild<QQuickItem *>(QStringLiteral("layoutSurface"));
+    QVERIFY(surface != nullptr);
+    QTRY_COMPARE(roomTiles(surface).size(), 2);
+    const auto tileFor = [&](const QString &roomId) -> QQuickItem * {
+        for (auto *tile : roomTiles(surface)) {
+            if (tile->property("roomId").toString() == roomId) return tile;
+        }
+        return nullptr;
+    };
+    QPointer<QQuickItem> firstTile = tileFor(first.roomId);
+    QPointer<QQuickItem> secondTile = tileFor(second.roomId);
+    QVERIFY(firstTile && secondTile);
+    QTRY_COMPARE(status->property("danmakuCount").toInt(), 0);
+
+    RoomPresentationSettings firstSettings;
+    RoomPresentationSettings secondSettings;
+    firstSettings.danmakuEnabled = true;
+    secondSettings.danmakuEnabled = true;
+    firstSettings.danmakuState = QStringLiteral("connected");
+    controller.roomModel.applyPresentationSettings({{first.roomId, firstSettings}, {second.roomId, secondSettings}});
+    QTRY_COMPARE(status->property("danmakuCount").toInt(), 1);
+    QTRY_COMPARE(grid->property("connectedDanmakuCount").toInt(), 1);
+    QCOMPARE(tileFor(first.roomId), firstTile.data());
+    QCOMPARE(tileFor(second.roomId), secondTile.data());
+
+    secondSettings.danmakuState = QStringLiteral("connected");
+    controller.roomModel.applyPresentationSettings({{first.roomId, firstSettings}, {second.roomId, secondSettings}});
+    QTRY_COMPARE(status->property("danmakuCount").toInt(), 2);
+    QCOMPARE(tileFor(first.roomId), firstTile.data());
+    QCOMPARE(tileFor(second.roomId), secondTile.data());
+
+    firstSettings.danmakuState = QStringLiteral("reconnecting");
+    controller.roomModel.applyPresentationSettings({{first.roomId, firstSettings}, {second.roomId, secondSettings}});
+    QTRY_COMPARE(status->property("danmakuCount").toInt(), 1);
+    QCOMPARE(tileFor(first.roomId), firstTile.data());
+    QCOMPARE(tileFor(second.roomId), secondTile.data());
+
+    controller.roomModel.applySnapshots({first});
+    QTRY_COMPARE(roomTiles(surface).size(), 1);
+    QTRY_COMPARE(status->property("danmakuCount").toInt(), 0);
+    QVERIFY(!firstTile.isNull());
+    QCOMPARE(tileFor(first.roomId), firstTile.data());
+
+    controller.roomModel.applySnapshots({first, second});
+    controller.roomModel.applyPresentationSettings({{first.roomId, firstSettings}, {second.roomId, secondSettings}});
+    QTRY_COMPARE(status->property("danmakuCount").toInt(), 1);
+    QSignalSpy countChanged(&controller.roomModel, &RoomListModel::roomCountChanged);
+    controller.roomModel.applySnapshots({first, replacement});
+    QCOMPARE(countChanged.count(), 0);
+    QTRY_VERIFY(tileFor(replacement.roomId) != nullptr && tileFor(second.roomId) == nullptr);
+    QTRY_COMPARE(status->property("danmakuCount").toInt(), 0);
+    QVERIFY(!firstTile.isNull());
+    QCOMPARE(tileFor(first.roomId), firstTile.data());
+
+    RoomPresentationSettings replacementSettings;
+    replacementSettings.danmakuEnabled = true;
+    replacementSettings.danmakuState = QStringLiteral("connected");
+    controller.roomModel.applyPresentationSettings({{first.roomId, firstSettings}, {replacement.roomId, replacementSettings}});
+    QTRY_COMPARE(status->property("danmakuCount").toInt(), 1);
+    controller.roomModel.applySnapshots({});
+    QTRY_COMPARE(roomTiles(surface).size(), 0);
+    QTRY_COMPARE(status->property("danmakuCount").toInt(), 0);
+    for (auto *label : status->findChildren<QQuickItem *>()) {
+        QVERIFY(label->property("text").toString() != QStringLiteral("静默检查"));
+        QVERIFY(label->property("text").toString() != QStringLiteral("检查中"));
+    }
+}
+
 void QmlInteractionTest::opensAddRoomDialogAndRejectsInvalidRoomId()
 {
     QQmlApplicationEngine engine;
@@ -1512,6 +2797,21 @@ void QmlInteractionTest::opensAddRoomDialogAndRejectsInvalidRoomId()
     QVERIFY(window != nullptr);
     QVERIFY(window->isVisible());
 
+    auto *emptyNavigation = window->findChild<QQuickItem *>("emptyNavigationButton");
+    auto *emptyAddRoom = window->findChild<QQuickItem *>("emptyAddRoomButton");
+    QVERIFY(emptyNavigation && emptyAddRoom);
+    QVERIFY(emptyNavigation->isVisible() && emptyAddRoom->isVisible());
+    click(emptyNavigation);
+    QTRY_COMPARE(window->property("currentView").toString(), QStringLiteral("navigation"));
+    click(window->findChild<QObject *>("watchWorkspaceButton"));
+    click(emptyAddRoom);
+    auto *emptyDialog = window->findChild<QObject *>("addRoomDialog");
+    QVERIFY(emptyDialog != nullptr);
+    QTRY_VERIFY(emptyDialog->property("visible").toBool());
+    QVERIFY(QMetaObject::invokeMethod(emptyDialog, "close"));
+
+    click(window->findChild<QObject *>(QStringLiteral("watchToolsButton")));
+    click(window->findChild<QObject *>(QStringLiteral("sidebarToggleButton")));
     click(window->findChild<QObject *>(QStringLiteral("quickAddButton")));
     QObject *dialog = window->findChild<QObject *>(QStringLiteral("addRoomDialog"));
     QVERIFY(dialog != nullptr);
@@ -1540,6 +2840,94 @@ void QmlInteractionTest::opensMonitoringDanmakuAndWorkspaceSurfaces()
     QObject *workspace = window->findChild<QObject *>(QStringLiteral("workspacePresetsPanel"));
     QVERIFY(workspace != nullptr);
     QTRY_VERIFY(workspace->property("visible").toBool());
+}
+
+void QmlInteractionTest::reusesSurfacesAcrossRepeatedViewSwitches()
+{
+    FakeMaoziController controller;
+    QQmlApplicationEngine engine;
+    engine.setInitialProperties({
+        {QStringLiteral("appController"),
+         QVariant::fromValue(static_cast<QObject *>(&controller))},
+    });
+    QQuickWindow *window = loadWindow(engine);
+    QVERIFY(window != nullptr);
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+
+    const QStringList names = {QStringLiteral("settingsPage"),
+                               QStringLiteral("maoziRankPage"),
+                               QStringLiteral("danmakuSettingsPanel"),
+                               QStringLiteral("monitoringDrawer"),
+                               QStringLiteral("workspacePresetsPanel")};
+    QMap<QString, QPointer<QObject>> instances;
+    for (const QString &name : names) {
+        QObject *surface = window->findChild<QObject *>(name);
+        QVERIFY2(surface != nullptr, qPrintable(name));
+        instances.insert(name, surface);
+    }
+    const int initialRefreshCount = controller.rank.refreshCount;
+
+    for (int iteration = 1; iteration <= 3; ++iteration) {
+        window->setProperty("currentView", QStringLiteral("settings"));
+        QTRY_VERIFY(!instances.value(QStringLiteral("settingsPage")).isNull()
+                    && instances.value(QStringLiteral("settingsPage"))->property("visible").toBool());
+        click(window->findChild<QObject *>(QStringLiteral("settingsBackButton")));
+        QTRY_COMPARE(window->property("currentView").toString(), QStringLiteral("monitoring"));
+
+        click(window->findChild<QObject *>(QStringLiteral("maoziRankButton")));
+        QTRY_VERIFY(!instances.value(QStringLiteral("maoziRankPage")).isNull()
+                    && instances.value(QStringLiteral("maoziRankPage"))->property("visible").toBool());
+        QCOMPARE(controller.rank.refreshCount, initialRefreshCount + iteration);
+        click(window->findChild<QObject *>(QStringLiteral("maoziBackButton")));
+        QTRY_COMPARE(window->property("currentView").toString(), QStringLiteral("monitoring"));
+
+        for (const auto &entry : {qMakePair("danmakuButton", "danmakuSettingsPanel"),
+                                  qMakePair("monitoringButton", "monitoringDrawer"),
+                                  qMakePair("workspaceButton", "workspacePresetsPanel")}) {
+            click(window->findChild<QObject *>(QString::fromLatin1(entry.first)));
+            QPointer<QObject> panel = instances.value(QString::fromLatin1(entry.second));
+            QVERIFY2(!panel.isNull(), entry.second);
+            QTRY_VERIFY(!panel.isNull() && panel->property("visible").toBool());
+            QVERIFY(QMetaObject::invokeMethod(panel, "close"));
+            QTRY_VERIFY(!panel.isNull() && !panel->property("visible").toBool());
+        }
+        QCOMPARE(controller.rank.refreshCount, initialRefreshCount + iteration);
+        for (const QString &name : names) {
+            QVERIFY2(!instances.value(name).isNull(), qPrintable(name));
+            QCOMPARE(window->findChildren<QObject *>(name).size(), 1);
+            QCOMPARE(window->findChild<QObject *>(name), instances.value(name).data());
+        }
+    }
+}
+
+void QmlInteractionTest::rendersUnavailableNotificationStatus()
+{
+    registerQmlTypes();
+    FakeMonitoringModel model;
+    model.setNotificationStatus(QStringLiteral("unavailable"));
+    QQmlEngine engine;
+    QQmlComponent component(&engine,
+                            QUrl(QStringLiteral("qrc:/qml/panels/MonitoringStatusPanel.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    std::unique_ptr<QObject> panel(component.createWithInitialProperties({
+        {QStringLiteral("monitoringModel"), QVariant::fromValue(static_cast<QObject *>(&model))},
+    }));
+    QVERIFY2(panel != nullptr, qPrintable(component.errorString()));
+    const auto *label = panel->findChild<QObject *>(QStringLiteral("notificationStatusLabel"));
+    QVERIFY(label != nullptr);
+    QCOMPARE(label->property("text").toString(), QStringLiteral("Windows 通知后端不可用"));
+
+    QQmlComponent dialogComponent(&engine,
+                                  QUrl(QStringLiteral("qrc:/qml/dialogs/NotificationSettingsDialog.qml")));
+    QVERIFY2(dialogComponent.isReady(), qPrintable(dialogComponent.errorString()));
+    std::unique_ptr<QObject> dialog(dialogComponent.createWithInitialProperties({
+        {QStringLiteral("monitoringModel"), QVariant::fromValue(static_cast<QObject *>(&model))},
+    }));
+    QVERIFY2(dialog != nullptr, qPrintable(dialogComponent.errorString()));
+    const auto *description =
+        dialog->findChild<QObject *>(QStringLiteral("notificationStatusDescription"));
+    QVERIFY(description != nullptr);
+    QCOMPARE(description->property("text").toString(), QStringLiteral("Windows 通知后端不可用"));
 }
 
 void QmlInteractionTest::closesTransientSurfacesFromExplicitActions()
@@ -1579,12 +2967,13 @@ void QmlInteractionTest::closesTransientSurfacesFromExplicitActions()
     click(closeWorkspace);
     QTRY_VERIFY(!workspace->property("visible").toBool());
 
+    click(window->findChild<QObject *>(QStringLiteral("watchToolsButton")));
     click(window->findChild<QObject *>(QStringLiteral("soundMasterButton")));
     QObject *soundMaster = window->findChild<QObject *>(QStringLiteral("soundMasterPopover"));
     QVERIFY(soundMaster != nullptr);
     QTRY_VERIFY(soundMaster->property("visible").toBool());
-    QObject *closeSoundMaster = soundMaster->findChild<QObject *>(
-        QStringLiteral("closeSoundMasterButton"));
+    QObject *closeSoundMaster = window->findChild<QObject *>(
+        QStringLiteral("watchToolsBackButton"));
     QVERIFY(closeSoundMaster != nullptr);
     click(closeSoundMaster);
     QTRY_VERIFY(!soundMaster->property("visible").toBool());
@@ -1621,8 +3010,10 @@ void QmlInteractionTest::togglesSidebarAndHandlesRetainedShortcuts()
 
     QObject *sidebar = window->findChild<QObject *>(QStringLiteral("roomSidebar"));
     QVERIFY(sidebar != nullptr);
-    QVERIFY(sidebar->property("visible").toBool());
+    QVERIFY(!sidebar->property("visible").toBool());
     click(window->findChild<QObject *>(QStringLiteral("sidebarToggleButton")));
+    QTRY_VERIFY(sidebar->property("visible").toBool());
+    click(window->findChild<QObject *>(QStringLiteral("closeRoomToolsButton")));
     QTRY_VERIFY(!sidebar->property("visible").toBool());
 
     QTest::keyClick(window, Qt::Key_A, Qt::ControlModifier | Qt::ShiftModifier);
@@ -1685,11 +3076,11 @@ void QmlInteractionTest::handlesLegacyShortcutParity()
 
     QObject *sidebar = window->findChild<QObject *>(QStringLiteral("roomSidebar"));
     QVERIFY(sidebar != nullptr);
-    QVERIFY(sidebar->property("visible").toBool());
-    press(Qt::Key_S);
-    QTRY_VERIFY(!sidebar->property("visible").toBool());
+    QVERIFY(!sidebar->property("visible").toBool());
     press(Qt::Key_S);
     QTRY_VERIFY(sidebar->property("visible").toBool());
+    press(Qt::Key_S);
+    QTRY_VERIFY(!sidebar->property("visible").toBool());
 
     press(Qt::Key_R);
     QVERIFY(window->property("refreshRequested").toBool());
@@ -1748,12 +3139,93 @@ void QmlInteractionTest::showsDanmakuDisplayGovernanceAndStatsTabs()
     QVERIFY(resetDisplay->property("visible").toBool());
 }
 
+void QmlInteractionTest::readsSelectedRoomGovernanceOverride()
+{
+    FakeDanmakuAppController controller;
+    controller.danmaku_.setGovernanceSetting(QStringLiteral("room-a"),
+                                              QStringLiteral("duplicateWindowSeconds"), 7);
+    controller.danmaku_.setGovernanceSetting(QStringLiteral("room-b"),
+                                              QStringLiteral("duplicateWindowSeconds"), 9);
+
+    QQmlEngine engine;
+    QQmlComponent component(&engine,
+                            QUrl(QStringLiteral("qrc:/qml/panels/DanmakuSettingsPanel.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    const QVariantList rooms = {
+        QVariantMap{{QStringLiteral("roomId"), QStringLiteral("room-a")},
+                    {QStringLiteral("anchorName"), QStringLiteral("A")},
+                    {QStringLiteral("danmakuEnabled"), true}},
+        QVariantMap{{QStringLiteral("roomId"), QStringLiteral("room-b")},
+                    {QStringLiteral("anchorName"), QStringLiteral("B")},
+                    {QStringLiteral("danmakuEnabled"), true}},
+    };
+    std::unique_ptr<QObject> panel(component.createWithInitialProperties({
+        {QStringLiteral("controller"), QVariant::fromValue(static_cast<QObject *>(&controller))},
+        {QStringLiteral("roomModel"), rooms},
+        {QStringLiteral("visible"), true},
+    }));
+    QVERIFY2(panel != nullptr, qPrintable(component.errorString()));
+
+    panel->setProperty("governanceScope", QStringLiteral("room"));
+    auto *roomPicker = panel->findChild<QObject *>(QStringLiteral("danmakuGovernanceRoom"));
+    QVERIFY(roomPicker != nullptr);
+    roomPicker->setProperty("currentIndex", 0);
+    QTRY_COMPARE(panel->property("governanceSettings").toMap().value(
+                     QStringLiteral("duplicateWindowSeconds")), QVariant(7));
+    roomPicker->setProperty("currentIndex", 1);
+    QTRY_COMPARE(panel->property("governanceSettings").toMap().value(
+                     QStringLiteral("duplicateWindowSeconds")), QVariant(9));
+
+    roomPicker->setProperty("currentIndex", 0);
+    QVERIFY(QMetaObject::invokeMethod(
+        panel.get(), "applyGovernanceSetting", Q_ARG(QVariant, QStringLiteral("enabled")),
+        Q_ARG(QVariant, QVariant(false))));
+    QCOMPARE(controller.danmaku_.governanceSettingsForRoom(QStringLiteral("room-a"))
+                 .value(QStringLiteral("enabled")), QVariant(false));
+    QCOMPARE(controller.danmaku_.governanceSettingsForRoom(QStringLiteral("room-b"))
+                 .value(QStringLiteral("enabled")), QVariant(true));
+    controller.danmaku_.clearRoomGovernanceOverride(QStringLiteral("room-a"));
+    QTRY_COMPARE(panel->property("governanceSettings").toMap().value(
+                     QStringLiteral("enabled")), QVariant(true));
+}
+
+void QmlInteractionTest::refreshesSelectedRoomStatsFromRoomSignal()
+{
+    FakeDanmakuAppController controller;
+    QQmlEngine engine;
+    QQmlComponent component(&engine,
+                            QUrl(QStringLiteral("qrc:/qml/panels/DanmakuSettingsPanel.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    const QVariantList rooms = {QVariantMap{{QStringLiteral("roomId"), QStringLiteral("room-a")},
+                                            {QStringLiteral("anchorName"), QStringLiteral("A")},
+                                            {QStringLiteral("danmakuEnabled"), true}}};
+    std::unique_ptr<QObject> panel(component.createWithInitialProperties({
+        {QStringLiteral("controller"), QVariant::fromValue(static_cast<QObject *>(&controller))},
+        {QStringLiteral("roomModel"), rooms},
+        {QStringLiteral("visible"), true},
+    }));
+    QVERIFY2(panel != nullptr, qPrintable(component.errorString()));
+    panel->setProperty("currentTab", QStringLiteral("stats"));
+    auto *statsSection = panel->findChild<QObject *>(QStringLiteral("danmakuStatsSection"));
+    QVERIFY(statsSection != nullptr);
+    QCOMPARE(statsSection->property("stats").toMap().value(QStringLiteral("filtered")), QVariant(0));
+
+    controller.danmaku_.setStats(QStringLiteral("room-a"),
+                                  {{QStringLiteral("level"), QStringLiteral("normal")},
+                                   {QStringLiteral("filtered"), 3},
+                                   {QStringLiteral("duplicates"), 1}});
+    QTRY_COMPARE(statsSection->property("stats").toMap().value(QStringLiteral("filtered")),
+                 QVariant(3));
+}
+
 void QmlInteractionTest::showsDanmakuStatusOnRoomTile()
 {
     registerQmlTypes();
     QQmlApplicationEngine engine;
     QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qml/components/RoomTile.qml")));
     QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+
+    FakeRoomController controller;
 
     std::unique_ptr<QObject> connected(
         component.createWithInitialProperties(roomTileProperties(QStringLiteral("connected"))));
@@ -1762,12 +3234,24 @@ void QmlInteractionTest::showsDanmakuStatusOnRoomTile()
     QVERIFY(indicator != nullptr);
     QVERIFY(indicator->property("visible").toBool());
 
-    std::unique_ptr<QObject> blocked(
-        component.createWithInitialProperties(roomTileProperties(QStringLiteral("platform-blocked"))));
+    QVariantMap blockedProperties = roomTileProperties(QStringLiteral("platform-blocked"));
+    blockedProperties.insert(QStringLiteral("controller"),
+                             QVariant::fromValue(static_cast<QObject *>(&controller)));
+    std::unique_ptr<QObject> blocked(component.createWithInitialProperties(blockedProperties));
     QVERIFY2(blocked != nullptr, qPrintable(component.errorString()));
     QObject *retry = blocked->findChild<QObject *>(QStringLiteral("danmakuRetryAction"));
     QVERIFY(retry != nullptr);
     QVERIFY(retry->property("visible").toBool());
+    QVERIFY(QMetaObject::invokeMethod(retry, "clicked"));
+    QCOMPARE(controller.danmaku.retryRoom, QStringLiteral("63136"));
+    QCOMPARE(controller.danmaku.retryCount, 1);
+    QCOMPARE(controller.setPrimaryRoomCount, 0);
+
+    QObject *primary = blocked->findChild<QObject *>(QStringLiteral("primaryRoomAction"));
+    QVERIFY(primary != nullptr);
+    QVERIFY(QMetaObject::invokeMethod(primary, "clicked"));
+    QCOMPARE(controller.primaryRoom, QStringLiteral("63136"));
+    QCOMPARE(controller.setPrimaryRoomCount, 1);
 
     std::unique_ptr<QObject> waiting(
         component.createWithInitialProperties(roomTileProperties(QStringLiteral("waiting"))));
@@ -1775,6 +3259,74 @@ void QmlInteractionTest::showsDanmakuStatusOnRoomTile()
     QObject *waitingLabel = waiting->findChild<QObject *>(QStringLiteral("danmakuWaitingLabel"));
     QVERIFY(waitingLabel != nullptr);
     QVERIFY(waitingLabel->property("visible").toBool());
+}
+
+void QmlInteractionTest::reportsAudioFocusCommandErrorsFromRoomActions()
+{
+    registerQmlTypes();
+    QQmlApplicationEngine engine;
+    QQmlComponent tileComponent(&engine,
+                                QUrl(QStringLiteral("qrc:/qml/components/RoomTile.qml")));
+    QVERIFY2(tileComponent.isReady(), qPrintable(tileComponent.errorString()));
+
+    FakeRoomController tileController;
+    tileController.audioError = QStringLiteral("音频操作失败");
+    QVariantMap tileProperties = roomTileProperties(QStringLiteral("connected"));
+    tileProperties[QStringLiteral("controller")] =
+        QVariant::fromValue(static_cast<QObject *>(&tileController));
+    tileProperties[QStringLiteral("audioFocused")] = true;
+    std::unique_ptr<QObject> tile(tileComponent.createWithInitialProperties(tileProperties));
+    QVERIFY2(tile != nullptr, qPrintable(tileComponent.errorString()));
+    auto *tileAudio = tile->findChild<QObject *>(QStringLiteral("roomAudioButton"));
+    QVERIFY(tileAudio != nullptr);
+    QVERIFY(QMetaObject::invokeMethod(tileAudio, "clicked"));
+    QCOMPARE(tileController.audioRoom, QString());
+    QCOMPARE(tileController.workspaceModel.lastMessage(), QStringLiteral("音频操作失败"));
+    QCOMPARE(tileController.workspaceModel.lastMessageLevel(), QStringLiteral("error"));
+
+    WorkspaceModel workspace(nullptr);
+    RoomListModel roomModel;
+    RoomSnapshot snapshot;
+    snapshot.roomId = QStringLiteral("63136");
+    snapshot.metadata.roomId = snapshot.roomId;
+    snapshot.metadata.anchorName = QStringLiteral("主播");
+    snapshot.liveStatus = RoomLiveStatus::Online;
+    snapshot.audioFocused = true;
+    roomModel.applySnapshots({snapshot});
+
+    FakeRoomController sidebarController;
+    sidebarController.audioError = QStringLiteral("侧边栏音频失败");
+    QQmlComponent sidebarComponent(&engine,
+                                   QUrl(QStringLiteral("qrc:/qml/components/RoomSidebar.qml")));
+    QVERIFY2(sidebarComponent.isReady(), qPrintable(sidebarComponent.errorString()));
+    QQuickWindow sidebarWindow;
+    sidebarWindow.resize(268, 640);
+    sidebarWindow.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&sidebarWindow));
+    std::unique_ptr<QObject> sidebar(sidebarComponent.createWithInitialProperties({
+        {QStringLiteral("parent"), QVariant::fromValue(sidebarWindow.contentItem())},
+        {QStringLiteral("width"), 268},
+        {QStringLiteral("height"), 640},
+        {QStringLiteral("controller"),
+         QVariant::fromValue(static_cast<QObject *>(&sidebarController))},
+        {QStringLiteral("workspaceModel"),
+         QVariant::fromValue(static_cast<QObject *>(&workspace))},
+        {QStringLiteral("roomModel"), QVariant::fromValue(static_cast<QObject *>(&roomModel))},
+    }));
+    QVERIFY2(sidebar != nullptr, qPrintable(sidebarComponent.errorString()));
+    auto *roomList = sidebar->findChild<QObject *>(QStringLiteral("roomList"));
+    QVERIFY(roomList != nullptr);
+    QTRY_COMPARE(roomList->property("count").toInt(), 1);
+    QQuickItem *row = nullptr;
+    QTRY_VERIFY(QMetaObject::invokeMethod(roomList, "itemAtIndex",
+                                          Q_RETURN_ARG(QQuickItem *, row), Q_ARG(int, 0))
+                && row != nullptr);
+    auto *sidebarAudio = row->findChild<QObject *>(QStringLiteral("roomSidebarAudioButton"));
+    QVERIFY(sidebarAudio != nullptr);
+    QVERIFY(QMetaObject::invokeMethod(sidebarAudio, "clicked"));
+    QCOMPARE(sidebarController.audioRoom, QString());
+    QCOMPARE(workspace.lastMessage(), QStringLiteral("侧边栏音频失败"));
+    QCOMPARE(workspace.lastMessageLevel(), QStringLiteral("error"));
 }
 
 
@@ -1798,42 +3350,39 @@ void QmlInteractionTest::rendersRoomAvatarFromModelRole()
 void QmlInteractionTest::placesSidebarToggleBeforeBrandAndOpensHistory()
 {
     QQmlApplicationEngine engine;
-    QQuickWindow *window = loadWindow(engine);
+    auto *window = loadWindow(engine);
     QVERIFY(window != nullptr);
-    QVERIFY(window->isVisible());
-
-    QObject *toggle = window->findChild<QObject *>(QStringLiteral("sidebarToggleButton"));
-    QObject *brandMark = window->findChild<QObject *>(QStringLiteral("brandMark"));
-    QVERIFY(toggle != nullptr);
-    QVERIFY(brandMark != nullptr);
-    QVERIFY(toggle->property("x").toDouble() < brandMark->property("x").toDouble());
-
-    click(window->findChild<QObject *>(QStringLiteral("historyTab")));
-    QObject *libraryView = window->findChild<QObject *>(QStringLiteral("roomLibraryView"));
-    QVERIFY(libraryView != nullptr);
-    QTRY_VERIFY(libraryView->property("visible").toBool());
+    click(window->findChild<QObject *>("watchToolsButton"));
+    auto *tools = window->findChild<QObject *>("watchToolsPanel");
+    QVERIFY(tools && tools->property("visible").toBool());
+    click(window->findChild<QObject *>("sidebarToggleButton"));
+    auto *drawer = window->findChild<QObject *>("roomToolsDrawer");
+    QTRY_VERIFY(drawer->property("visible").toBool());
+    QVERIFY(!tools->property("visible").toBool());
+    click(window->findChild<QObject *>("historyTab"));
+    auto *library = window->findChild<QObject *>("roomLibraryView");
+    QVERIFY(library != nullptr);
+    QTRY_VERIFY(library->property("visible").toBool());
 }
 
 void QmlInteractionTest::placesNavigationEntryAfterSidebarToggleAndBeforeBrand()
 {
     QQmlApplicationEngine engine;
-    QQuickWindow *window = loadWindow(engine);
+    auto *window = loadWindow(engine);
     QVERIFY(window != nullptr);
-
-    QObject *sidebarToggle = window->findChild<QObject *>(QStringLiteral("sidebarToggleButton"));
-    QObject *navigationToggle =
-        window->findChild<QObject *>(QStringLiteral("hamsterNavigationButton"));
-    QObject *rankButton = window->findChild<QObject *>(QStringLiteral("maoziRankButton"));
-    QObject *brandMark = window->findChild<QObject *>(QStringLiteral("brandMark"));
-    QVERIFY(sidebarToggle != nullptr);
-    QVERIFY(navigationToggle != nullptr);
-    QVERIFY(rankButton != nullptr);
-    QVERIFY(brandMark != nullptr);
-    QCOMPARE(navigationToggle->property("text").toString(),
-             QStringLiteral("CSTG狼团S1导航页"));
-    QVERIFY(sidebarToggle->property("x").toDouble() < navigationToggle->property("x").toDouble());
-    QVERIFY(navigationToggle->property("x").toDouble() < rankButton->property("x").toDouble());
-    QVERIFY(rankButton->property("x").toDouble() < brandMark->property("x").toDouble());
+    auto *rail = window->findChild<QQuickItem *>("appNavigationRail");
+    auto *navigation = window->findChild<QQuickItem *>("hamsterNavigationButton");
+    auto *ranking = window->findChild<QQuickItem *>("maoziRankButton");
+    auto *watch = window->findChild<QQuickItem *>("watchWorkspaceButton");
+    QVERIFY(rail && navigation && ranking && watch);
+    QCOMPARE(rail->width(), qreal(80));
+    QCOMPARE(navigation->property("text").toString(), QStringLiteral("主播导航"));
+    QVERIFY(navigation->mapToScene(QPointF()).y() < ranking->mapToScene(QPointF()).y());
+    QVERIFY(ranking->mapToScene(QPointF()).y() < watch->mapToScene(QPointF()).y());
+    click(navigation);
+    QCOMPARE(window->property("currentView").toString(), QStringLiteral("navigation"));
+    click(watch);
+    QCOMPARE(window->property("currentView").toString(), QStringLiteral("monitoring"));
 }
 
 void QmlInteractionTest::makesRoomListAndNavigationPanelsMutuallyExclusive()
@@ -1854,7 +3403,7 @@ void QmlInteractionTest::makesRoomListAndNavigationPanelsMutuallyExclusive()
     QObject *navigationTitle =
         navigationPanel->findChild<QObject *>(QStringLiteral("guildNavigationTitle"));
     QVERIFY(navigationTitle != nullptr);
-    QCOMPARE(navigationTitle->property("text").toString(), QStringLiteral("CSTG狼团S1"));
+    QCOMPARE(navigationTitle->property("text").toString(), QStringLiteral("CSTG 主播导航"));
 
     click(window->findChild<QObject *>(QStringLiteral("sidebarToggleButton")));
     QTRY_VERIFY(roomSidebar->property("visible").toBool());
@@ -2066,6 +3615,7 @@ void QmlInteractionTest::exposesSupportedLayoutOptions()
 
     QObject *layoutButton = window->findChild<QObject *>(QStringLiteral("layoutMenuButton"));
     QVERIFY(layoutButton != nullptr);
+    click(window->findChild<QObject *>(QStringLiteral("watchToolsButton")));
     click(layoutButton);
     QObject *layoutMenu = window->findChild<QObject *>(QStringLiteral("layoutMenu"));
     QVERIFY(layoutMenu != nullptr);
@@ -2083,23 +3633,103 @@ void QmlInteractionTest::exposesSupportedLayoutOptions()
     QVERIFY(window->findChild<QObject *>(QStringLiteral("splitVerticalLayoutOption")) == nullptr);
 }
 
+void QmlInteractionTest::alignsLayoutMenuSelectionIndicator()
+{
+    registerQmlTypes();
+    QQmlApplicationEngine engine;
+    QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qml/components/WatchToolsPanel.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    FakeHeaderController controller;
+    QQuickWindow window;
+    window.resize(QSize(800, 600));
+    window.show();
+    std::unique_ptr<QObject> header(component.createWithInitialProperties({
+        {QStringLiteral("parent"), QVariant::fromValue(window.contentItem())},
+        {QStringLiteral("width"), 360},
+        {QStringLiteral("controller"), QVariant::fromValue(static_cast<QObject *>(&controller))},
+    }));
+    QVERIFY2(header != nullptr, qPrintable(component.errorString()));
+    QVERIFY(QMetaObject::invokeMethod(header.get(), "open"));
+    QTRY_VERIFY(header->property("visible").toBool());
+    click(header->findChild<QObject *>(QStringLiteral("layoutMenuButton")));
+    auto *menu = header->findChild<QObject *>(QStringLiteral("layoutMenu"));
+    QVERIFY(menu != nullptr);
+    QTRY_VERIFY(menu->property("visible").toBool());
+    for (const auto &name : {"autoLayoutOption", "primaryLayoutOption"}) {
+        auto *option = header->findChild<QObject *>(QString::fromLatin1(name));
+        QVERIFY(option != nullptr);
+        auto *indicator = qobject_cast<QQuickItem *>(option->property("indicator").value<QObject *>());
+        auto *content = qobject_cast<QQuickItem *>(option->property("contentItem").value<QObject *>());
+        QVERIFY(indicator != nullptr);
+        QVERIFY(content != nullptr);
+        QVERIFY(indicator->width() > 0);
+        QVERIFY(indicator->x() >= 0);
+        QVERIFY2(indicator->x() + indicator->width() + 4 <= content->x(),
+                 qPrintable(QStringLiteral("indicator x=%1 width=%2 content x=%3")
+                                .arg(indicator->x()).arg(indicator->width()).arg(content->x())));
+        QCOMPARE(indicator->property("visible").toBool(), option->property("checked").toBool());
+    }
+}
+
+void QmlInteractionTest::hidesRoomQualitySelectorIndicator()
+{
+    registerQmlTypes();
+    QQmlApplicationEngine engine;
+    QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qml/components/RoomTile.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    FakeRoomController controller;
+    QVariantMap properties = roomTileProperties(QStringLiteral("connected"));
+    properties[QStringLiteral("controller")] = QVariant::fromValue(static_cast<QObject *>(&controller));
+    std::unique_ptr<QObject> tile(component.createWithInitialProperties(properties));
+    QVERIFY2(tile != nullptr, qPrintable(component.errorString()));
+    auto *quality = tile->findChild<QObject *>(QStringLiteral("roomQualitySelector"));
+    QVERIFY(quality != nullptr);
+    auto *indicator = qobject_cast<QQuickItem *>(quality->property("indicator").value<QObject *>());
+    QVERIFY(indicator == nullptr || !indicator->isVisible());
+    QVERIFY(quality->property("enabled").toBool());
+    QCOMPARE(quality->property("count").toInt(), 2);
+}
+
+void QmlInteractionTest::showsCstgTerminalName()
+{
+    QQmlApplicationEngine engine;
+    auto *window = loadWindow(engine);
+    QVERIFY(window != nullptr);
+    QCOMPARE(window->title(), QStringLiteral("CSTG特勤终端"));
+    auto *brand = window->findChild<QQuickItem *>("brandIcon");
+    QVERIFY(brand != nullptr);
+    auto *appIcon = window->findChild<QQuickItem *>("appIcon");
+    QVERIFY(appIcon != nullptr);
+    QCOMPARE(appIcon->size(), QSizeF(26, 26));
+    QTRY_COMPARE(appIcon->property("status").toInt(), 1);
+    QVERIFY(appIcon->property("source").toUrl().toString().endsWith("icon-app.png"));
+    QVERIFY(sceneBounds(appIcon).right() + 8 <= sceneBounds(brand).left());
+    QVERIFY(!sceneBounds(appIcon).intersects(sceneBounds(brand)));
+    QCOMPARE(brand->size(), QSizeF(210, 24));
+    QTRY_COMPARE(brand->property("status").toInt(), 1);
+    QVERIFY(brand->property("source").toUrl().toString().endsWith("wordmark-night.png"));
+    QCOMPARE(QQmlProperty::read(brand, "Accessible.name", qmlContext(brand)).toString(), QStringLiteral("CSTG特勤终端"));
+}
+
 void QmlInteractionTest::enablesDualPrimaryLayoutAfterFourthRoomIsAdded()
 {
     registerQmlTypes();
     QQmlApplicationEngine engine;
-    QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qml/components/AppHeader.qml")));
+    QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qml/components/WatchToolsPanel.qml")));
     QVERIFY2(component.isReady(), qPrintable(component.errorString()));
 
     FakeHeaderController controller;
     QQuickWindow hostWindow;
-    hostWindow.resize(QSize(800, 120));
+    hostWindow.resize(QSize(800, 600));
     hostWindow.show();
     std::unique_ptr<QObject> header(component.createWithInitialProperties({
         {QStringLiteral("parent"), QVariant::fromValue(hostWindow.contentItem())},
-        {QStringLiteral("width"), 800},
+        {QStringLiteral("width"), 360},
         {QStringLiteral("controller"), QVariant::fromValue(static_cast<QObject *>(&controller))},
     }));
     QVERIFY2(header != nullptr, qPrintable(component.errorString()));
+    QVERIFY(QMetaObject::invokeMethod(header.get(), "open"));
+    QTRY_VERIFY(header->property("visible").toBool());
 
     QObject *layoutButton = header->findChild<QObject *>(QStringLiteral("layoutMenuButton"));
     QObject *dualPrimary = header->findChild<QObject *>(QStringLiteral("dualPrimaryLayoutOption"));
@@ -2161,19 +3791,21 @@ void QmlInteractionTest::exposesGlobalAudioControls()
 {
     registerQmlTypes();
     QQmlApplicationEngine engine;
-    QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qml/components/AppHeader.qml")));
+    QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qml/components/WatchToolsPanel.qml")));
     QVERIFY2(component.isReady(), qPrintable(component.errorString()));
 
     FakeHeaderController controller;
     QQuickWindow hostWindow;
-    hostWindow.resize(QSize(800, 120));
+    hostWindow.resize(QSize(800, 600));
     hostWindow.show();
     std::unique_ptr<QObject> header(component.createWithInitialProperties({
         {QStringLiteral("parent"), QVariant::fromValue(hostWindow.contentItem())},
-        {QStringLiteral("width"), 800},
+        {QStringLiteral("width"), 360},
         {QStringLiteral("controller"), QVariant::fromValue(static_cast<QObject *>(&controller))},
     }));
     QVERIFY2(header != nullptr, qPrintable(component.errorString()));
+    QVERIFY(QMetaObject::invokeMethod(header.get(), "open"));
+    QTRY_VERIFY(header->property("visible").toBool());
 
     QObject *mute = header->findChild<QObject *>(QStringLiteral("globalMuteButton"));
     QObject *single = header->findChild<QObject *>(QStringLiteral("audioSingleButton"));
@@ -2197,189 +3829,90 @@ void QmlInteractionTest::exposesGlobalAudioControls()
 void QmlInteractionTest::distinguishesWorkspaceAndLayoutActions()
 {
     QQmlApplicationEngine engine;
-    QQuickWindow *window = loadWindow(engine);
+    auto *window = loadWindow(engine);
     QVERIFY(window != nullptr);
-    QObject *workspace = window->findChild<QObject *>(QStringLiteral("workspaceButton"));
-    QObject *layout = window->findChild<QObject *>(QStringLiteral("layoutMenuButton"));
-    QVERIFY(workspace != nullptr);
-    QVERIFY(layout != nullptr);
-    QObject *workspaceIcon = window->findChild<QObject *>(QStringLiteral("workspacePresetIcon"));
-    QObject *layoutIcon = window->findChild<QObject *>(QStringLiteral("layoutMenuIcon"));
-    QVERIFY(workspaceIcon != nullptr);
-    QVERIFY(layoutIcon != nullptr);
-    QVERIFY(workspaceIcon->property("source").toUrl()
-                != layoutIcon->property("source").toUrl());
-    QVERIFY(!window->findChild<QObject *>(QStringLiteral("nativeQtWorkspaceSubtitle")));
+    auto *workspace = window->findChild<QObject *>("workspaceButton");
+    auto *layout = window->findChild<QObject *>("layoutMenuButton");
+    QVERIFY(workspace && layout);
+    QVERIFY(QQmlProperty::read(workspace, "icon.source", qmlContext(workspace)).toUrl()
+            != QQmlProperty::read(layout, "icon.source", qmlContext(layout)).toUrl());
+    QVERIFY(!window->findChild<QObject *>("nativeQtWorkspaceSubtitle"));
 }
 
 void QmlInteractionTest::usesGroupedHeaderControls()
 {
-    registerQmlTypes();
     QQmlApplicationEngine engine;
-    QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qml/components/AppHeader.qml")));
-    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
-
-    FakeHeaderController controller;
-    QQuickWindow hostWindow;
-    hostWindow.resize(QSize(800, 320));
-    hostWindow.show();
-    std::unique_ptr<QObject> header(component.createWithInitialProperties({
-        {QStringLiteral("parent"), QVariant::fromValue(hostWindow.contentItem())},
-        {QStringLiteral("width"), 800},
-        {QStringLiteral("controller"), QVariant::fromValue(static_cast<QObject *>(&controller))},
-    }));
-    QVERIFY2(header != nullptr, qPrintable(component.errorString()));
-
-    for (const QString &objectName : {QStringLiteral("sidebarToggleButton"),
-                                      QStringLiteral("danmakuButton"),
-                                      QStringLiteral("monitoringButton"),
-                                      QStringLiteral("workspaceButton"),
-                                      QStringLiteral("layoutMenuButton"),
-                                      QStringLiteral("soundMasterButton"),
-                                      QStringLiteral("fullscreenButton")}) {
-        QObject *control = header->findChild<QObject *>(objectName);
-        QVERIFY(control != nullptr);
-        QCOMPARE(control->property("width").toInt(), 32);
-        QCOMPARE(control->property("height").toInt(), 32);
+    auto *window = loadWindow(engine);
+    QVERIFY(window != nullptr);
+    auto *header = window->findChild<QQuickItem *>("appHeader");
+    QVERIFY(header != nullptr);
+    QCOMPARE(header->height(), qreal(36));
+    for (const char *name : {"watchToolsButton", "themeToggleButton", "minimizeButton", "maximizeButton", "closeButton"}) {
+        auto *control = header->findChild<QQuickItem *>(QString::fromLatin1(name));
+        QVERIFY2(control != nullptr, name);
+        QCOMPARE(control->height(), qreal(28));
+        auto *content = qvariant_cast<QQuickItem *>(control->property("contentItem"));
+        QVERIFY2(content != nullptr, name);
+        QTRY_VERIFY_WITH_TIMEOUT(content->height() >= 16, 1000);
     }
-    QObject *rank = header->findChild<QObject *>(QStringLiteral("maoziRankButton"));
-    QVERIFY(rank != nullptr);
-    QCOMPARE(rank->property("width").toInt(), 32);
-    QCOMPARE(rank->property("height").toInt(), 32);
-    QSignalSpy rankRequested(header.get(), SIGNAL(openMaoziRank()));
-    click(rank);
-    QCOMPARE(rankRequested.count(), 1);
-
-    QObject *sound = header->findChild<QObject *>(QStringLiteral("soundMasterButton"));
-    QObject *popover = header->findChild<QObject *>(QStringLiteral("soundMasterPopover"));
-    QObject *close = header->findChild<QObject *>(QStringLiteral("closeSoundMasterButton"));
-    QVERIFY(sound != nullptr);
-    QVERIFY(popover != nullptr);
-    QVERIFY(close != nullptr);
-    click(sound);
-    QTRY_VERIFY(popover->property("visible").toBool());
-    QVERIFY(popover->property("y").toDouble()
-            >= sound->property("y").toDouble() + sound->property("height").toDouble());
-    click(close);
-    QTRY_VERIFY(!popover->property("visible").toBool());
-
-    QObject *windowControls = header->findChild<QObject *>(QStringLiteral("windowControls"));
-    QVERIFY(windowControls != nullptr);
-    for (const QString &objectName : {QStringLiteral("minimizeButton"),
-                                      QStringLiteral("maximizeButton"),
-                                      QStringLiteral("closeButton")}) {
-        QObject *control = windowControls->findChild<QObject *>(objectName);
-        QVERIFY(control != nullptr);
-        QCOMPARE(control->property("width").toInt(), 32);
-        QCOMPARE(control->property("height").toInt(), 32);
+    for (const char *name : {"minimizeIcon", "maximizeIcon", "windowCloseIcon"}) {
+        auto *icon = header->findChild<QQuickItem *>(QString::fromLatin1(name));
+        QVERIFY2(icon != nullptr, name);
+        QTRY_VERIFY_WITH_TIMEOUT(icon->width() >= 15 && icon->height() >= 15, 1000);
     }
-    QCOMPARE(windowControls->findChild<QObject *>(QStringLiteral("minimizeButton"))
-                 ->property("accessibilityLabel").toString(),
-             QStringLiteral("最小化窗口"));
-    QCOMPARE(windowControls->findChild<QObject *>(QStringLiteral("maximizeButton"))
-                 ->property("accessibilityLabel").toString(),
-             QStringLiteral("最大化窗口"));
-    QCOMPARE(windowControls->findChild<QObject *>(QStringLiteral("closeButton"))
-                 ->property("accessibilityLabel").toString(),
-             QStringLiteral("关闭窗口"));
+    click(header->findChild<QObject *>("watchToolsButton"));
+    auto *tools = window->findChild<QObject *>("watchToolsPanel");
+    QTRY_VERIFY(tools->property("visible").toBool());
+    for (const char *name : {"sidebarToggleButton", "danmakuButton", "monitoringButton", "workspaceButton", "layoutMenuButton", "soundMasterButton", "fullscreenButton"})
+        QVERIFY2(tools->findChild<QObject *>(QString::fromLatin1(name)) != nullptr, name);
 }
 
 void QmlInteractionTest::groupsSoundControlsAndExposesFullscreen()
 {
     registerQmlTypes();
     QQmlApplicationEngine engine;
-    QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qml/components/AppHeader.qml")));
+    QQmlComponent component(&engine, QUrl("qrc:/qml/components/WatchToolsPanel.qml"));
     QVERIFY2(component.isReady(), qPrintable(component.errorString()));
-
     FakeHeaderController controller;
-    QQuickWindow hostWindow;
-    hostWindow.resize(QSize(800, 320));
-    hostWindow.show();
-    std::unique_ptr<QObject> header(component.createWithInitialProperties({
-        {QStringLiteral("parent"), QVariant::fromValue(hostWindow.contentItem())},
-        {QStringLiteral("width"), 800},
-        {QStringLiteral("controller"), QVariant::fromValue(static_cast<QObject *>(&controller))},
-    }));
-    QVERIFY2(header != nullptr, qPrintable(component.errorString()));
-    QObject *sound = header->findChild<QObject *>(QStringLiteral("soundMasterButton"));
-    QObject *popover = header->findChild<QObject *>(QStringLiteral("soundMasterPopover"));
+    QQuickWindow window;
+    window.resize(800, 600);
+    window.show();
+    std::unique_ptr<QObject> tools(component.createWithInitialProperties({
+        {"parent", QVariant::fromValue(window.contentItem())},
+        {"controller", QVariant::fromValue(static_cast<QObject *>(&controller))}}));
+    QVERIFY2(tools != nullptr, qPrintable(component.errorString()));
+    QVERIFY(QMetaObject::invokeMethod(tools.get(), "open"));
+    click(tools->findChild<QObject *>("soundMasterButton"));
+    auto *sound = tools->findChild<QObject *>("soundMasterPopover");
     QVERIFY(sound != nullptr);
-    QVERIFY(popover != nullptr);
-    QVERIFY(!popover->property("visible").toBool());
-    click(sound);
-    QTRY_VERIFY(popover->property("visible").toBool());
-    const QPointF popupAnchor = popover->property("soundAnchor").toPointF();
-    qInfo() << "sound anchor" << popupAnchor << "header height" << header->property("height")
-            << "sound height" << sound->property("height");
-    QVERIFY(popupAnchor.x() >= 0);
-    QVERIFY(popupAnchor.y() >= 0);
-    auto *soundItem = qobject_cast<QQuickItem *>(sound);
-    auto *headerItem = qobject_cast<QQuickItem *>(header.get());
-    QVERIFY(soundItem != nullptr);
-    QVERIFY(headerItem != nullptr);
-    QVERIFY(headerItem->z() > 0);
-    const QPointF buttonInHeader = soundItem->mapToItem(headerItem, 0, 0);
-    QVERIFY(qAbs(popupAnchor.x() - buttonInHeader.x()) < 1.0);
-    QVERIFY(qAbs(popupAnchor.y() - header->property("height").toDouble() - 4.0) < 1.0);
-    const qreal popupX = popover->property("x").toDouble();
-    QVERIFY(popupX > 0);
-    QVERIFY(popupX + popover->property("width").toDouble() <= hostWindow.width());
-    QVERIFY(header->findChild<QObject *>(QStringLiteral("globalMuteButton")) != nullptr);
-    QVERIFY(header->findChild<QObject *>(QStringLiteral("audioSingleButton")) != nullptr);
-    QVERIFY(header->findChild<QObject *>(QStringLiteral("audioMultiButton")) != nullptr);
-
-    click(sound);
-    QTRY_VERIFY(!popover->property("visible").toBool());
-
-    QObject *fullscreen = header->findChild<QObject *>(QStringLiteral("fullscreenButton"));
-    QVERIFY(fullscreen != nullptr);
-    QObject *windowControls = header->findChild<QObject *>(QStringLiteral("windowControls"));
-    QVERIFY(windowControls != nullptr);
-    QObject *maximize = windowControls->findChild<QObject *>(QStringLiteral("maximizeButton"));
-    QObject *maximizeIcon = windowControls->findChild<QObject *>(QStringLiteral("maximizeIcon"));
-    QObject *fullscreenIcon = header->findChild<QObject *>(QStringLiteral("fullscreenIcon"));
-    QVERIFY(maximize != nullptr);
-    QVERIFY(maximizeIcon != nullptr);
-    QVERIFY(fullscreenIcon != nullptr);
-    QCOMPARE(maximize->property("accessibilityLabel").toString(), QStringLiteral("最大化窗口"));
-    QCOMPARE(fullscreen->property("accessibilityLabel").toString(), QStringLiteral("全屏播放"));
-    QVERIFY(maximizeIcon->property("source").toUrl() != fullscreenIcon->property("source").toUrl());
-    QVERIFY(maximizeIcon->property("source").toUrl().toString().contains(QStringLiteral("window-maximize.svg")));
-    QVERIFY(fullscreenIcon->property("source").toUrl().toString().contains(QStringLiteral("window-fullscreen.svg")));
-    QVERIFY(QMetaObject::invokeMethod(fullscreen, "clicked"));
+    QTRY_VERIFY(sound->property("visible").toBool());
+    QCOMPARE(tools->property("currentSection").toString(), QStringLiteral("sound"));
+    auto *back = tools->findChild<QQuickItem *>("watchToolsBackButton");
+    QVERIFY(back != nullptr);
+    QTRY_VERIFY(back->hasActiveFocus());
+    for (const char *name : {"globalMuteButton", "audioSingleButton", "audioMultiButton"})
+        QVERIFY(tools->findChild<QObject *>(QString::fromLatin1(name)) != nullptr);
+    click(back);
+    QTRY_VERIFY(!sound->property("visible").toBool());
+    click(tools->findChild<QObject *>("fullscreenButton"));
     QVERIFY(controller.fullScreenToggled);
 }
 
 void QmlInteractionTest::positionsSoundPopoverLikeDanmakuPanel()
 {
-    registerQmlTypes();
     QQmlApplicationEngine engine;
-    QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qml/components/AppHeader.qml")));
-    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
-
-    FakeHeaderController controller;
-    QQuickWindow hostWindow;
-    hostWindow.resize(QSize(800, 320));
-    hostWindow.show();
-    std::unique_ptr<QObject> header(component.createWithInitialProperties({
-        {QStringLiteral("parent"), QVariant::fromValue(hostWindow.contentItem())},
-        {QStringLiteral("width"), 800},
-        {QStringLiteral("controller"), QVariant::fromValue(static_cast<QObject *>(&controller))},
-    }));
-    QVERIFY2(header != nullptr, qPrintable(component.errorString()));
-    QObject *sound = header->findChild<QObject *>(QStringLiteral("soundMasterButton"));
-    QObject *popover = header->findChild<QObject *>(QStringLiteral("soundMasterPopover"));
-    QVERIFY(sound != nullptr);
-    QVERIFY(popover != nullptr);
-    click(sound);
-    QTRY_VERIFY(popover->property("visible").toBool());
-    const qreal expectedX = std::max<qreal>(12.0, hostWindow.width()
-                                                     - popover->property("width").toDouble()
-                                                     - 72.0);
-    QCOMPARE(popover->property("x").toDouble(), expectedX);
-    QCOMPARE(popover->property("y").toDouble(), header->property("height").toDouble() + 8.0);
-    click(sound);
-    QTRY_VERIFY(!popover->property("visible").toBool());
+    auto *window = loadWindow(engine);
+    QVERIFY(window != nullptr);
+    click(window->findChild<QObject *>("watchToolsButton"));
+    click(window->findChild<QObject *>("soundMasterButton"));
+    auto *popup = window->findChild<QObject *>("soundMasterPopover");
+    QVERIFY(popup != nullptr);
+    QTRY_VERIFY(popup->property("visible").toBool());
+    auto *section = qobject_cast<QQuickItem *>(popup);
+    QVERIFY(section != nullptr);
+    QTRY_VERIFY(QRectF(QPointF(), window->size()).contains(sceneBounds(section)));
+    click(window->findChild<QObject *>("watchToolsBackButton"));
+    QTRY_VERIFY(!popup->property("visible").toBool());
 }
 
 void QmlInteractionTest::truncatesLongRoomTitleBeforeActions()
@@ -2449,6 +3982,230 @@ void QmlInteractionTest::keepsSidebarMetadataClearOfActionsForLongTitles()
     QVERIFY(title->mapToItem(row, QPointF(title->width(), 0)).x() <= actionBar->x());
 }
 
+void QmlInteractionTest::keepsCurrentRoomHoverClearOfActions()
+{
+    registerQmlTypes();
+    WorkspaceModel workspace(nullptr);
+    FakeRoomController controller;
+    RoomListModel roomModel;
+    RoomSnapshot snapshot;
+    snapshot.roomId = QStringLiteral("63136");
+    snapshot.metadata.roomId = snapshot.roomId;
+    snapshot.metadata.anchorName = QStringLiteral("当前主播");
+    snapshot.metadata.title = QStringLiteral("当前房间");
+    snapshot.liveStatus = RoomLiveStatus::Online;
+    snapshot.playbackHealth = RoomPlaybackHealth::Playing;
+    snapshot.isPrimary = false;
+    roomModel.applySnapshots({snapshot});
+
+    QQmlApplicationEngine engine;
+    QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qml/components/RoomSidebar.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    QQuickWindow window;
+    window.resize(268, 640);
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+
+    std::unique_ptr<QObject> sidebar(component.createWithInitialProperties({
+        {QStringLiteral("parent"), QVariant::fromValue(window.contentItem())},
+        {QStringLiteral("width"), 268},
+        {QStringLiteral("height"), 640},
+        {QStringLiteral("controller"), QVariant::fromValue(static_cast<QObject *>(&controller))},
+        {QStringLiteral("workspaceModel"), QVariant::fromValue(static_cast<QObject *>(&workspace))},
+        {QStringLiteral("roomModel"), QVariant::fromValue(static_cast<QObject *>(&roomModel))},
+    }));
+    QVERIFY2(sidebar != nullptr, qPrintable(component.errorString()));
+
+    auto *list = sidebar->findChild<QQuickItem *>(QStringLiteral("roomList"));
+    QVERIFY(list != nullptr);
+    QTRY_COMPARE(list->property("count").toInt(), 1);
+    QQuickItem *row = nullptr;
+    QTRY_VERIFY_WITH_TIMEOUT(QMetaObject::invokeMethod(list,
+                                                       "itemAtIndex",
+                                                       Q_RETURN_ARG(QQuickItem *, row),
+                                                       Q_ARG(int, 0))
+                                 && row != nullptr,
+                             1000);
+
+    auto *hover = row->findChild<QQuickItem *>(QStringLiteral("roomSidebarHoverArea"));
+    auto *actions = row->findChild<QQuickItem *>(QStringLiteral("sidebarRoomActionBar"));
+    auto *remove = row->findChild<QQuickItem *>(QStringLiteral("roomRemoveButton"));
+    auto *surface = row->findChild<QQuickItem *>(QStringLiteral("roomSidebarSelectionSurface"));
+    QVERIFY(hover != nullptr);
+    QVERIFY(actions != nullptr);
+    QVERIFY(remove != nullptr);
+    QVERIFY(surface != nullptr);
+    QVERIFY(hover->x() + hover->width() <= actions->x());
+
+    const QColor idleColor = surface->property("color").value<QColor>();
+    const QPoint hoverCenter =
+        hover->mapToScene(QPointF(hover->width() / 2, hover->height() / 2)).toPoint();
+    QTest::mouseMove(&window, hoverCenter);
+    QTRY_VERIFY(hover->property("containsMouse").toBool());
+    QTRY_COMPARE(surface->property("color").value<QColor>(), QColor(QStringLiteral("#1e2624")));
+    QVERIFY(surface->property("color").value<QColor>() != idleColor);
+
+    const QPoint removeCenter =
+        remove->mapToScene(QPointF(remove->width() / 2, remove->height() / 2)).toPoint();
+    QTest::mouseMove(&window, removeCenter);
+    QTRY_VERIFY(remove->property("hovered").toBool());
+    QVERIFY(!hover->property("containsMouse").toBool());
+    QTest::qWait(220);
+    QTRY_COMPARE(surface->property("color").value<QColor>(), QColor(QStringLiteral("#1e2624")));
+    QTest::mouseMove(&window, QPoint(2, 2));
+    QTRY_COMPARE(surface->property("color").value<QColor>(), idleColor);
+}
+
+void QmlInteractionTest::keepsHistoryHoverClearOfActions()
+{
+    registerQmlTypes();
+    QQmlApplicationEngine engine;
+    QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qml/components/RoomLibraryView.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+
+    QQuickWindow hostWindow;
+    hostWindow.resize(QSize(360, 240));
+    hostWindow.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&hostWindow));
+
+    FakeRoomController controller;
+    const QVariantList rooms{
+        QVariantMap{
+            {QStringLiteral("roomId"), QStringLiteral("63136")},
+            {QStringLiteral("anchorName"), QStringLiteral("主播")},
+            {QStringLiteral("title"), QStringLiteral("历史房间")},
+            {QStringLiteral("avatarUrl"), QUrl(QStringLiteral("qrc:/missing/history-avatar.png"))},
+            {QStringLiteral("active"), false},
+            {QStringLiteral("favorite"), false},
+            {QStringLiteral("lastOpenedAtMs"), 1},
+        },
+    };
+    std::unique_ptr<QObject> library(component.createWithInitialProperties({
+        {QStringLiteral("parent"), QVariant::fromValue(hostWindow.contentItem())},
+        {QStringLiteral("width"), 360},
+        {QStringLiteral("height"), 240},
+        {QStringLiteral("controller"), QVariant::fromValue(static_cast<QObject *>(&controller))},
+        {QStringLiteral("libraryRooms"), rooms},
+    }));
+    QVERIFY2(library != nullptr, qPrintable(component.errorString()));
+
+    auto *list = library->findChild<QObject *>(QStringLiteral("historyList"));
+    QVERIFY(list != nullptr);
+    QTRY_COMPARE(list->property("count").toInt(), 1);
+
+    QQuickItem *row = nullptr;
+    QTRY_VERIFY_WITH_TIMEOUT(QMetaObject::invokeMethod(list, "itemAtIndex",
+                                                       Q_RETURN_ARG(QQuickItem *, row),
+                                                       Q_ARG(int, 0))
+                                 && row != nullptr,
+                             1000);
+    auto *hover = row->findChild<QQuickItem *>(QStringLiteral("historyHoverArea"));
+    auto *actions = row->findChild<QQuickItem *>(QStringLiteral("libraryRoomActionBar"));
+    auto *remove = row->findChild<QQuickItem *>(QStringLiteral("removeHistoryButton"));
+    auto *avatarImage = row->findChild<QObject *>(QStringLiteral("roomHistoryAvatarImage"));
+    auto *avatarFallback = row->findChild<QObject *>(QStringLiteral("roomHistoryAvatarFallback"));
+    auto *surface = row->childItems().isEmpty() ? nullptr : row->childItems().first();
+    QVERIFY(hover != nullptr);
+    QVERIFY(actions != nullptr);
+    QVERIFY(remove != nullptr);
+    QVERIFY(avatarImage != nullptr);
+    QVERIFY(avatarFallback != nullptr);
+    QVERIFY(surface != nullptr);
+    QTRY_COMPARE(avatarImage->property("status").toInt(), 3);
+    QVERIFY(!avatarImage->property("visible").toBool());
+    QVERIFY(avatarFallback->property("visible").toBool());
+    QVERIFY(hover->x() + hover->width() <= actions->x());
+
+    const QColor idleColor = surface->property("color").value<QColor>();
+    QTest::mouseMove(&hostWindow, hover->mapToScene(
+        QPointF(hover->width() / 2, hover->height() / 2)).toPoint());
+    QTRY_COMPARE(surface->property("color").value<QColor>(), QColor(QStringLiteral("#1e2624")));
+
+    const QPoint removeCenter =
+        remove->mapToScene(QPointF(remove->width() / 2, remove->height() / 2)).toPoint();
+    QTest::mouseMove(&hostWindow, removeCenter);
+    QTRY_VERIFY(remove->property("hovered").toBool());
+    QVERIFY(!hover->property("containsMouse").toBool());
+    QTest::qWait(220);
+    QTRY_COMPARE(surface->property("color").value<QColor>(), QColor(QStringLiteral("#1e2624")));
+    QTest::mouseMove(&hostWindow, QPoint(2, 2));
+    QTRY_COMPARE(surface->property("color").value<QColor>(), idleColor);
+}
+
+void QmlInteractionTest::keepsFavoritesHoverClearOfActions()
+{
+    registerQmlTypes();
+    QQmlApplicationEngine engine;
+    QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qml/components/RoomLibraryView.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+
+    QQuickWindow hostWindow;
+    hostWindow.resize(QSize(360, 240));
+    hostWindow.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&hostWindow));
+
+    FakeRoomController controller;
+    const QVariantList rooms{
+        QVariantMap{
+            {QStringLiteral("roomId"), QStringLiteral("63136")},
+            {QStringLiteral("anchorName"), QStringLiteral("收藏主播")},
+            {QStringLiteral("title"), QStringLiteral("收藏房间")},
+            {QStringLiteral("avatarUrl"), QUrl()},
+            {QStringLiteral("active"), false},
+            {QStringLiteral("favorite"), true},
+            {QStringLiteral("lastOpenedAtMs"), 0},
+        },
+    };
+    std::unique_ptr<QObject> library(component.createWithInitialProperties({
+        {QStringLiteral("parent"), QVariant::fromValue(hostWindow.contentItem())},
+        {QStringLiteral("width"), 360},
+        {QStringLiteral("height"), 240},
+        {QStringLiteral("controller"), QVariant::fromValue(static_cast<QObject *>(&controller))},
+        {QStringLiteral("libraryRooms"), rooms},
+        {QStringLiteral("favoritesOnly"), true},
+    }));
+    QVERIFY2(library != nullptr, qPrintable(component.errorString()));
+
+    auto *list = library->findChild<QQuickItem *>(QStringLiteral("historyList"));
+    QVERIFY(list != nullptr);
+    QTRY_COMPARE(list->property("count").toInt(), 1);
+    QQuickItem *row = nullptr;
+    QTRY_VERIFY_WITH_TIMEOUT(QMetaObject::invokeMethod(list,
+                                                       "itemAtIndex",
+                                                       Q_RETURN_ARG(QQuickItem *, row),
+                                                       Q_ARG(int, 0))
+                                 && row != nullptr,
+                             1000);
+
+    auto *hover = row->findChild<QQuickItem *>(QStringLiteral("historyHoverArea"));
+    auto *actions = row->findChild<QQuickItem *>(QStringLiteral("libraryRoomActionBar"));
+    auto *open = row->findChild<QQuickItem *>(QStringLiteral("openHistoryRoomButton"));
+    auto *remove = row->findChild<QQuickItem *>(QStringLiteral("removeHistoryButton"));
+    auto *surface = row->childItems().isEmpty() ? nullptr : row->childItems().first();
+    QVERIFY(hover != nullptr);
+    QVERIFY(actions != nullptr);
+    QVERIFY(open != nullptr);
+    QVERIFY(remove != nullptr);
+    QVERIFY(surface != nullptr);
+    QVERIFY(!remove->property("visible").toBool());
+    QVERIFY(hover->x() + hover->width() <= actions->x());
+
+    const QColor idleColor = surface->property("color").value<QColor>();
+    QTest::mouseMove(&hostWindow, hover->mapToScene(
+        QPointF(hover->width() / 2, hover->height() / 2)).toPoint());
+    QTRY_COMPARE(surface->property("color").value<QColor>(), QColor(QStringLiteral("#1e2624")));
+
+    const QPoint openCenter =
+        open->mapToScene(QPointF(open->width() / 2, open->height() / 2)).toPoint();
+    QTest::mouseMove(&hostWindow, openCenter);
+    QTRY_VERIFY(open->property("hovered").toBool());
+    QVERIFY(!hover->property("containsMouse").toBool());
+    QTest::qWait(220);
+    QTRY_COMPARE(surface->property("color").value<QColor>(), QColor(QStringLiteral("#1e2624")));
+    QTest::mouseMove(&hostWindow, QPoint(2, 2));
+    QTRY_COMPARE(surface->property("color").value<QColor>(), idleColor);
+}
+
 void QmlInteractionTest::exposesRoomVolumeAndRefreshControls()
 {
     registerQmlTypes();
@@ -2457,8 +4214,13 @@ void QmlInteractionTest::exposesRoomVolumeAndRefreshControls()
     QVERIFY2(component.isReady(), qPrintable(component.errorString()));
 
     FakeRoomController controller;
+    QQuickWindow hostWindow;
+    hostWindow.resize(800, 600);
+    hostWindow.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&hostWindow));
     QVariantMap properties = roomTileProperties(QStringLiteral("connected"));
     properties[QStringLiteral("controller")] = QVariant::fromValue(static_cast<QObject *>(&controller));
+    properties[QStringLiteral("parent")] = QVariant::fromValue(hostWindow.contentItem());
     std::unique_ptr<QObject> tile(component.createWithInitialProperties(properties));
     QVERIFY2(tile != nullptr, qPrintable(component.errorString()));
 
@@ -2480,10 +4242,19 @@ void QmlInteractionTest::exposesRoomVolumeAndRefreshControls()
     QTRY_VERIFY(tile->property("menuOpen").toBool());
     QObject *menu = tile->findChild<QObject *>(QStringLiteral("roomControlMenu"));
     QVERIFY(menu != nullptr);
-    QCOMPARE(qobject_cast<QQuickItem *>(menu)->parentItem(),
-             qobject_cast<QQuickItem *>(tile.get()));
-    QVERIFY(menu->property("z").toDouble() > topBar->property("z").toDouble());
+    QVERIFY(qobject_cast<QQuickItem *>(menu)->parentItem()
+            != qobject_cast<QQuickItem *>(tile.get()));
+    QVERIFY(menu->property("visible").toBool());
+    const auto *menuSceneItem = qobject_cast<QQuickItem *>(menu);
+    QVERIFY(QRectF(QPointF(), hostWindow.size()).contains(
+        QRectF(menuSceneItem->mapToScene(QPointF()), menuSceneItem->size())));
     QVERIFY(tile->property("z").toDouble() > 0.0);
+    const auto *menuItem = qobject_cast<QQuickItem *>(menu);
+    for (QQuickItem *action : menuItem->findChildren<QQuickItem *>()) {
+        if (!action->isVisible() || !action->objectName().endsWith(QStringLiteral("Action"))) continue;
+        const QRectF actionRect(action->mapToItem(menuItem, QPointF()), action->size());
+        QVERIFY2(QRectF(QPointF(), menuItem->size()).contains(actionRect), qPrintable(action->objectName()));
+    }
     tile->setProperty("menuOpen", false);
     QCOMPARE(slider->objectName(), QStringLiteral("roomVolumeSlider"));
     QObject *sliderHandle = tile->findChild<QObject *>(QStringLiteral("roomVolumeSliderHandle"));
@@ -2498,6 +4269,100 @@ void QmlInteractionTest::exposesRoomVolumeAndRefreshControls()
 
     QVERIFY(QMetaObject::invokeMethod(refresh, "clicked"));
     QCOMPARE(controller.refreshedRoom, QStringLiteral("63136"));
+}
+
+void QmlInteractionTest::keepsKeyboardRoomControlsVisibleAndHiddenBarsInactive()
+{
+    registerQmlTypes();
+    QQmlApplicationEngine engine;
+    QQmlComponent component(&engine, QUrl("qrc:/qml/components/RoomTile.qml"));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    QQuickWindow window;
+    window.resize(800, 600);
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    auto properties = roomTileProperties("connected");
+    properties["parent"] = QVariant::fromValue(window.contentItem());
+    properties["width"] = 640;
+    properties["height"] = 400;
+    properties["avatarUrl"] = QUrl();
+    std::unique_ptr<QObject> tile(component.createWithInitialProperties(properties));
+    QVERIFY2(tile != nullptr, qPrintable(component.errorString()));
+    auto *timer = tile->findChild<QObject *>("roomControlsTimer");
+    auto *button = tile->findChild<QQuickItem *>("roomTopActions");
+    QVERIFY(timer && button);
+    button->forceActiveFocus(Qt::TabFocusReason);
+    QTRY_VERIFY(button->hasActiveFocus());
+    QVERIFY(QMetaObject::invokeMethod(timer, "triggered"));
+    QVERIFY(tile->property("controlsVisible").toBool());
+    QTest::mouseClick(&window, Qt::LeftButton, Qt::NoModifier, QPoint(320, 200));
+    QTest::mouseMove(&window, QPoint(760, 560));
+    QVERIFY(QMetaObject::invokeMethod(timer, "triggered"));
+    QVERIFY(!tile->property("controlsVisible").toBool());
+    for (const char *name : {"roomTopBar", "roomBottomBar"}) {
+        auto *bar = tile->findChild<QQuickItem *>(QString::fromLatin1(name));
+        QVERIFY(bar != nullptr);
+        QVERIFY(!bar->isEnabled());
+    }
+}
+
+void QmlInteractionTest::keepsBottomRowRoomMenuInsideWindowAndClosesOutside()
+{
+    registerQmlTypes();
+    QQmlApplicationEngine engine;
+    QQmlComponent component(&engine, QUrl("qrc:/qml/components/RoomTile.qml"));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    QQuickWindow window;
+    window.resize(640, 480);
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    window.requestActivate();
+    QTRY_VERIFY(window.isActive());
+    auto properties = roomTileProperties("idle");
+    properties["parent"] = QVariant::fromValue(window.contentItem());
+    properties["x"] = 320;
+    properties["y"] = 320;
+    properties["width"] = 320;
+    properties["height"] = 160;
+    properties["avatarUrl"] = QUrl();
+    std::unique_ptr<QObject> tile(component.createWithInitialProperties(properties));
+    QVERIFY2(tile != nullptr, qPrintable(component.errorString()));
+    click(tile->findChild<QObject *>("roomTopActions"));
+    QTRY_VERIFY(tile->property("menuOpen").toBool());
+    auto *menu = tile->findChild<QQuickItem *>("roomControlMenu");
+    QVERIFY(menu != nullptr);
+    const QRectF bounds(menu->mapToScene(QPointF()), menu->size());
+    QVERIFY2(QRectF(QPointF(), window.size()).contains(bounds), qPrintable(QStringLiteral("menu %1,%2 %3x%4").arg(bounds.x()).arg(bounds.y()).arg(bounds.width()).arg(bounds.height())));
+    QTest::mouseClick(&window, Qt::LeftButton, Qt::NoModifier, QPoint(20, 100));
+    QTRY_VERIFY(!tile->property("menuOpen").toBool());
+}
+
+void QmlInteractionTest::preservesPresetNameUntilSaveSucceeds()
+{
+    QQmlApplicationEngine engine;
+    QQmlComponent component(&engine, QUrl("qrc:/qml/panels/WorkspacePresetsPanel.qml"));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    FakePresetController controller;
+    QQuickWindow window;
+    window.resize(480, 600);
+    window.show();
+    std::unique_ptr<QObject> panel(component.createWithInitialProperties({
+        {"parent", QVariant::fromValue(window.contentItem())},
+        {"controller", QVariant::fromValue(static_cast<QObject *>(&controller))}}));
+    QVERIFY2(panel != nullptr, qPrintable(component.errorString()));
+    QVERIFY(QMetaObject::invokeMethod(panel.get(), "open"));
+    auto *input = panel->findChild<QObject *>("presetNameInput");
+    auto *save = panel->findChild<QObject *>("saveWorkspacePresetButton");
+    QVERIFY(input && save);
+    input->setProperty("text", QStringLiteral("晚间观看"));
+    click(save);
+    QCOMPARE(controller.saveCount, 1);
+    QCOMPARE(controller.savedName, QStringLiteral("晚间观看"));
+    QCOMPARE(input->property("text").toString(), QStringLiteral("晚间观看"));
+    controller.saveResult = QStringLiteral("preset-created");
+    click(save);
+    QCOMPARE(controller.saveCount, 2);
+    QCOMPARE(input->property("text").toString(), QString());
 }
 
 void QmlInteractionTest::hidesInactiveRoomControlsWithRetainedFocus()
@@ -2588,6 +4453,9 @@ void QmlInteractionTest::keepsControlsVisibleDuringQualityPopupInteraction()
     QQuickWindow window;
     window.resize(640, 480);
     window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    window.requestActivate();
+    QTRY_VERIFY(window.isActive());
     auto properties = roomTileProperties("connected");
     properties["parent"] = QVariant::fromValue(window.contentItem());
     properties["width"] = 640;
@@ -2602,10 +4470,17 @@ void QmlInteractionTest::keepsControlsVisibleDuringQualityPopupInteraction()
     QVERIFY(quality);
     QObject *popup = quality->property("popup").value<QObject *>();
     QVERIFY(popup);
+    QCOMPARE(popup, tile->findChild<QObject *>("roomQualityPopup"));
     QVERIFY(QMetaObject::invokeMethod(popup, "open"));
+    QTRY_VERIFY(popup->property("visible").toBool());
     QVERIFY(QMetaObject::invokeMethod(tile.get(), "revealControls"));
     QTest::qWait(250);
-    QVERIFY(tile->property("controlsVisible").toBool());
+    const QString state = QStringLiteral("popup=%1 transient=%2 timer=%3 active=%4")
+                              .arg(popup->property("visible").toBool())
+                              .arg(tile->property("hasTransientControls").toBool())
+                              .arg(timer->property("running").toBool())
+                              .arg(window.isActive());
+    QVERIFY2(tile->property("controlsVisible").toBool(), qPrintable(state));
     QVERIFY(QMetaObject::invokeMethod(popup, "close"));
     QTest::mouseMove(&window, QPoint(620, 460));
     QTRY_VERIFY_WITH_TIMEOUT(!tile->property("controlsVisible").toBool(), 5000);
@@ -3010,6 +4885,113 @@ void QmlInteractionTest::disablesOrderingAtListBoundaries()
     QVERIFY(!lastDown->property("enabled").toBool());
 }
 
+void QmlInteractionTest::keepsSidebarActionsWithinRoomRows()
+{
+    registerQmlTypes();
+    WorkspaceModel workspace(nullptr);
+    FakeRoomController controller;
+    RoomListModel roomModel;
+    RoomSnapshot snapshot;
+    snapshot.roomId = QStringLiteral("63136");
+    snapshot.metadata.roomId = snapshot.roomId;
+    snapshot.metadata.anchorName = QStringLiteral("长").repeated(120);
+    snapshot.metadata.title = QStringLiteral("标").repeated(120);
+    snapshot.metadata.category = QStringLiteral("游戏");
+    snapshot.liveStatus = RoomLiveStatus::Online;
+    snapshot.favorite = false;
+    roomModel.applySnapshots({snapshot});
+
+    QQmlApplicationEngine engine;
+    QSignalSpy warnings(&engine, &QQmlEngine::warnings);
+    QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qml/components/RoomSidebar.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    QQuickWindow window;
+    window.resize(268, 640);
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    std::unique_ptr<QObject> sidebar(component.createWithInitialProperties({
+        {QStringLiteral("parent"), QVariant::fromValue(window.contentItem())},
+        {QStringLiteral("width"), 268}, {QStringLiteral("height"), 640},
+        {QStringLiteral("controller"), QVariant::fromValue(static_cast<QObject *>(&controller))},
+        {QStringLiteral("workspaceModel"), QVariant::fromValue(static_cast<QObject *>(&workspace))},
+        {QStringLiteral("roomModel"), QVariant::fromValue(static_cast<QObject *>(&roomModel))},
+    }));
+    QVERIFY2(sidebar != nullptr, qPrintable(component.errorString()));
+    auto *list = sidebar->findChild<QQuickItem *>(QStringLiteral("roomList"));
+    QVERIFY(list != nullptr);
+    QTRY_COMPARE(list->property("count").toInt(), 1);
+    QQuickItem *row = nullptr;
+    QTRY_VERIFY(QMetaObject::invokeMethod(list, "itemAtIndex", Q_RETURN_ARG(QQuickItem *, row), Q_ARG(int, 0))
+                && row != nullptr);
+    auto *title = row->findChild<QQuickItem *>(QStringLiteral("sidebarRoomAnchorName"));
+    auto *actions = row->findChild<QQuickItem *>(QStringLiteral("sidebarRoomActionBar"));
+    auto *favorite = row->findChild<QQuickItem *>(QStringLiteral("roomFavoriteIcon"));
+    QVERIFY(title && actions && favorite);
+    QVERIFY(title->property("elide").toInt() == static_cast<int>(Qt::ElideRight));
+    QVERIFY(title->mapToScene(QPointF(title->width(), 0)).x()
+            <= actions->mapToScene(QPointF(0, 0)).x());
+    QVERIFY(actions->height() >= 27);
+    QVERIFY(actions->width() >= 5 * 24);
+    QVERIFY(row->property("height").toReal() >= 60.0);
+    QTRY_VERIFY(favorite->property("width").toInt() >= 14);
+    QVERIFY(favorite->property("width").toInt() <= 16);
+    const auto *surface = row->findChild<QObject *>(QStringLiteral("roomSidebarSelectionSurface"));
+    QVERIFY(surface != nullptr);
+    QVERIFY(surface->property("visible").toBool());
+    const QVariant borderWidth = QQmlProperty::read(surface, "border.width");
+    QVERIFY(borderWidth.isValid());
+    QVERIFY(borderWidth.toReal() <= 1);
+    auto *favoriteButton = row->findChild<QQuickItem *>(QStringLiteral("roomFavoriteButton"));
+    QVERIFY(favoriteButton != nullptr);
+    const QPoint favoriteCenter = favoriteButton->mapToScene(
+        QPointF(favoriteButton->width() / 2, favoriteButton->height() / 2)).toPoint();
+    QTest::mouseMove(&window, favoriteCenter);
+    QTRY_VERIFY(favoriteButton->property("hovered").toBool());
+    auto *tooltip = favoriteButton->findChild<QObject *>(QStringLiteral("consoleToolTip"));
+    QVERIFY(tooltip != nullptr);
+    QTest::qWait(650);
+    QVERIFY(!tooltip->property("visible").toBool());
+    QTest::mouseClick(&window, Qt::LeftButton, Qt::NoModifier, favoriteCenter);
+    QCOMPARE(controller.favoriteRoom, QStringLiteral("63136"));
+    QVERIFY(controller.favoriteValue);
+    QCOMPARE(QQmlProperty::read(favoriteButton, "ToolTip.text", qmlContext(favoriteButton)).toString(),
+             QStringLiteral("收藏"));
+    QCOMPARE(warnings.count(), 0);
+}
+
+void QmlInteractionTest::groupsHeaderActionsWithStableTooltips()
+{
+    QQmlApplicationEngine engine;
+    auto *window = loadWindow(engine);
+    QVERIFY(window != nullptr);
+    window->show();
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+    window->requestActivate();
+    QTRY_VERIFY(window->isActive());
+    auto *header = window->findChild<QQuickItem *>("appHeader");
+    auto *drag = header->findChild<QQuickItem *>("titleBarDragArea");
+    auto *tools = header->findChild<QQuickItem *>("watchToolsButton");
+    auto *controls = header->findChild<QQuickItem *>("windowControls");
+    QVERIFY(header && drag && tools && controls);
+    for (const int width : {960, 1280, 1600}) {
+        window->resize(width, 800);
+        QTRY_VERIFY(drag->width() > 0);
+        QVERIFY(drag->mapToScene(QPointF(drag->width(), 0)).x() <= tools->mapToScene(QPointF()).x());
+        QTRY_VERIFY(controls->mapToScene(QPointF(controls->width(), 0)).x() <= window->width());
+    }
+    for (const char *name : {"watchToolsButton", "themeToggleButton", "minimizeButton", "maximizeButton", "closeButton"}) {
+        auto *button = header->findChild<QQuickItem *>(QString::fromLatin1(name));
+        QVERIFY(button != nullptr);
+        QVERIFY(!QQmlProperty::read(button, "ToolTip.text", qmlContext(button)).toString().isEmpty());
+        QTest::mouseMove(window, button->mapToScene(button->boundingRect().center()).toPoint());
+        QTRY_VERIFY(button->property("hovered").toBool());
+        QTest::qWait(650);
+        if (auto *tip = button->findChild<QObject *>("consoleToolTip"))
+            QVERIFY(!tip->property("visible").toBool());
+        QVERIFY(!QQmlProperty::read(button, "ToolTip.visible", qmlContext(button)).toBool());
+    }
+}
+
 void QmlInteractionTest::doesNotExposeRoomDragAndDropSurface()
 {
     registerQmlTypes();
@@ -3077,11 +5059,7 @@ void QmlInteractionTest::deletesWorkspacePresetFromPanel()
     QVERIFY(presetList != nullptr);
     QTRY_COMPARE(presetList->property("count").toInt(), 1);
     QQuickItem *presetRow = nullptr;
-    QVERIFY(QMetaObject::invokeMethod(presetList,
-                                      "itemAtIndex",
-                                      Q_RETURN_ARG(QQuickItem *, presetRow),
-                                      Q_ARG(int, 0)));
-    QVERIFY(presetRow != nullptr);
+    QTRY_VERIFY(QMetaObject::invokeMethod(presetList, "itemAtIndex", Q_RETURN_ARG(QQuickItem *, presetRow), Q_ARG(int, 0)) && presetRow != nullptr);
     QObject *deleteButton = presetRow->findChild<QObject *>(QStringLiteral("deleteWorkspacePresetButton"));
     QVERIFY(deleteButton != nullptr);
     QVERIFY(QMetaObject::invokeMethod(deleteButton, "clicked"));
@@ -3115,9 +5093,7 @@ void QmlInteractionTest::defersWorkspacePresetApplyUntilPopupHandlerReturns()
     QVERIFY(presetList != nullptr);
     QTRY_COMPARE(presetList->property("count").toInt(), 1);
     QQuickItem *presetRow = nullptr;
-    QVERIFY(QMetaObject::invokeMethod(presetList, "itemAtIndex",
-                                      Q_RETURN_ARG(QQuickItem *, presetRow), Q_ARG(int, 0)));
-    QVERIFY(presetRow != nullptr);
+    QTRY_VERIFY(QMetaObject::invokeMethod(presetList, "itemAtIndex", Q_RETURN_ARG(QQuickItem *, presetRow), Q_ARG(int, 0)) && presetRow != nullptr);
     QObject *applyButton = presetRow->findChild<QObject *>(QStringLiteral("applyWorkspacePresetButton"));
     QVERIFY(applyButton != nullptr);
     QVERIFY(QMetaObject::invokeMethod(applyButton, "clicked"));
@@ -3366,17 +5342,16 @@ void QmlInteractionTest::rendersGuildMemberAvatarAndLiveState()
 
     QObject *visibleRows = panel->findChild<QObject *>(QStringLiteral("guildVisibleRows"));
     QVERIFY(visibleRows != nullptr);
-    QTRY_COMPARE(visibleRows->property("count").toInt(), 6);
+    QTRY_COMPARE(visibleRows->property("count").toInt(), 3);
 
-    const QList<QString> expectedStates{QStringLiteral("检查中"), QStringLiteral("未开播"),
-                                      QStringLiteral("直播中")};
-    const QList<QString> expectedAvatars{QString(), QString(),
-                                        QStringLiteral("https://example.invalid/online.jpg")};
+    const QList<QString> expectedStates{QStringLiteral("直播中"), QStringLiteral("未开播"),
+                                      QStringLiteral("检查中")};
+    const QList<QString> expectedAvatars{QStringLiteral("https://example.invalid/online.jpg"), QString(), QString()};
     for (int index = 0; index < expectedStates.size(); ++index) {
         QQuickItem *row = nullptr;
         QVERIFY(QMetaObject::invokeMethod(visibleRows, "itemAt",
                                           Q_RETURN_ARG(QQuickItem *, row),
-                                          Q_ARG(int, index + 2)));
+                                          Q_ARG(int, index)));
         QVERIFY(row != nullptr);
         QObject *liveLabel =
             row->findChild<QObject *>(QStringLiteral("guildMemberLiveStateLabel"));
@@ -3447,30 +5422,36 @@ void QmlInteractionTest::filtersAndRefreshesMaoziRankPage()
     QObject *playValueTab = page->findChild<QObject *>(QStringLiteral("maoziPlayValueTab"));
     QObject *placementHeader =
         page->findChild<QObject *>(QStringLiteral("maoziPlacementHeaderBar"));
-    QObject *playValueHeader =
-        page->findChild<QObject *>(QStringLiteral("maoziPlayValueHeaderBar"));
     QObject *placementList =
         page->findChild<QObject *>(QStringLiteral("maoziPlacementList"));
     QObject *playValueList =
         page->findChild<QObject *>(QStringLiteral("maoziPlayValueList"));
     QVERIFY(placementTab != nullptr);
-    QVERIFY(playValueTab != nullptr);
+    const QStringList tabNames{QStringLiteral("maoziRankingTab"),
+                               QStringLiteral("maoziRegularSeasonTab"),
+                               QStringLiteral("maoziFinalsTab"),
+                               QStringLiteral("maoziFootballTab"),
+                               QStringLiteral("maoziPlacementTab")};
+    for (const QString &name : tabNames) {
+        QVERIFY2(page->findChild<QObject *>(name) != nullptr, qPrintable(name));
+    }
+    click(page->findChild<QObject *>(QStringLiteral("maoziRegularSeasonTab")));
+    QObject *regularList = page->findChild<QObject *>(QStringLiteral("maoziRegularSeasonList"));
+    QVERIFY(regularList != nullptr);
+    QTRY_COMPARE(regularList->property("count").toInt(), 1);
+    click(page->findChild<QObject *>(QStringLiteral("maoziFootballTab")));
+    QObject *footballList = page->findChild<QObject *>(QStringLiteral("maoziFootballList"));
+    QVERIFY(footballList != nullptr);
+    QTRY_COMPARE(footballList->property("count").toInt(), 1);
+    QVERIFY(playValueTab == nullptr);
     QVERIFY(placementHeader != nullptr);
-    QVERIFY(playValueHeader != nullptr);
     QVERIFY(placementList != nullptr);
-    QVERIFY(playValueList != nullptr);
+    QVERIFY(playValueList == nullptr);
 
     click(placementTab);
     QTRY_VERIFY(placementHeader->property("visible").toBool());
     QTRY_VERIFY(placementList->property("visible").toBool());
     QTRY_COMPARE(placementList->property("count").toInt(), 1);
-    QVERIFY(!playValueHeader->property("visible").toBool());
-
-    click(playValueTab);
-    QTRY_VERIFY(playValueHeader->property("visible").toBool());
-    QTRY_VERIFY(playValueList->property("visible").toBool());
-    QTRY_COMPARE(playValueList->property("count").toInt(), 1);
-    QVERIFY(!placementHeader->property("visible").toBool());
 
     QObject *search = page->findChild<QObject *>(QStringLiteral("maoziSearchField"));
     QVERIFY(search != nullptr);
@@ -3479,14 +5460,566 @@ void QmlInteractionTest::filtersAndRefreshesMaoziRankPage()
 
     QObject *refresh = page->findChild<QObject *>(QStringLiteral("maoziRefreshButton"));
     QVERIFY(refresh != nullptr);
-    click(refresh);
-    QCOMPARE(controller.rank.refreshCount, 1);
+    QVERIFY(!refresh->property("enabled").toBool());
+    QCOMPARE(controller.rank.refreshCount, 0);
 
     QObject *openSite = page->findChild<QObject *>(QStringLiteral("maoziOpenSiteButton"));
     QVERIFY(openSite != nullptr);
     click(openSite);
     QCOMPARE(controller.lastExternalUrl,
-             QStringLiteral("https://dy656750-39nb2xg.maozi.io/"));
+             QStringLiteral("https://cstg-zy.com/#/squad/s1"));
+}
+
+void QmlInteractionTest::updatesRankPortraitsWithoutChangingArchiveOrGuessingNames()
+{
+    FakeMaoziController controller;
+    controller.useBundledArchive = true;
+    controller.rank.setEntries({});
+    QQmlApplicationEngine engine;
+    QSignalSpy warnings(&engine, &QQmlEngine::warnings);
+    QQmlComponent component(&engine, QUrl("qrc:/qml/pages/MaoziRankPage.qml"));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    QQuickWindow window;
+    window.resize(960, 600);
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    std::unique_ptr<QObject> page(component.createWithInitialProperties({
+        {"parent", QVariant::fromValue(window.contentItem())}, {"width", 960}, {"height", 600},
+        {"controller", QVariant::fromValue(static_cast<QObject *>(&controller))}}));
+    QVERIFY(page);
+    const QVariantMap archived = controller.s1Archive().value("ranking").toMap().value("participants").toList().first().toMap();
+    const auto first = [&] { return qmlData(page.get(), "visibleEntries").toList().first().toMap(); };
+    QCOMPARE(first().value("posterUrl").toString(), QString());
+    const QString portrait = QStringLiteral("qrc:/qml/assets/brand/icon-app.png");
+    controller.rank.setEntries({QVariantMap{{"id", archived.value("id")}, {"roomId", archived.value("roomId")},
+        {"name", "更新名字"}, {"score", 99}, {"rank", 99}, {"posterUrl", portrait}}});
+    QTRY_COMPARE(first().value("posterUrl").toString(), portrait);
+    QCOMPARE(first().value("score"), archived.value("score"));
+    QCOMPARE(first().value("name"), archived.value("name"));
+    QCOMPARE(first().value("rank").toInt(), 1);
+    QVERIFY(page->setProperty("selectedRankIndex", 0));
+    auto *image = page->findChild<QObject *>("maoziRankDetailAvatar");
+    QVERIFY(image);
+    QTRY_COMPARE(image->property("status").toInt(), 1);
+    QCOMPARE(image->property("source").toUrl(), QUrl(portrait));
+    controller.rank.setEntries({});
+    const QString refreshed = QStringLiteral("qrc:/qml/assets/brand/icon-ranking.png");
+    controller.setRoster({QVariantMap{{"rankHostId", archived.value("id")}, {"roomId", archived.value("roomId")}, {"avatarUrl", refreshed}}});
+    QTRY_COMPARE(image->property("source").toUrl(), QUrl(refreshed));
+    QTRY_COMPARE(image->property("status").toInt(), 1);
+    QCOMPARE(first().value("score"), archived.value("score"));
+    controller.setRoster({});
+    controller.rank.setEntries({QVariantMap{{"id", "other"}, {"roomId", "999"}, {"name", archived.value("name")}, {"posterUrl", portrait}}});
+    QTRY_COMPARE(first().value("posterUrl").toString(), QString());
+    QCOMPARE(first().value("score"), archived.value("score"));
+    controller.rank.setEntries({QVariantMap{{"id", "other"}, {"roomId", archived.value("roomId")}, {"posterUrl", portrait}}});
+    QTRY_COMPARE(first().value("posterUrl").toString(), portrait);
+    controller.rank.setEntries({});
+    controller.setRoster({QVariantMap{{"roomId", "new-room"}, {"portraitRoomIds", QStringList{archived.value("roomId").toString()}}, {"avatarUrl", refreshed}}});
+    QTRY_COMPARE(first().value("posterUrl").toString(), refreshed);
+    controller.setRoster({QVariantMap{{"roomId", "unrelated-manual-room"}, {"rankHostId", archived.value("id")},
+        {"portraitRoomIds", QStringList{archived.value("roomId").toString()}}, {"avatarUrl", refreshed},
+        {"portraitIdentityVerified", false}}});
+    QTRY_COMPARE(first().value("posterUrl").toString(), QString());
+    QCOMPARE(first().value("score"), archived.value("score"));
+    QCOMPARE(warnings.count(), 0);
+}
+
+void QmlInteractionTest::retriesFailedRankPortraitsAndResetsForNewSources()
+{
+    FakeMaoziController controller;
+    controller.useBundledArchive = true;
+    const auto archived = controller.s1Archive().value("ranking").toMap().value("participants").toList().first().toMap();
+    const QString missing = QStringLiteral("qrc:/missing-online-portrait.png");
+    const QString resolverMissing = QStringLiteral("qrc:/missing-resolver-portrait.png");
+    const QString fallback = QStringLiteral("qrc:/qml/assets/brand/icon-app.png");
+    controller.rank.setEntries({QVariantMap{{"id", archived.value("id")}, {"roomId", archived.value("roomId")}, {"posterUrl", missing}}});
+    controller.setRoster({QVariantMap{{"rankHostId", archived.value("id")}, {"roomId", archived.value("roomId")},
+        {"avatarUrl", resolverMissing}, {"fallbackAvatarUrl", fallback}}});
+    QQmlApplicationEngine engine;
+    QSignalSpy warnings(&engine, &QQmlEngine::warnings);
+    QQmlComponent component(&engine, QUrl("qrc:/qml/pages/MaoziRankPage.qml"));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    QQuickWindow window;
+    window.resize(960, 600);
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    std::unique_ptr<QObject> page(component.createWithInitialProperties({
+        {"parent", QVariant::fromValue(window.contentItem())}, {"width", 960}, {"height", 600},
+        {"controller", QVariant::fromValue(static_cast<QObject *>(&controller))}}));
+    QVERIFY(page);
+    QVERIFY(page->setProperty("selectedRankIndex", 0));
+    auto *detail = page->findChild<QObject *>("maoziRankDetailAvatar");
+    QVERIFY(detail);
+    QTRY_COMPARE(detail->property("status").toInt(), 1);
+    QCOMPARE(detail->property("source").toUrl(), QUrl(fallback));
+    QCOMPARE(detail->property("candidateIndex").toInt(), 2);
+    QSignalSpy sourceChanges(detail, SIGNAL(sourceChanged(const QUrl &)));
+    QVERIFY(sourceChanges.isValid());
+    controller.setRoster({QVariantMap{{"rankHostId", archived.value("id")}, {"roomId", archived.value("roomId")},
+        {"avatarUrl", resolverMissing}, {"fallbackAvatarUrl", fallback}, {"liveState", "online"}}});
+    QTest::qWait(150);
+    QCOMPARE(detail->property("candidateIndex").toInt(), 2);
+    QCOMPARE(sourceChanges.count(), 0);
+    const auto entries = qmlData(page.get(), "visibleEntries").toList();
+    QCOMPARE(entries.first().toMap().value("score"), archived.value("score"));
+
+    const QString refreshed = QStringLiteral("qrc:/qml/assets/brand/icon-ranking.png");
+    controller.rank.setEntries({QVariantMap{{"id", archived.value("id")}, {"roomId", archived.value("roomId")}, {"posterUrl", refreshed}}});
+    QTRY_COMPARE(detail->property("source").toUrl(), QUrl(refreshed));
+    QTRY_COMPARE(detail->property("status").toInt(), 1);
+    QCOMPARE(detail->property("candidateIndex").toInt(), 0);
+
+    controller.setRoster({});
+    controller.rank.setEntries({QVariantMap{{"id", archived.value("id")}, {"posterUrl", missing}}});
+    QTRY_COMPARE(detail->property("status").toInt(), 3);
+    QCOMPARE(detail->property("candidateIndex").toInt(), 0);
+    QTest::qWait(150);
+    QCOMPARE(detail->property("status").toInt(), 3);
+    for (const auto &event : warnings) {
+        for (const auto &warning : event.first().value<QList<QQmlError>>()) {
+            QVERIFY2(warning.description().contains("missing-online-portrait.png")
+                         || warning.description().contains("missing-resolver-portrait.png"),
+                     qPrintable(warning.toString()));
+        }
+    }
+}
+
+void QmlInteractionTest::preservesMissingRadarValuesAndValidZero()
+{
+    QQmlApplicationEngine engine;
+    QSignalSpy warnings(&engine, &QQmlEngine::warnings);
+    QQmlComponent component(&engine, QUrl("qrc:/qml/components/RadarChart.qml"));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    const QVariantList dimensions{QVariantMap{{"name", "A"}, {"value", "0"}},
+        QVariantMap{{"name", "B"}, {"average", 14}}, QVariantMap{{"name", "C"}, {"average", -1}},
+        QVariantMap{{"name", "D"}, {"value", QVariant()}}, QVariantMap{{"name", "E"}, {"value", ""}}};
+    std::unique_ptr<QObject> radar(component.createWithInitialProperties({{"dimensions", dimensions}, {"width", 340}, {"height", 300}}));
+    QVERIFY(radar);
+    QCOMPARE(radar->property("validValueCount").toInt(), 2);
+    const auto normalized = qmlData(radar.get(), "normalizedDimensions").toList();
+    QCOMPARE(normalized.first().toMap().value("value").toDouble(), 0.0);
+    for (int i = 2; i < normalized.size(); ++i) QVERIFY(normalized[i].toMap().value("value").isNull());
+    QVERIFY(!radar->property("completeData").toBool());
+    const auto archive = S1Archive::bundled().value("ranking").toMap().value("participants").toList();
+    QVERIFY(radar->setProperty("dimensions", archive.first().toMap().value("dimensions")));
+    QTRY_COMPARE(radar->property("validValueCount").toInt(), 9);
+    QVERIFY(radar->property("completeData").toBool());
+    QCOMPARE(warnings.count(), 0);
+}
+
+void QmlInteractionTest::keepsAllStructuredArchiveDetailsAndReturnContext()
+{
+    FakeMaoziController controller;
+    controller.useBundledArchive = true;
+    QQmlApplicationEngine engine;
+    QSignalSpy warnings(&engine, &QQmlEngine::warnings);
+    QQmlComponent component(&engine, QUrl("qrc:/qml/pages/MaoziRankPage.qml"));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    QQuickWindow window;
+    window.resize(960, 600);
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    std::unique_ptr<QObject> page(component.createWithInitialProperties({
+        {"parent", QVariant::fromValue(window.contentItem())}, {"width", 960}, {"height", 600},
+        {"controller", QVariant::fromValue(static_cast<QObject *>(&controller))}}));
+    QVERIFY(page);
+    const struct { const char *tab; const char *panel; const char *archive; bool football; } cases[] = {
+        {"maoziRegularSeasonTab", "regularSeasonPanel", "regularSeason", false},
+        {"maoziFinalsTab", "finalsPanel", "finals", false},
+        {"maoziFootballTab", "footballPanel", "football", true}};
+    int visited = 0;
+    for (const auto &entry : cases) {
+        click(page->findChild<QObject *>(QString::fromLatin1(entry.tab)));
+        auto *panel = page->findChild<QQuickItem *>(QString::fromLatin1(entry.panel));
+        QVERIFY(panel);
+        const auto matches = controller.s1Archive().value(QString::fromLatin1(entry.archive)).toMap().value("matches").toList();
+        QCOMPARE(qmlData(panel, "visibleMatches").toList().size(), matches.size());
+        for (int i = 0; i < matches.size(); ++i) {
+            QVERIFY(panel->setProperty("pageIndex", i / 10));
+            QVERIFY(panel->setProperty("selectedIndex", i));
+            QQuickItem *anchor = nullptr;
+            QTRY_VERIFY((anchor = quickItemByObjectName(panel, entry.football ? QStringLiteral("footballScoreText") : QStringLiteral("seasonMatchOutcome"))) != nullptr);
+            auto *detail = archiveDetailRoot(anchor);
+            QVERIFY(detail);
+            const QVariantMap source = matches[i].toMap();
+            QTRY_COMPARE(qmlData(detail, "matchRecord").toMap().value("id"), source.value("id"));
+            const QVariantMap record = qmlData(detail, "record").toMap();
+            const QString raw = record.value("raw").toString();
+            QVERIFY(!raw.isEmpty());
+            if (!entry.football) {
+                QCOMPARE(raw, source.value("detail").toString());
+                if (i == 0) {
+                    const auto standings = record.value("standings").toList();
+                    QCOMPARE(standings.size(), 4);
+                    QCOMPARE(standings.first().toMap().value("value").toString(),
+                             QString::fromLatin1(entry.archive) == "finals" ? QStringLiteral("26分") : QStringLiteral("6分"));
+                    QCOMPARE(record.value("rounds").toList().size(), QString::fromLatin1(entry.archive) == "finals" ? 9 : 6);
+                }
+            } else {
+                QVERIFY(raw.contains(source.value("summary").toString()));
+                for (const auto &section : source.value("detail").toMap().value("sections").toList())
+                    QVERIFY(raw.contains(section.toMap().value("text").toString()));
+                if (i == 0) {
+                    QCOMPARE(record.value("score").toString(), QStringLiteral("5 : 1"));
+                    QCOMPARE(record.value("events").toList().size(), 31);
+                    QCOMPARE(record.value("votes").toList().size(), 18);
+                    QCOMPARE(quickItemsByObjectName(panel, QStringLiteral("footballLineupPlayer")).size(), 8);
+                }
+            }
+            click(panel->findChild<QObject *>("seasonArchiveBack"));
+            QTRY_COMPARE(panel->property("selectedIndex").toInt(), -1);
+            QCOMPARE(panel->property("pageIndex").toInt(), i / 10);
+            ++visited;
+        }
+    }
+    QCOMPARE(visited, 45);
+    click(page->findChild<QObject *>("maoziRegularSeasonTab"));
+    auto *regular = page->findChild<QQuickItem *>("regularSeasonPanel");
+    auto *search = page->findChild<QObject *>("maoziSearchField");
+    QVERIFY(regular && search);
+    QVERIFY(search->setProperty("text", QStringLiteral("拳击")));
+    QTRY_VERIFY(qmlData(regular, "visibleMatches").toList().size() > 0);
+    QVERIFY(regular->setProperty("selectedIndex", 0));
+    click(regular->findChild<QObject *>("seasonArchiveBack"));
+    QTRY_COMPARE(regular->property("selectedIndex").toInt(), -1);
+    QCOMPARE(search->property("text").toString(), QStringLiteral("拳击"));
+    QCOMPARE(page->property("activeTab").toString(), QStringLiteral("regularSeason"));
+    QCOMPARE(warnings.count(), 0);
+}
+
+void QmlInteractionTest::keepsVideoControlsDarkAndQualityKeyboardUsableAcrossThemes()
+{
+    registerQmlTypes();
+    FakeRoomController controller;
+    QQmlApplicationEngine engine;
+    auto *window = loadWindow(engine);
+    QVERIFY(window);
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+    QVERIFY(window->setProperty("reducedMotion", true));
+    QQmlComponent component(&engine, QUrl("qrc:/qml/components/RoomTile.qml"));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    auto properties = roomTileProperties(QStringLiteral("connected"));
+    properties["controller"] = QVariant::fromValue(static_cast<QObject *>(&controller));
+    properties["parent"] = QVariant::fromValue(window->contentItem());
+    properties["width"] = 640;
+    properties["height"] = 420;
+    properties["z"] = 1000;
+    properties["avatarUrl"] = QUrl();
+    properties["renderEnabled"] = false;
+    std::unique_ptr<QObject> tile(component.createWithInitialProperties(properties));
+    QVERIFY(tile);
+    auto *quality = tile->findChild<QQuickItem *>("roomQualitySelector");
+    auto *label = tile->findChild<QQuickItem *>("roomQualityLabel");
+    auto *timer = tile->findChild<QObject *>("roomControlsTimer");
+    QVERIFY(quality && label && timer);
+    QVERIFY(tile->setProperty("controlsVisible", true));
+    QVERIFY(QMetaObject::invokeMethod(timer, "stop"));
+    const auto dark = [](const QColor &color) { return color.isValid() && 0.2126 * color.redF() + 0.7152 * color.greenF() + 0.0722 * color.blueF() < 0.3; };
+    for (const QString &mode : {QStringLiteral("day"), QStringLiteral("night"), QStringLiteral("day")}) {
+        click(window->findChild<QObject *>("themeToggleButton"));
+        QTRY_COMPARE(window->color(), QColor(mode == "day" ? "#f0f3ed" : "#0e1312"));
+        for (const char *name : {"primaryRoomAction", "roomAudioButton", "danmakuRetryAction", "roomQualitySelector"}) {
+            auto *control = tile->findChild<QObject *>(QString::fromLatin1(name));
+            QVERIFY(control);
+            auto *background = control->property("background").value<QObject *>();
+            QVERIFY(background);
+            QTRY_VERIFY(dark(background->property("color").value<QColor>()));
+        }
+        QCOMPARE(label->property("color").value<QColor>(), QColor("#edf3f0"));
+    }
+    QTest::qWait(100);
+    const QPointF center = label->mapToItem(quality, QPointF(label->width() / 2, label->height() / 2));
+    QVERIFY(qAbs(center.x() - quality->width() / 2) <= 0.5);
+    auto *popup = quality->property("popup").value<QObject *>();
+    QVERIFY(popup);
+    window->requestActivate();
+    QTRY_VERIFY(window->isActive());
+    quality->forceActiveFocus(Qt::TabFocusReason);
+    QTest::keyClick(window, Qt::Key_Space);
+    QTRY_VERIFY(popup->property("opened").toBool());
+    auto *list = tile->findChild<QQuickItem *>("roomQualityPopupList");
+    QVERIFY(list);
+    QQuickItem *row = nullptr;
+    QTRY_VERIFY((row = list->property("currentItem").value<QQuickItem *>()) != nullptr);
+    auto *option = quickItemByObjectName(row, QStringLiteral("roomQualityOptionLabel"));
+    QVERIFY(option);
+    QVERIFY(row->property("highlighted").toBool());
+    QVERIFY(qAbs(option->mapToItem(row, QPointF(option->width() / 2, option->height() / 2)).x() - row->width() / 2) <= 0.5);
+    QTest::keyClick(window, Qt::Key_Down);
+    QTRY_COMPARE(quality->property("highlightedIndex").toInt(), 1);
+    QTest::keyClick(window, Qt::Key_Return);
+    QTRY_VERIFY(!popup->property("opened").toBool());
+    QCOMPARE(controller.lastQualityRate, 3);
+    QCOMPARE(quality->property("currentIndex").toInt(), 1);
+    auto *action = tile->findChild<QQuickItem *>("roomTopActions");
+    QVERIFY(action);
+    QTest::mouseMove(window, action->mapToScene(action->boundingRect().center()).toPoint());
+    QTRY_VERIFY(action->property("hovered").toBool());
+    auto *actionBackground = action->property("background").value<QObject *>();
+    QVERIFY(actionBackground);
+    QTRY_VERIFY(dark(actionBackground->property("color").value<QColor>()));
+    QCOMPARE(action->property("contentColor").value<QColor>(), QColor("#edf3f0"));
+}
+
+void QmlInteractionTest::browsesCompleteS1Archive()
+{
+    FakeMaoziController controller;
+    controller.useBundledArchive = true;
+    QQmlApplicationEngine engine;
+    QQuickWindow window;
+    window.resize(QSize(960, 600));
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    window.requestActivate();
+    QTRY_VERIFY(window.isActive());
+    QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qml/pages/MaoziRankPage.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    std::unique_ptr<QObject> page(component.createWithInitialProperties({
+        {QStringLiteral("parent"), QVariant::fromValue(window.contentItem())},
+        {QStringLiteral("width"), 960},
+        {QStringLiteral("height"), 600},
+        {QStringLiteral("controller"), QVariant::fromValue(static_cast<QObject *>(&controller))},
+    }));
+    QVERIFY2(page != nullptr, qPrintable(component.errorString()));
+    QObject *ranking = page->findChild<QObject *>(QStringLiteral("maoziRankList"));
+    QVERIFY(ranking != nullptr);
+    QTRY_COMPARE(ranking->property("count").toInt(), 46);
+    auto *rankingItem = qobject_cast<QQuickItem *>(ranking);
+    QVERIFY(rankingItem != nullptr);
+    QQuickItem *rankingRow = nullptr;
+    QVERIFY(QMetaObject::invokeMethod(ranking, "itemAtIndex",
+                                    Q_RETURN_ARG(QQuickItem *, rankingRow), Q_ARG(int, 0)));
+    QVERIFY(rankingRow != nullptr);
+    auto *firstScore = rankingRow->findChild<QObject *>(QStringLiteral("maoziCellScore"));
+    QVERIFY(firstScore != nullptr);
+    QTRY_COMPARE(firstScore->property("text").toString(), QStringLiteral("15.5"));
+    QTRY_VERIFY(rankingItem->mapToScene(QPointF(0, 0)).y() > 100);
+    QCoreApplication::processEvents();
+    QQuickItem *currentRankingRow = nullptr;
+    QVERIFY(QMetaObject::invokeMethod(ranking, "itemAtIndex",
+                                    Q_RETURN_ARG(QQuickItem *, currentRankingRow), Q_ARG(int, 0)));
+    QVERIFY(currentRankingRow != nullptr);
+    const QPoint currentRankingPoint = currentRankingRow
+        ->mapToScene(currentRankingRow->boundingRect().center()).toPoint();
+    QTest::mouseMove(&window, QPoint(window.width() - 1, window.height() - 1));
+    QTest::qWait(50);
+    QTest::mouseMove(&window, currentRankingPoint);
+    QTRY_VERIFY(currentRankingRow->property("rowHovered").toBool());
+    QTest::mouseClick(&window, Qt::LeftButton, Qt::NoModifier, currentRankingPoint);
+    QTRY_COMPARE(page->property("selectedRankIndex").toInt(), 0);
+    QObject *rankingDetail = page->findChild<QObject *>(QStringLiteral("maoziRankParticipantDetail"));
+    QVERIFY(rankingDetail != nullptr);
+    QTRY_VERIFY(rankingDetail->property("visible").toBool());
+    QVERIFY(rankingDetail->property("text").toString().contains(QStringLiteral("力量")));
+    click(page->findChild<QObject *>(QStringLiteral("maoziRankDetailBack")));
+    QVERIFY(currentRankingRow->property("activeFocusOnTab").toBool());
+    auto *focusableRankingRow = qobject_cast<QQuickItem *>(currentRankingRow);
+    QVERIFY(focusableRankingRow != nullptr);
+    focusableRankingRow->forceActiveFocus(Qt::TabFocusReason);
+    QTRY_VERIFY(focusableRankingRow->hasActiveFocus());
+    QTest::keyClick(&window, Qt::Key_Return);
+    QTRY_COMPARE(page->property("selectedRankIndex").toInt(), 0);
+    QTRY_VERIFY(rankingDetail->property("visible").toBool());
+    click(page->findChild<QObject *>(QStringLiteral("maoziRankDetailBack")));
+    QObject *archiveSearch = page->findChild<QObject *>(QStringLiteral("maoziSearchField"));
+    QVERIFY(archiveSearch != nullptr);
+    archiveSearch->setProperty("text", QStringLiteral("苏袜酱"));
+    QTRY_COMPARE(ranking->property("count").toInt(), 1);
+    QQuickItem *filteredRow = nullptr;
+    QTRY_VERIFY(QMetaObject::invokeMethod(ranking, "itemAtIndex",
+                                    Q_RETURN_ARG(QQuickItem *, filteredRow), Q_ARG(int, 0))
+                && filteredRow != nullptr
+                && filteredRow->findChild<QObject *>(QStringLiteral("maoziCellHost")) != nullptr);
+    QVERIFY(filteredRow != nullptr);
+    QTRY_VERIFY(filteredRow->mapToScene(filteredRow->boundingRect().center()).y() > 100);
+    const QPoint filteredRankPoint =
+        filteredRow->mapToScene(filteredRow->boundingRect().center()).toPoint();
+    QTest::mouseMove(&window, QPoint(window.width() - 1, window.height() - 1));
+    QTest::qWait(50);
+    QTest::mouseMove(&window, filteredRankPoint);
+    QTRY_VERIFY(filteredRow->property("rowHovered").toBool());
+    QTest::mouseClick(&window, Qt::LeftButton, Qt::NoModifier, filteredRankPoint);
+    QTRY_COMPARE(page->property("selectedRankIndex").toInt(), 0);
+    QTRY_VERIFY(rankingDetail->property("visible").toBool());
+    QVERIFY(rankingDetail->property("text").toString().startsWith(QStringLiteral("苏袜酱")));
+    click(page->findChild<QObject *>(QStringLiteral("maoziRankDetailBack")));
+    archiveSearch->setProperty("text", QString());
+    QObject *liveFilter = page->findChild<QObject *>(QStringLiteral("maoziLiveFilter"));
+    QVERIFY(liveFilter != nullptr);
+    QVERIFY(!liveFilter->property("visible").toBool());
+    const struct { const char *tab; const char *list; int count; } cases[] = {
+        {"maoziRegularSeasonTab", "maoziRegularSeasonList", 10},
+        {"maoziFinalsTab", "maoziFinalsList", 4},
+        {"maoziFootballTab", "maoziFootballList", 10},
+        {"maoziPlacementTab", "maoziPlacementList", 36},
+    };
+    for (const auto &entry : cases) {
+        QObject *tab = page->findChild<QObject *>(QString::fromLatin1(entry.tab));
+        QObject *list = page->findChild<QObject *>(QString::fromLatin1(entry.list));
+        QVERIFY(tab != nullptr);
+        QVERIFY(list != nullptr);
+        click(tab);
+        QTRY_COMPARE(list->property("count").toInt(), entry.count);
+    }
+    click(page->findChild<QObject *>(QStringLiteral("maoziFootballTab")));
+    QObject *footballPanel = page->findChild<QObject *>(QStringLiteral("footballPanel"));
+    QVERIFY(footballPanel != nullptr);
+    QObject *assistsTab = footballPanel->findChild<QObject *>(QStringLiteral("seasonArchiveAssistsTab"));
+    QObject *leaderList = footballPanel->findChild<QObject *>(QStringLiteral("seasonArchiveLeaderList"));
+    QVERIFY(assistsTab != nullptr);
+    QVERIFY(leaderList != nullptr);
+    click(footballPanel->findChild<QObject *>(QStringLiteral("seasonArchiveLeadersTab")));
+    click(assistsTab);
+    QTRY_COMPARE(leaderList->property("count").toInt(), 4);
+    click(page->findChild<QObject *>(QStringLiteral("maoziPlacementTab")));
+    QQuickItem *placementActions = nullptr;
+    QObject *scores = nullptr;
+    for (auto *item : page->findChildren<QQuickItem *>()) {
+        if (item->property("text").toString() == QStringLiteral("得分统计")) {
+            scores = item;
+            placementActions = item->parentItem();
+            break;
+        }
+    }
+    QVERIFY(placementActions != nullptr);
+    const QRectF placementBounds = placementActions->mapRectToItem(
+        window.contentItem(), placementActions->boundingRect());
+    QVERIFY2(placementBounds.bottom() <= window.height(),
+             qPrintable(QStringLiteral("placement actions bottom %1 > %2")
+                            .arg(placementBounds.bottom()).arg(window.height())));
+    QObject *summary = page->findChild<QObject *>(QStringLiteral("maoziPlacementSummary"));
+    QVERIFY(scores != nullptr);
+    QVERIFY(summary != nullptr);
+    click(scores);
+    QTRY_VERIFY(summary->property("visible").toBool());
+    auto *summaryItem = qobject_cast<QQuickItem *>(summary);
+    QVERIFY(summaryItem != nullptr);
+    QVERIFY(summaryItem->mapRectToItem(window.contentItem(), summaryItem->boundingRect())
+                .bottom() <= window.height());
+    QObject *overview = nullptr;
+    for (auto *item : page->findChildren<QQuickItem *>()) {
+        if (item->property("text").toString() == QStringLiteral("总览")
+            && item->parentItem() == placementActions) {
+            overview = item;
+            break;
+        }
+    }
+    click(overview);
+    QObject *placementList = page->findChild<QObject *>(QStringLiteral("maoziPlacementList"));
+    QVERIFY(placementList != nullptr);
+    QTRY_VERIFY(placementList->property("visible").toBool());
+    const QVariantMap placementIdentity = qmlData(page.get(), "visiblePlacementEntries").toList().first().toMap();
+    QVERIFY(!placementIdentity.value("roomId").toString().isEmpty());
+    archiveSearch->setProperty("text", placementIdentity.value("roomId"));
+    QTRY_COMPARE(placementList->property("count").toInt(), 1);
+    const QVariantMap matchedPlacement = qmlData(page.get(), "visiblePlacementEntries").toList().first().toMap();
+    QCOMPARE(matchedPlacement.value("id"), placementIdentity.value("id"));
+    QCOMPARE(matchedPlacement.value("placementAverage"), placementIdentity.value("placementAverage"));
+    archiveSearch->setProperty("text", QString());
+    QTRY_COMPARE(placementList->property("count").toInt(), 36);
+    auto *placementListItem = qobject_cast<QQuickItem *>(placementList);
+    QVERIFY(placementListItem != nullptr);
+    auto *placementHeader = page->findChild<QQuickItem *>(
+        QStringLiteral("maoziPlacementHeaderBar"));
+    QVERIFY(placementHeader != nullptr);
+    QTRY_VERIFY(placementListItem->mapToScene(QPointF(0, 0)).y()
+                >= placementHeader->mapToScene(QPointF(0, placementHeader->height())).y());
+    QQuickItem *placementRow = nullptr;
+    QVERIFY(QMetaObject::invokeMethod(placementList, "itemAtIndex",
+                                    Q_RETURN_ARG(QQuickItem *, placementRow), Q_ARG(int, 0)));
+    QVERIFY(placementRow != nullptr);
+    QVERIFY(placementRow->property("activeFocusOnTab").toBool());
+    placementRow->forceActiveFocus(Qt::TabFocusReason);
+    QTRY_VERIFY(placementRow->hasActiveFocus());
+    QTest::keyClick(&window, Qt::Key_Space);
+    QTRY_COMPARE(page->property("selectedPlacementIndex").toInt(), 0);
+    QObject *placementDetail = page->findChild<QObject *>(
+        QStringLiteral("maoziPlacementParticipantDetail"));
+    QVERIFY(placementDetail != nullptr);
+    QTRY_VERIFY(placementDetail->property("visible").toBool());
+    click(page->findChild<QObject *>(QStringLiteral("maoziPlacementDetailBack")));
+    const QPoint placementPoint = placementRow->mapToScene(
+        placementRow->boundingRect().center()).toPoint();
+    QTest::mouseMove(&window, QPoint(window.width() - 1, window.height() - 1));
+    QTest::qWait(50);
+    QTest::mouseMove(&window, placementPoint);
+    QTRY_VERIFY(placementRow->property("rowHovered").toBool());
+    QTest::mouseClick(&window, Qt::LeftButton, Qt::NoModifier, placementPoint);
+    QTRY_COMPARE(page->property("selectedPlacementIndex").toInt(), 0);
+    QTRY_VERIFY(placementDetail->property("visible").toBool());
+    QVERIFY(placementDetail->property("text").toString().contains(QStringLiteral("夏季雨i")));
+    click(page->findChild<QObject *>(QStringLiteral("maoziPlacementDetailBack")));
+    archiveSearch->setProperty("text", QStringLiteral("夏季雨i"));
+    QTRY_COMPARE(placementList->property("count").toInt(), 1);
+    QQuickItem *filteredPlacement = nullptr;
+    QTRY_VERIFY(QMetaObject::invokeMethod(placementList, "itemAtIndex",
+                                    Q_RETURN_ARG(QQuickItem *, filteredPlacement), Q_ARG(int, 0))
+                && filteredPlacement != nullptr
+                && filteredPlacement->mapToScene(filteredPlacement->boundingRect().center()).y() > 100);
+    const QPoint filteredPlacementPoint = filteredPlacement
+        ->mapToScene(filteredPlacement->boundingRect().center()).toPoint();
+    QTest::mouseMove(&window, QPoint(window.width() - 1, window.height() - 1));
+    QTest::qWait(50);
+    QTest::mouseMove(&window, filteredPlacementPoint);
+    QTRY_VERIFY(filteredPlacement->property("rowHovered").toBool());
+    QTest::mouseClick(&window, Qt::LeftButton, Qt::NoModifier, filteredPlacementPoint);
+    QTRY_COMPARE(page->property("selectedPlacementIndex").toInt(), 0);
+    QTRY_VERIFY(placementDetail->property("visible").toBool());
+    QVERIFY(placementDetail->property("text").toString().startsWith(QStringLiteral("夏季雨i")));
+    click(page->findChild<QObject *>(QStringLiteral("maoziPlacementDetailBack")));
+    archiveSearch->setProperty("text", QString());
+    click(page->findChild<QObject *>(QStringLiteral("maoziRegularSeasonTab")));
+    QObject *dateFilter = page->findChild<QObject *>(QStringLiteral("seasonArchiveDateFilter"));
+    QVERIFY(dateFilter != nullptr);
+    QVERIFY(dateFilter->property("count").toInt() > 1);
+    dateFilter->setProperty("currentIndex", 1);
+    QObject *regularPanel = page->findChild<QObject *>(QStringLiteral("regularSeasonPanel"));
+    QVERIFY(regularPanel != nullptr);
+    QVERIFY(regularPanel->property("visibleMatches").toList().size() < 31);
+    dateFilter->setProperty("currentIndex", 0);
+    QObject *next = page->findChild<QObject *>(QStringLiteral("seasonArchiveNextPage"));
+    QVERIFY(next != nullptr);
+    click(next);
+    QTRY_COMPARE(regularPanel->property("pageIndex").toInt(), 1);
+    QObject *regularList = page->findChild<QObject *>(QStringLiteral("maoziRegularSeasonList"));
+    QVERIFY(regularList != nullptr);
+    QQuickItem *matchRow = nullptr;
+    QTRY_VERIFY(QMetaObject::invokeMethod(regularList, "itemAtIndex",
+                                    Q_RETURN_ARG(QQuickItem *, matchRow), Q_ARG(int, 0)));
+    QVERIFY(matchRow != nullptr);
+    QVERIFY(matchRow->property("activeFocusOnTab").toBool());
+    auto *focusableMatchRow = qobject_cast<QQuickItem *>(matchRow);
+    QVERIFY(focusableMatchRow != nullptr);
+    focusableMatchRow->forceActiveFocus(Qt::TabFocusReason);
+    QTRY_VERIFY(focusableMatchRow->hasActiveFocus());
+    QTest::keyClick(&window, Qt::Key_Return);
+    QTRY_COMPARE(regularPanel->property("selectedIndex").toInt(), 10);
+    QObject *detail = regularPanel->findChild<QObject *>(QStringLiteral("seasonArchiveDetail"));
+    QVERIFY(detail != nullptr);
+    QTRY_VERIFY(detail->property("visible").toBool());
+    QVERIFY(detail->property("text").toString().length() > 30);
+    click(regularPanel->findChild<QObject *>(QStringLiteral("seasonArchiveBack")));
+    QTRY_COMPARE(regularPanel->property("selectedIndex").toInt(), -1);
+    focusableMatchRow->forceActiveFocus(Qt::TabFocusReason);
+    QTRY_VERIFY(focusableMatchRow->hasActiveFocus());
+    QTest::keyClick(&window, Qt::Key_Space);
+    QTRY_COMPARE(regularPanel->property("selectedIndex").toInt(), 10);
+    QTRY_VERIFY(detail->property("visible").toBool());
+    click(regularPanel->findChild<QObject *>(QStringLiteral("seasonArchiveBack")));
+    QTRY_COMPARE(regularPanel->property("selectedIndex").toInt(), -1);
+    QObject *refresh = page->findChild<QObject *>(QStringLiteral("maoziRefreshButton"));
+    QVERIFY(refresh != nullptr);
+    QVERIFY(!refresh->property("enabled").toBool());
+    page->setProperty("width", 1280);
+    page->setProperty("height", 720);
+    window.resize(QSize(1280, 720));
+    click(page->findChild<QObject *>(QStringLiteral("maoziPlacementTab")));
+    click(overview);
+    QTRY_VERIFY(placementListItem->mapToScene(QPointF(0, 0)).y() > 100);
+    const QRectF wideActions = placementActions->mapRectToItem(
+        window.contentItem(), placementActions->boundingRect());
+    QVERIFY(wideActions.bottom() <= window.height());
 }
 
 QTEST_MAIN(QmlInteractionTest)

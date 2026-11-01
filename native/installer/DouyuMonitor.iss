@@ -10,7 +10,7 @@
 
 [Setup]
 AppId={{B9D87858-5B5A-4CB7-8B78-8A1D6F0D1E20}
-AppName=DouyuMonitor
+AppName=CSTG特勤终端
 AppVersion={#AppVersion}
 AppPublisher=DouyuMonitor
 DefaultDirName={localappdata}\Programs\DouyuMonitor
@@ -34,12 +34,12 @@ Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: 
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{autoprograms}\DouyuMonitor\DouyuMonitor"; Filename: "{app}\douyu_monitor_native.exe"; WorkingDir: "{app}"; IconFilename: "{app}\douyu_monitor.ico"
-Name: "{autoprograms}\DouyuMonitor\卸载 DouyuMonitor"; Filename: "{uninstallexe}"; IconFilename: "{app}\douyu_monitor.ico"
-Name: "{autodesktop}\DouyuMonitor"; Filename: "{app}\douyu_monitor_native.exe"; WorkingDir: "{app}"; IconFilename: "{app}\douyu_monitor.ico"; Tasks: desktopicon
+Name: "{autoprograms}\DouyuMonitor\CSTG特勤终端"; Filename: "{app}\douyu_monitor_native.exe"; WorkingDir: "{app}"; IconFilename: "{app}\douyu_monitor.ico"
+Name: "{autoprograms}\DouyuMonitor\卸载 CSTG特勤终端"; Filename: "{uninstallexe}"; IconFilename: "{app}\douyu_monitor.ico"
+Name: "{autodesktop}\CSTG特勤终端"; Filename: "{app}\douyu_monitor_native.exe"; WorkingDir: "{app}"; IconFilename: "{app}\douyu_monitor.ico"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\douyu_monitor_native.exe"; Description: "启动 DouyuMonitor"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent unchecked
+Filename: "{app}\douyu_monitor_native.exe"; Description: "启动 CSTG特勤终端"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent unchecked
 
 [Code]
 function IsDriveRoot(const Value: string): Boolean;

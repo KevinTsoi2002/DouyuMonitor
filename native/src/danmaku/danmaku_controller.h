@@ -19,6 +19,7 @@ public:
     bool globalEnabled() const noexcept;
     QVariantMap displaySettings() const;
     QVariantMap governanceSettings() const;
+    Q_INVOKABLE QVariantMap governanceSettingsForRoom(const QString &roomId) const;
     const NativeDanmakuConfiguration &configuration() const noexcept;
     bool presentationSuspended() const noexcept;
     void setPresentationSuspended(bool suspended);
@@ -48,6 +49,7 @@ signals:
     void settingsChanged();
     void roomStateChanged(const QString &roomId);
     void messageAvailable(const QString &roomId);
+    void statisticsChanged(const QString &roomId);
     void presentationSuspendedChanged();
 
 private:

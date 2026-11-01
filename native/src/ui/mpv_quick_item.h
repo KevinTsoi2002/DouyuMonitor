@@ -57,6 +57,8 @@ public:
 
 #ifdef DOUYU_TESTING
     friend class MpvQuickItemTest;
+    static void failNextRenderContextCreationForTest();
+    void renderForTest();
     static void resetTeardownObservationForTest();
     static bool wasLastCoreTeardownAfterRenderContextReleaseForTest();
     bool usesWakeupCallbackForTest() const noexcept;
@@ -66,6 +68,8 @@ public:
 
 signals:
     void renderContextReady();
+    void renderContextFailed(QString errorCode);
+    void playbackStarted();
     void remoteStreamEnded();
     void playbackFailed();
     void playbackProgress();
@@ -84,6 +88,8 @@ private:
     void resetProgressDeadline(qint64 nowMs);
     void requestFrame();
     void notifyRenderContextReady();
+    void notifyRenderContextFailed();
+    void notifyPlaybackStarted(quint64 generation);
     void pollMpvEvents();
     void handleMpvEvent(const mpv_event *event);
     quint64 beginLoadRequest();

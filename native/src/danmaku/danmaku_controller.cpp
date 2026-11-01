@@ -95,6 +95,8 @@ DanmakuController::DanmakuController(DanmakuClientFactory factory, QObject *pare
             this, &DanmakuController::roomStateChanged);
     connect(&sessions_, &DanmakuSessionManager::messageAvailable,
             this, &DanmakuController::messageAvailable);
+    connect(&sessions_, &DanmakuSessionManager::statisticsChanged,
+            this, &DanmakuController::statisticsChanged);
 }
 
 bool DanmakuController::globalEnabled() const noexcept
@@ -119,6 +121,21 @@ QVariantMap DanmakuController::displaySettings() const
 QVariantMap DanmakuController::governanceSettings() const
 {
     const DanmakuGovernanceSettings &governance = configuration_.governance;
+    return {
+        {QStringLiteral("enabled"), governance.enabled},
+        {QStringLiteral("keywordBlacklist"), governance.keywordBlacklist},
+        {QStringLiteral("duplicateWindowSeconds"), governance.duplicateWindowSeconds},
+        {QStringLiteral("peakProtectionEnabled"), governance.peakProtectionEnabled},
+    };
+}
+
+QVariantMap DanmakuController::governanceSettingsForRoom(const QString &roomId) const
+{
+    const DanmakuGovernanceSettings governance =
+        roomId.trimmed().isEmpty()
+            ? DanmakuGovernance::validatedGovernanceSettings(configuration_.governance)
+            : DanmakuGovernance::resolvedGovernance(
+                  configuration_.governance, configuration_.roomOverrides.value(roomId));
     return {
         {QStringLiteral("enabled"), governance.enabled},
         {QStringLiteral("keywordBlacklist"), governance.keywordBlacklist},

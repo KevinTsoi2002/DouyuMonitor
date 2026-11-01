@@ -38,7 +38,8 @@ DanmakuGovernanceRuntime createDanmakuGovernanceRuntime();
 QVector<DanmakuMessage> apply(const QVector<DanmakuMessage> &messages,
                                const DanmakuGovernanceSettings &settings,
                                DanmakuGovernanceRuntime &runtime,
-                               const QDateTime &nowUtc);
+                               const QDateTime &nowUtc,
+                               std::optional<qint64> monotonicNowMs = std::nullopt);
 
 DanmakuDisplaySettings validatedDisplaySettings(const DanmakuDisplaySettings &settings);
 DanmakuGovernanceSettings validatedGovernanceSettings(

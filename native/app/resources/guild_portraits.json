@@ -1,0 +1,92 @@
+{
+  "version": 1,
+  "source": "https://www.douyu.com/{roomId} public room owner avatar",
+  "capturedAt": "2026-11-01T01:56:19.658+08:00",
+  "identityMethod": "memberId and exact numeric roomId; no name matching",
+  "portraits": [
+    {
+      "memberId": "hamster-056",
+      "roomId": "77788",
+      "avatarUrl": "https://apic.douyucdn.cn/upload/avatar_v3/202403/656c152744ed4edf8e5afe4a985fd645_big.jpg",
+      "source": "douyu-public-room-owner",
+      "sourceUrl": "https://www.douyu.com/77788"
+    },
+    {
+      "memberId": "hamster-057",
+      "roomId": "22411",
+      "avatarUrl": "https://apic.douyucdn.cn/upload/avatar_v3/202409/c166aa22d9254e32918b3d7cc7dbe6a1_big.jpg",
+      "source": "douyu-public-room-owner",
+      "sourceUrl": "https://www.douyu.com/22411"
+    },
+    {
+      "memberId": "hamster-039",
+      "roomId": "9997",
+      "avatarUrl": "https://apic.douyucdn.cn/upload/avatar_v3/202508/df47e334d76441de8fa2268c4e3ae6d1_big.jpg",
+      "source": "douyu-public-room-owner",
+      "sourceUrl": "https://www.douyu.com/9997"
+    },
+    {
+      "memberId": "hamster-053",
+      "roomId": "12831589",
+      "avatarUrl": "https://apic.douyucdn.cn/upload/avatar_v3/202604/7c95b7306a1d405ca0a6c5e06a720584_big.jpg",
+      "source": "douyu-public-room-owner",
+      "sourceUrl": "https://www.douyu.com/12831589"
+    },
+    {
+      "memberId": "hamster-055",
+      "roomId": "6632",
+      "avatarUrl": "https://apic.douyucdn.cn/upload/avatar_v3/202509/4648648e20694917a4aa655f7f438d3b_big.jpg",
+      "source": "douyu-public-room-owner",
+      "sourceUrl": "https://www.douyu.com/6632"
+    },
+    {
+      "memberId": "hamster-054",
+      "roomId": "9669",
+      "avatarUrl": "https://apic.douyucdn.cn/upload/avatar_v3/202502/aba888647c83497ebec71a2d58a3cf74_big.jpg",
+      "source": "douyu-public-room-owner",
+      "sourceUrl": "https://www.douyu.com/9669"
+    },
+    {
+      "memberId": "hamster-060",
+      "roomId": "12106059",
+      "avatarUrl": "https://apic.douyucdn.cn/upload/avatar_v3/202507/f935309530754ec8b19ea4cffac1dc1d_big.jpg",
+      "source": "douyu-public-room-owner",
+      "sourceUrl": "https://www.douyu.com/12106059"
+    },
+    {
+      "memberId": "hamster-058",
+      "roomId": "12570508",
+      "avatarUrl": "https://apic.douyucdn.cn/upload/avatar_v3/202608/39d7cb8724574e93b99823ad495e8611_big.jpg",
+      "source": "douyu-public-room-owner",
+      "sourceUrl": "https://www.douyu.com/12570508"
+    },
+    {
+      "memberId": "hamster-050",
+      "roomId": "11222",
+      "avatarUrl": "https://apic.douyucdn.cn/upload/avatar_v3/202304/1759e990ef7e4b7296cccb5daee9a56b_big.jpg",
+      "source": "douyu-public-room-owner",
+      "sourceUrl": "https://www.douyu.com/11222"
+    },
+    {
+      "memberId": "hamster-051",
+      "roomId": "12235739",
+      "avatarUrl": "https://apic.douyucdn.cn/upload/avatar_v3/202607/7514b06ce04d4ffcb20e023c67413476_big.jpg",
+      "source": "douyu-public-room-owner",
+      "sourceUrl": "https://www.douyu.com/12235739"
+    },
+    {
+      "memberId": "hamster-052",
+      "roomId": "12641916",
+      "avatarUrl": "https://apic.douyucdn.cn/upload/avatar_v3/202608/0d51ea1ac0134a13bcd0e7e12d9609a7_big.jpg",
+      "source": "douyu-public-room-owner",
+      "sourceUrl": "https://www.douyu.com/12641916"
+    },
+    {
+      "memberId": "hamster-049",
+      "roomId": "12900462",
+      "avatarUrl": "https://apic.douyucdn.cn/upload/avatar_v3/202609/5976973ce23245d6b753733d506d0415_big.jpg",
+      "source": "douyu-public-room-owner",
+      "sourceUrl": "https://www.douyu.com/12900462"
+    }
+  ]
+}

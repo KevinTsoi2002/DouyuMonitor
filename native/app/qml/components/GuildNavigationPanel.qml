@@ -1,58 +1,68 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import ".."
+import "../controls"
 
 Rectangle {
     id: root
 
     property var controller: null
     property var workspaceModel: null
-    signal memberHovered(string memberId, real x, real y)
-    signal memberHoverExited()
+    signal addRoomRequested()
+    property string statusFilter: "all"
+    property string genderFilter: "all"
+    property string selectedMemberId: ""
+    readonly property var selectedMember: root.findMember(root.selectedMemberId)
+    readonly property bool wideDetails: root.width >= 1100
 
-    readonly property var roster: controller ? controller.guildRoster : []
-    readonly property var teams: workspaceModel
-                                 ? workspaceModel.teams
-                                 : (controller && controller.teams ? controller.teams : [])
+    readonly property var roster: controller && controller.guildRoster ? controller.guildRoster : []
     readonly property string query: searchInput.text.trim().toLowerCase()
-    readonly property var teamSections: root.buildTeamSections()
-    readonly property int visibleTeamCount: root.teamSections.length
-    readonly property int visibleMemberCount: root.countVisibleMembers()
+    readonly property var directoryMembers: root.buildDirectoryMembers()
+    readonly property var visibleMembers: root.buildVisibleMembers()
+    readonly property int visibleMemberCount: root.visibleMembers.length
     property bool syncActive: visible
 
-    color: Theme.managementSurface
-    border.color: Theme.border
-    border.width: 1
+    color: Theme.canvas
     clip: true
-
-    function memberBelongsToTeam(memberId, team)
-    {
-        return team.memberIds && team.memberIds.indexOf(memberId) >= 0
-    }
 
     function memberMatches(member)
     {
+        if (member.directoryListed === false) return false
+        if (root.genderFilter !== "all" && member.gender !== root.genderFilter) return false
+        if (root.statusFilter === "online" && member.liveState !== "online") return false
+        if (root.statusFilter === "active" && !member.active) return false
         if (root.query.length === 0) return true
         const anchorName = String(member.anchorName || "").toLowerCase()
         const roomId = String(member.roomId || "").toLowerCase()
         return anchorName.indexOf(root.query) >= 0 || roomId.indexOf(root.query) >= 0
     }
 
-    function roleRank(role)
+    function buildDirectoryMembers()
     {
-        if (role === "leader") return 0
-        if (role === "captain") return 1
-        if (role === "member") return 2
-        return 3
+        const members = []
+        for (let index = 0; index < root.roster.length; ++index) {
+            const member = root.roster[index]
+            if (member.directoryListed === false) continue
+            const order = member.directoryOrder !== undefined && member.directoryOrder !== null
+                          ? Number(member.directoryOrder) : index
+            members.push({ member: member, order: Number.isFinite(order) && order >= 0 ? order : index,
+                           sourceIndex: index })
+        }
+        members.sort(function(left, right) {
+            return left.order - right.order || left.sourceIndex - right.sourceIndex
+        })
+        return members.map(function(entry) { return entry.member })
     }
 
-    function compareMembers(left, right)
+    function buildVisibleMembers()
     {
-        const leftKey = String(left.pinyinKey || "#")
-        const rightKey = String(right.pinyinKey || "#")
-        const keyOrder = leftKey.localeCompare(rightKey)
-        if (keyOrder !== 0) return keyOrder
-        return String(left.anchorName || "").localeCompare(String(right.anchorName || ""))
+        return root.directoryMembers.filter(function(member) { return root.memberMatches(member) })
+    }
+
+    function findMember(memberId) {
+        for (const member of root.roster) if (member.id === memberId) return member
+        return null
     }
 
     function syncRank()
@@ -69,165 +79,60 @@ Rectangle {
             root.controller.refreshGuildLiveStatus()
     }
 
-    function buildTeamSections()
-    {
-        const assigned = ({})
-        const leaderMembers = []
-        for (let index = 0; index < root.roster.length; ++index) {
-            const member = root.roster[index]
-            if (member.role === "leader" && root.memberMatches(member)) leaderMembers.push(member)
-        }
-        const sourceSections = []
-        for (let teamIndex = 0; teamIndex < root.teams.length; ++teamIndex) {
-            const team = root.teams[teamIndex]
-            const memberIds = team.memberIds || []
-            const members = []
-            for (let rosterIndex = 0; rosterIndex < root.roster.length; ++rosterIndex) {
-                const member = root.roster[rosterIndex]
-                if (memberIds.indexOf(member.id) < 0) continue
-                assigned[member.id] = true
-                if (member.role !== "leader" && root.memberMatches(member)) members.push(member)
-            }
-            sourceSections.push({
-                teamId: String(team.id || ""),
-                title: String(team.name || "未命名队伍"),
-                isUnassigned: false,
-                members: members
-            })
-        }
-
-        const unassigned = []
-        for (let rosterIndex = 0; rosterIndex < root.roster.length; ++rosterIndex) {
-            const member = root.roster[rosterIndex]
-            if (member.role === "leader" || assigned[member.id] || !root.memberMatches(member)) continue
-            unassigned.push(member)
-        }
-        const unassignedSection = {
-            teamId: "",
-            title: "未分队",
-            isUnassigned: true,
-            members: unassigned
-        }
-
-        const leadIn = []
-        const teamSections = []
-        for (let index = 0; index < sourceSections.length; ++index) {
-            const section = sourceSections[index]
-            const captain = []
-            const member = []
-            const other = []
-            for (let memberIndex = 0; memberIndex < section.members.length; ++memberIndex) {
-                const entry = section.members[memberIndex]
-                if (entry.role === "captain") captain.push(entry)
-                else if (entry.role === "member") member.push(entry)
-                else other.push(entry)
-            }
-            const groups = []
-            if (captain.length > 0) groups.push({ title: "队长", members: captain.sort(root.compareMembers) })
-            if (member.length > 0) groups.push({ title: "队员", members: member.sort(root.compareMembers) })
-            if (other.length > 0) groups.push({ title: "其他", members: other.sort(root.compareMembers) })
-            teamSections.push({ teamId: section.teamId, title: section.title,
-                                isUnassigned: false, groups: groups })
-        }
-        leaderMembers.sort(root.compareMembers)
-        if (leaderMembers.length > 0)
-            leadIn.push({ teamId: "", title: "团长", isUnassigned: false,
-                          isLeaderSection: true, groups: [{ title: "", members: leaderMembers }] })
-
-        const unassignedCaptain = []
-        const unassignedMember = []
-        const unassignedOther = []
-        for (let index = 0; index < unassignedSection.members.length; ++index) {
-            const entry = unassignedSection.members[index]
-            if (entry.role === "captain") unassignedCaptain.push(entry)
-            else if (entry.role === "member") unassignedMember.push(entry)
-            else unassignedOther.push(entry)
-        }
-        const unassignedGroups = []
-        if (unassignedCaptain.length > 0)
-            unassignedGroups.push({ title: "队长", members: unassignedCaptain.sort(root.compareMembers) })
-        if (unassignedMember.length > 0)
-            unassignedGroups.push({ title: "队员", members: unassignedMember.sort(root.compareMembers) })
-        if (unassignedOther.length > 0)
-            unassignedGroups.push({ title: "其他", members: unassignedOther.sort(root.compareMembers) })
-        teamSections.push({ teamId: "", title: "未分队", isUnassigned: true,
-                            groups: unassignedGroups })
-        return leadIn.concat(teamSections)
-    }
-
-
     function rebuildNavigationRows()
     {
-        const nextRows = []
-        const sections = root.teamSections
-        for (let sectionIndex = 0; sectionIndex < sections.length; ++sectionIndex) {
-            const section = sections[sectionIndex]
-            nextRows.push({
-                rowType: "header",
-                title: section.title,
-                memberId: "",
-                anchorName: "",
-                roomId: "",
-                roomStatus: "",
-                avatarUrl: "",
-                liveState: "unknown",
-                memberActive: false
-            })
-            for (let groupIndex = 0; groupIndex < section.groups.length; ++groupIndex) {
-                const group = section.groups[groupIndex]
-                if (group.title.length > 0) {
-                    nextRows.push({
-                        rowType: "subheader",
-                        title: group.title,
-                        memberId: "",
-                        anchorName: "",
-                        roomId: "",
-                        roomStatus: "",
-                        avatarUrl: "",
-                        liveState: "unknown",
-                        memberActive: false
-                    })
-                }
-                for (let memberIndex = 0; memberIndex < group.members.length; ++memberIndex) {
-                    const member = group.members[memberIndex]
-                    nextRows.push({
-                        rowType: "member",
-                        title: "",
-                        memberId: String(member.id || ""),
-                        anchorName: String(member.anchorName || ""),
-                        roomId: String(member.roomId || ""),
-                        roomStatus: String(member.status || ""),
-                        avatarUrl: String(member.avatarUrl || ""),
-                        liveState: String(member.liveState || "unknown"),
-                        memberActive: !!member.active
-                    })
-                }
+        const nextRows = root.directoryMembers.map(function(member) {
+            return {
+                memberId: String(member.id || ""),
+                anchorName: String(member.anchorName || ""),
+                roomId: String(member.roomId || ""),
+                roomStatus: String(member.status || ""),
+                avatarUrl: String(member.avatarUrl || ""),
+                fallbackAvatarUrl: String(member.fallbackAvatarUrl || ""),
+                portraitIdentityVerified: member.portraitIdentityVerified === true,
+                liveState: String(member.liveState || "unknown"),
+                memberActive: !!member.active,
+                memberVisible: root.memberMatches(member)
             }
-        }
-        // Live-status updates retain delegates and their hover/scroll state.
+        })
+        // Keep the directory model stable; filtering must not recreate row controls and avatars.
         for (let index = 0; index < nextRows.length; ++index) {
             const next = nextRows[index]
-            const current = index < navigationRows.count ? navigationRows.get(index) : null
-            const sameRow = current && current.rowType === next.rowType
-                            && (next.rowType === "member"
-                                ? current.memberId === next.memberId : current.title === next.title)
-            if (!sameRow) {
-                root.memberHoverExited()
-                if (current) navigationRows.remove(index)
-                navigationRows.insert(index, next)
-                continue
+            let current = index < navigationRows.count ? navigationRows.get(index) : null
+            if (!current || current.memberId !== next.memberId) {
+                let previousIndex = -1
+                for (let later = index + 1; later < navigationRows.count; ++later) {
+                    if (navigationRows.get(later).memberId === next.memberId) {
+                        previousIndex = later
+                        break
+                    }
+                }
+                if (previousIndex >= 0) navigationRows.move(previousIndex, index, 1)
+                else navigationRows.insert(index, next)
+                current = navigationRows.get(index)
             }
             for (const key in next) {
                 if (current[key] !== next[key]) navigationRows.setProperty(index, key, next[key])
             }
         }
-        if (navigationRows.count > nextRows.length) {
-            root.memberHoverExited()
+        if (navigationRows.count > nextRows.length)
             navigationRows.remove(nextRows.length, navigationRows.count - nextRows.length)
+    }
+
+    function updateNavigationVisibility()
+    {
+        const visibleIds = {}
+        for (const member of root.visibleMembers) visibleIds[String(member.id || "")] = true
+        for (let index = 0; index < navigationRows.count; ++index) {
+            const current = navigationRows.get(index)
+            const memberVisible = visibleIds[current.memberId] === true
+            if (current.memberVisible !== memberVisible)
+                navigationRows.setProperty(index, "memberVisible", memberVisible)
         }
     }
 
-    function memberForRow(memberId, anchorName, roomId, status, avatarUrl, liveState, active)
+    function memberForRow(memberId, anchorName, roomId, status, avatarUrl, fallbackAvatarUrl,
+                          portraitIdentityVerified, liveState, active)
     {
         return {
             id: memberId,
@@ -235,37 +140,11 @@ Rectangle {
             roomId: roomId,
             status: status,
             avatarUrl: avatarUrl,
+            fallbackAvatarUrl: fallbackAvatarUrl,
+            portraitIdentityVerified: portraitIdentityVerified,
             liveState: liveState,
             active: active
         }
-    }
-
-    function countVisibleMembers()
-    {
-        let count = 0
-        for (let index = 0; index < root.teamSections.length; ++index) {
-            const section = root.teamSections[index]
-            for (let groupIndex = 0; groupIndex < section.groups.length; ++groupIndex) {
-                count += section.groups[groupIndex].members.length
-            }
-        }
-        return count
-    }
-
-    function memberActive(memberId)
-    {
-        for (let index = 0; index < root.roster.length; ++index) {
-            if (root.roster[index].id === memberId) return !!root.roster[index].active
-        }
-        return false
-    }
-
-    function canonicalMember(member)
-    {
-        for (let index = 0; index < root.roster.length; ++index) {
-            if (root.roster[index].id === member.id) return root.roster[index]
-        }
-        return member
     }
 
     function canAddMember(member)
@@ -290,11 +169,12 @@ Rectangle {
 
     function submitRoomId(memberId, roomId)
     {
-        if (!root.controller) return
+        if (!root.controller) return false
         const message = root.controller.setGuildMemberRoomId(memberId, roomId)
         if (message && message.length > 0 && root.workspaceModel) {
             root.workspaceModel.setLastMessage(message, "error", 2400)
         }
+        return !message || message.length === 0
     }
 
     ListModel {
@@ -314,51 +194,123 @@ Rectangle {
     }
 
     Component.onCompleted: root.rebuildNavigationRows()
-    onTeamSectionsChanged: root.rebuildNavigationRows()
+    onDirectoryMembersChanged: root.rebuildNavigationRows()
+    onVisibleMembersChanged: {
+        root.updateNavigationVisibility()
+        if (root.selectedMemberId.length > 0 && !root.visibleMembers.some(function(member) {
+            return member.id === root.selectedMemberId
+        })) root.selectedMemberId = ""
+    }
     onSyncActiveChanged: if (syncActive) root.syncRank()
-    onVisibleChanged: if (!visible) root.memberHoverExited()
+    onSelectedMemberIdChanged: {
+        if (selectedMemberId.length > 0 && !root.wideDetails) detailsClose.forceActiveFocus()
+    }
 
     Column {
+        id: contentColumn
         anchors.fill: parent
-        anchors.margins: 12
-        spacing: 10
+        anchors.margins: 24
+        spacing: 16
 
-        Text {
-            objectName: "guildNavigationTitle"
-            color: Theme.text
-            font.bold: true
-            font.pixelSize: 15
-            text: "CSTG狼团S1"
-        }
-
-        Item {
-            objectName: "guildTeamSections"
-            width: 0
-            height: 0
-            property int count: root.teamSections.length
-        }
-
-        TextField {
-            id: searchInput
-            objectName: "guildNavigationSearch"
+        Column {
+            id: titleHeader
             width: parent.width
-            height: 30
-            placeholderText: "搜索主播或房间号"
-            color: Theme.text
-            placeholderTextColor: Theme.mutedText
-            selectByMouse: true
-            font.pixelSize: 11
-            background: Rectangle {
-                radius: 4
-                color: Theme.well
-                border.color: searchInput.activeFocus ? Theme.accent : Theme.border
+            spacing: 12
+            Row {
+                width: parent.width
+                spacing: 16
+                Text {
+                    objectName: "guildNavigationTitle"
+                    width: parent.width - (headerActions.visible ? headerActions.width + 16 : 0)
+                    color: Theme.text
+                    font.bold: true
+                    font.pixelSize: Theme.fontPageTitle
+                    elide: Text.ElideRight
+                    text: qsTr("CSTG 主播导航")
+                }
+                Row {
+                    id: headerActions
+                    visible: titleHeader.width >= 650
+                    spacing: 8
+                    ConsoleButton {
+                        objectName: "guildRefreshStatusButton"
+                        text: qsTr("刷新直播状态")
+                        enabled: !!root.controller
+                        onClicked: root.syncLiveStatus()
+                    }
+                    ConsoleButton {
+                        objectName: "guildAddRoomButton"
+                        text: qsTr("添加房间")
+                        highlighted: true
+                        onClicked: root.addRoomRequested()
+                    }
+                }
+            }
+            Text {
+                width: parent.width
+                text: qsTr("公会主播 · 按官网目录顺序 · %1 位").arg(root.visibleMemberCount)
+                color: Theme.mutedText
+                font.pixelSize: Theme.fontControl
+                wrapMode: Text.Wrap
+            }
+            Row {
+                visible: !headerActions.visible
+                spacing: 8
+                ConsoleButton {
+                    text: qsTr("刷新直播状态")
+                    enabled: !!root.controller
+                    onClicked: root.syncLiveStatus()
+                }
+                ConsoleButton { text: qsTr("添加房间"); highlighted: true; onClicked: root.addRoomRequested() }
+            }
+        }
+
+        Flow {
+            id: filters
+            width: parent.width
+            spacing: 8
+            Row {
+                objectName: "guildGenderFilters"
+                spacing: 4
+                Repeater {
+                    model: [{ value: "all", label: qsTr("全部") },
+                            { value: "m", label: qsTr("男主播") },
+                            { value: "f", label: qsTr("女主播") }]
+                    delegate: ConsoleToolButton {
+                        id: genderButton
+                        required property var modelData
+                        objectName: "guildGenderFilter_" + genderButton.modelData.value
+                        text: genderButton.modelData.label
+                        checkable: true
+                        checked: root.genderFilter === genderButton.modelData.value
+                        onClicked: root.genderFilter = genderButton.modelData.value
+                    }
+                }
+            }
+            ConsoleTextField {
+                id: searchInput
+                objectName: "guildNavigationSearch"
+                width: Math.min(340, Math.max(160, filters.width - 410))
+                height: Theme.controlHeight
+                placeholderText: qsTr("搜索主播或房间号")
+                selectByMouse: true
+                font.pixelSize: Theme.fontControl
+            }
+            ConsoleComboBox {
+                objectName: "guildStatusFilter"
+                width: 140
+                model: [qsTr("全部状态"), qsTr("直播中"), qsTr("已添加")]
+                currentIndex: ["all", "online", "active"].indexOf(root.statusFilter)
+                onActivated: function(index) { root.statusFilter = ["all", "online", "active"][index] }
             }
         }
 
         Flickable {
             id: teamScroll
-            width: parent.width
-            height: Math.max(0, parent.height - searchInput.height - 50)
+            objectName: "guildNavigationScroll"
+            visible: !root.selectedMember || root.wideDetails
+            width: parent.width - (root.selectedMember && root.wideDetails ? 340 : 0)
+            height: Math.max(0, parent.height - titleHeader.height - filters.height - parent.spacing * 2)
             clip: true
             contentWidth: width
             contentHeight: teamColumn.implicitHeight
@@ -367,7 +319,7 @@ Rectangle {
             Column {
                 id: teamColumn
                 width: teamScroll.width
-                spacing: 8
+                spacing: 2
 
                 Repeater {
                     objectName: "guildVisibleRows"
@@ -375,70 +327,180 @@ Rectangle {
 
                     delegate: Item {
                         id: rowItem
+                        required property var model
                         width: teamColumn.width
-                        height: model.rowType === "header" ? 20
-                              : (model.rowType === "subheader" ? 18 : 46)
+                        height: visible ? memberRow.height : 0
+                        visible: rowItem.model.memberVisible
+                        enabled: visible
 
-                        Text {
-                            objectName: "guildTeamTitle"
-                            anchors.left: parent.left
-                            anchors.right: parent.right
-                            anchors.top: parent.top
-                            height: visible ? 20 : 0
-                            visible: model.rowType === "header"
-                            color: Theme.mutedText
-                            font.bold: true
-                            font.pixelSize: 11
-                            elide: Text.ElideRight
-                            text: model.title
-                        }
-
-                        Text {
-                            objectName: "guildRoleTitle"
-                            anchors.left: parent.left
-                            anchors.leftMargin: 8
-                            anchors.right: parent.right
-                            anchors.top: parent.top
-                            height: visible ? 18 : 0
-                            visible: model.rowType === "subheader"
-                            color: Theme.mutedText
-                            font.pixelSize: 10
-                            elide: Text.ElideRight
-                            text: model.title
+                        Rectangle {
+                            objectName: "guildMemberRowBackground"
+                            anchors.fill: parent
+                            color: rowItem.model.memberId === root.selectedMemberId ? Theme.selectedSurface
+                                   : memberRow.hovered ? Theme.controlHover : Theme.managementSurface
+                            radius: Theme.radiusSmall
+                            border.width: rowItem.model.memberId === root.selectedMemberId ? 2 : 0
+                            border.color: Theme.accent
                         }
 
                         GuildMemberRow {
+                            id: memberRow
                             objectName: "guildMemberRow"
                             anchors.left: parent.left
                             anchors.right: parent.right
+                            anchors.leftMargin: 12
+                            anchors.rightMargin: 12
                             anchors.top: parent.top
-                            height: visible ? (confirming ? 84 : 46) : 0
-                            visible: model.rowType === "member"
-                            member: root.memberForRow(model.memberId, model.anchorName,
-                                                      model.roomId, model.roomStatus,
-                                                      model.avatarUrl, model.liveState,
-                                                      model.memberActive)
-                            roomStatus: model.roomStatus
-                            active: model.memberActive
-                            canAdd: model.rowType === "member"
-                                    && root.canAddMember(root.memberForRow(
-                                        model.memberId, model.anchorName, model.roomId,
-                                        model.roomStatus, model.avatarUrl,
-                                        model.liveState, model.memberActive))
+                            height: visible ? (confirming ? 104 : 64) : 0
+                            member: root.memberForRow(rowItem.model.memberId, rowItem.model.anchorName,
+                                                      rowItem.model.roomId, rowItem.model.roomStatus,
+                                                      rowItem.model.avatarUrl, rowItem.model.fallbackAvatarUrl,
+                                                      rowItem.model.portraitIdentityVerified,
+                                                      rowItem.model.liveState,
+                                                      rowItem.model.memberActive)
+                            roomStatus: rowItem.model.roomStatus
+                            active: rowItem.model.memberActive
+                            selected: rowItem.model.memberId === root.selectedMemberId
+                            onSelectedRequested: function(memberId) { root.selectedMemberId = memberId }
+                            confirmRoomId: function(memberId, roomId) { return root.submitRoomId(memberId, roomId) }
+                            canAdd: root.canAddMember(root.memberForRow(
+                                        rowItem.model.memberId, rowItem.model.anchorName, rowItem.model.roomId,
+                                        rowItem.model.roomStatus, rowItem.model.avatarUrl,
+                                        rowItem.model.fallbackAvatarUrl,
+                                        rowItem.model.portraitIdentityVerified,
+                                        rowItem.model.liveState, rowItem.model.memberActive))
                             onAddRequested: function(memberId) {
                                 root.quickAdd(memberId)
                             }
-                            onRoomIdSubmitted: function(memberId, roomId) {
-                                root.submitRoomId(memberId, roomId)
-                            }
-                            onHoverEntered: function(memberId) {
-                                const point = rowItem.mapToItem(root, rowItem.width - 6,
-                                                                Math.max(0, rowItem.height / 2))
-                                root.memberHovered(memberId, point.x, point.y)
-                            }
-                            onHoverExited: root.memberHoverExited()
                         }
                     }
+                }
+            }
+        }
+    }
+
+    Text {
+        anchors.centerIn: parent
+        visible: root.visibleMemberCount === 0
+        text: root.query.length > 0 || root.genderFilter !== "all" || root.statusFilter !== "all"
+              ? qsTr("没有匹配的主播，请调整筛选或搜索") : qsTr("暂无主播资料")
+        color: Theme.mutedText
+        font.pixelSize: Theme.fontBody
+    }
+
+    Rectangle {
+        id: memberDetails
+        objectName: "guildMemberDetails"
+        anchors.right: parent.right
+        anchors.rightMargin: 24
+        anchors.top: parent.top
+        anchors.topMargin: contentColumn.y + titleHeader.height + filters.height + contentColumn.spacing * 2
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: 24
+        width: root.wideDetails ? 320 : root.width - 48
+        visible: !!root.selectedMember
+        color: Theme.managementSurface
+        border.color: Theme.border
+        radius: Theme.radiusSmall
+        z: 2
+        Keys.onEscapePressed: function(event) {
+            root.selectedMemberId = ""
+            searchInput.forceActiveFocus()
+            event.accepted = true
+        }
+
+        Flickable {
+            anchors.fill: parent
+            anchors.margins: 16
+            contentWidth: width
+            contentHeight: detailContent.implicitHeight
+            clip: true
+            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+            Column {
+                id: detailContent
+                width: parent.width
+                spacing: 12
+                Row {
+                    width: parent.width
+                    Text { width: parent.width - 40; text: qsTr("主播资料"); color: Theme.text; font.bold: true; font.pixelSize: Theme.fontHeading }
+                    ConsoleToolButton {
+                        id: detailsClose
+                        objectName: "guildMemberDetailsClose"
+                        width: 32; height: 32
+                        text: "×"
+                        Accessible.name: qsTr("关闭主播资料")
+                        onClicked: { root.selectedMemberId = ""; searchInput.forceActiveFocus() }
+                    }
+                }
+                Text {
+                    objectName: "guildSelectedMemberName"
+                    width: parent.width
+                    text: root.selectedMember ? root.selectedMember.anchorName : ""
+                    color: Theme.text; font.bold: true; font.pixelSize: Theme.fontHeading; wrapMode: Text.Wrap
+                }
+                Text {
+                    width: parent.width
+                    text: root.selectedMember ? ({ m: qsTr("男主播"), f: qsTr("女主播") }[root.selectedMember.gender] || qsTr("公会主播")) : ""
+                    color: Theme.mutedText; font.pixelSize: Theme.fontControl; wrapMode: Text.Wrap
+                }
+                Text {
+                    width: parent.width
+                    text: root.selectedMember ? (root.selectedMember.roomId ? qsTr("房间 %1").arg(root.selectedMember.roomId) : qsTr("房间待确认")) : ""
+                    color: Theme.text; font.pixelSize: Theme.fontControl; wrapMode: Text.Wrap
+                }
+                Text {
+                    width: parent.width
+                    text: !root.selectedMember ? "" : ({ online: qsTr("直播中"), offline: qsTr("未开播"), unknown: qsTr("直播状态未知") }[root.selectedMember.liveState] || qsTr("直播状态未知"))
+                        + (root.selectedMember.active ? qsTr(" · 已加入") : "")
+                    color: Theme.mutedText; font.pixelSize: Theme.fontControl; wrapMode: Text.Wrap
+                }
+                Text {
+                    objectName: "guildSelectedRankSummary"
+                    width: parent.width
+                    text: root.selectedMember && root.selectedMember.rankMatched
+                          ? qsTr("线上野榜 · 综合分 %1").arg(root.selectedMember.score >= 0 ? Number(root.selectedMember.score).toFixed(1) : "—")
+                          : qsTr("暂无野榜数据")
+                    color: Theme.text; font.pixelSize: Theme.fontControl; wrapMode: Text.Wrap
+                }
+                Text {
+                    objectName: "guildSelectedPlacementSummary"
+                    width: parent.width
+                    visible: !!root.selectedMember && !!root.selectedMember.rankMatched
+                    readonly property var metric: root.selectedMember ? root.selectedMember.placementAverage : null
+                    text: qsTr("定级赛总评 %1").arg(metric !== null && metric !== undefined && Number(metric) >= 0 ? Number(metric).toFixed(2) : "—")
+                    color: Theme.text; font.pixelSize: Theme.fontControl; wrapMode: Text.Wrap
+                }
+                Text {
+                    objectName: "guildSelectedPlayValueSummary"
+                    width: parent.width
+                    visible: !!root.selectedMember && !!root.selectedMember.rankMatched
+                    readonly property var metric: root.selectedMember ? root.selectedMember.playValue : null
+                    text: qsTr("游乐值 %1").arg(metric !== null && metric !== undefined ? Number(metric).toFixed(1) : "—")
+                    color: Theme.text; font.pixelSize: Theme.fontControl; wrapMode: Text.Wrap
+                }
+                Repeater {
+                    model: root.selectedMember && root.selectedMember.rankMatched ? (root.selectedMember.radarDimensions || []) : []
+                    delegate: Text {
+                        required property var modelData
+                        width: detailContent.width
+                        text: String(modelData.label || modelData.name || "") + "  "
+                              + (modelData.average !== undefined && modelData.average !== null && Number(modelData.average) >= 0 ? Number(modelData.average).toFixed(1) : "—")
+                        color: Theme.mutedText; font.pixelSize: Theme.fontControl; wrapMode: Text.Wrap
+                    }
+                }
+                ConsoleButton {
+                    objectName: "guildSelectedMemberAdd"
+                    width: parent.width
+                    text: root.selectedMember && root.selectedMember.active ? qsTr("已加入工作区") : qsTr("加入工作区")
+                    enabled: root.canAddMember(root.selectedMember)
+                    highlighted: true
+                    onClicked: root.quickAdd(root.selectedMemberId)
+                }
+                Text {
+                    width: parent.width
+                    visible: !!root.selectedMember && !root.canAddMember(root.selectedMember) && !root.selectedMember.active
+                    text: root.selectedMember && !root.selectedMember.roomId ? qsTr("请先在名单中确认房间号") : qsTr("当前布局的房间容量已满")
+                    color: Theme.warning; font.pixelSize: Theme.fontCaption; wrapMode: Text.Wrap
                 }
             }
         }

@@ -10,6 +10,7 @@
 #include <QTimer>
 
 #include <atomic>
+#include <cstdio>
 #include <cstdlib>
 #include <iostream>
 #include <mutex>
@@ -22,6 +23,15 @@ namespace {
 struct Options {
     int delayMs = 0;
     bool malformed = false;
+    bool oversizedLine = false;
+    bool oversizedNoNewline = false;
+    int lineBytes = 0;
+    int stderrBytes = 0;
+    bool stderrContinuous = false;
+    bool stderrOnExit = false;
+    bool wrongSearchShape = false;
+    bool wrongPingOperation = false;
+    bool matchingPingOperation = false;
     bool ignoreCancel = false;
     bool ignoreShutdown = false;
     int crashAfter = 0;
@@ -40,6 +50,24 @@ Options parseOptions(const QStringList &arguments)
             options.delayMs = qMax(0, arguments.at(++index).toInt());
         } else if (argument == QStringLiteral("--malformed")) {
             options.malformed = true;
+        } else if (argument == QStringLiteral("--oversized-line")) {
+            options.oversizedLine = true;
+        } else if (argument == QStringLiteral("--oversized-no-newline")) {
+            options.oversizedNoNewline = true;
+        } else if (argument == QStringLiteral("--line-bytes") && index + 1 < arguments.size()) {
+            options.lineBytes = qMax(0, arguments.at(++index).toInt());
+        } else if (argument == QStringLiteral("--stderr-bytes") && index + 1 < arguments.size()) {
+            options.stderrBytes = qMax(0, arguments.at(++index).toInt());
+        } else if (argument == QStringLiteral("--stderr-continuous")) {
+            options.stderrContinuous = true;
+        } else if (argument == QStringLiteral("--stderr-on-exit")) {
+            options.stderrOnExit = true;
+        } else if (argument == QStringLiteral("--wrong-search-shape")) {
+            options.wrongSearchShape = true;
+        } else if (argument == QStringLiteral("--wrong-ping-operation")) {
+            options.wrongPingOperation = true;
+        } else if (argument == QStringLiteral("--matching-ping-operation")) {
+            options.matchingPingOperation = true;
         } else if (argument == QStringLiteral("--ignore-cancel")) {
             options.ignoreCancel = true;
         } else if (argument == QStringLiteral("--ignore-shutdown")) {
@@ -85,6 +113,18 @@ void emitError(quint64 requestId, const QString &code)
     emitObject(response);
 }
 
+void emitStderr(int bytes)
+{
+    QByteArray chunk(64 * 1024, 'x');
+    chunk[0] = '\xff';
+    while (bytes > 0) {
+        const size_t count = static_cast<size_t>(qMin(bytes, chunk.size()));
+        if (std::fwrite(chunk.constData(), 1, count, stderr) != count) break;
+        bytes -= static_cast<int>(count);
+    }
+    std::fflush(stderr);
+}
+
 } // namespace
 
 int main(int argc, char **argv)
@@ -111,6 +151,11 @@ int main(int argc, char **argv)
     });
 
     QHash<quint64, QTimer *> pending;
+    QTimer stderrTimer;
+    if (options.stderrContinuous) {
+        QObject::connect(&stderrTimer, &QTimer::timeout, &application,
+                         [] { emitStderr(64 * 1024); });
+    }
     int requestCount = 0;
     int resolveCount = 0;
     int searchCount = 0;
@@ -135,11 +180,37 @@ int main(int argc, char **argv)
                         QFile marker(options.crashOnceFile);
                         marker.open(QIODevice::WriteOnly);
                     }
+                    if (options.stderrBytes > 0) emitStderr(options.stderrBytes);
                     std::_Exit(17);
                 }
             }
+            if (options.stderrBytes > 0) emitStderr(options.stderrBytes);
             if (options.malformed) {
                 std::cout << "not-json\n" << std::flush;
+                continue;
+            }
+
+            if (options.stderrContinuous && !stderrTimer.isActive()) stderrTimer.start(1);
+            if (options.stderrContinuous) {
+                if (request->operation == ServiceOperation::Shutdown) application.quit();
+                continue;
+            }
+
+            if (options.oversizedLine || options.oversizedNoNewline || options.lineBytes > 0) {
+                QJsonObject response;
+                response.insert(QStringLiteral("requestId"), static_cast<qint64>(request->requestId));
+                response.insert(QStringLiteral("ok"), true);
+                response.insert(QStringLiteral("pong"), true);
+                int targetBytes = options.lineBytes;
+                if (options.oversizedLine || options.oversizedNoNewline) targetBytes = 1'100'000;
+                response.insert(QStringLiteral("padding"), QString());
+                const QByteArray base = QJsonDocument(response).toJson(QJsonDocument::Compact);
+                response.insert(QStringLiteral("padding"),
+                                QString(qMax(0, targetBytes - base.size()), QLatin1Char('x')));
+                const QByteArray line = QJsonDocument(response).toJson(QJsonDocument::Compact);
+                std::cout.write(line.constData(), line.size());
+                if (options.oversizedLine) std::cout.put('\n');
+                std::cout.flush();
                 continue;
             }
 
@@ -148,9 +219,15 @@ int main(int argc, char **argv)
                 response.insert(QStringLiteral("requestId"), static_cast<qint64>(request->requestId));
                 response.insert(QStringLiteral("ok"), true);
                 response.insert(QStringLiteral("pong"), true);
+                if (options.wrongPingOperation) {
+                    response.insert(QStringLiteral("op"), QStringLiteral("search"));
+                } else if (options.matchingPingOperation) {
+                    response.insert(QStringLiteral("op"), QStringLiteral("ping"));
+                }
                 emitObject(response);
             } else if (request->operation == ServiceOperation::Shutdown) {
                 if (options.ignoreShutdown) continue;
+                if (options.stderrOnExit) emitStderr(1024 * 1024);
                 QJsonObject response;
                 response.insert(QStringLiteral("requestId"), static_cast<qint64>(request->requestId));
                 response.insert(QStringLiteral("ok"), true);
@@ -249,6 +326,11 @@ int main(int argc, char **argv)
                 QJsonObject response;
                 response.insert(QStringLiteral("requestId"), static_cast<qint64>(request->requestId));
                 response.insert(QStringLiteral("ok"), true);
+                if (options.wrongSearchShape) {
+                    response.insert(QStringLiteral("pong"), true);
+                    emitObject(response);
+                    continue;
+                }
                 QJsonArray results;
                 static const QRegularExpression roomIdPattern(QStringLiteral(R"(^[0-9]{1,20}$)"));
                 if (roomIdPattern.match(request->query).hasMatch()) {

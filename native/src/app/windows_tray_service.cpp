@@ -2,9 +2,14 @@
 
 #include <QWindow>
 
+#include "app/windows_notification_service.h"
+
 #ifdef Q_OS_WIN
+#define NOMINMAX
 #include <windows.h>
 #include <shellapi.h>
+
+#include <string>
 
 #include <memory>
 
@@ -15,6 +20,58 @@ constexpr UINT kShowCommand = 1001;
 constexpr UINT kQuitCommand = 1002;
 constexpr UINT kTrayIconId = 1;
 constexpr wchar_t kWindowClassName[] = L"DouyuMonitorTrayMessageWindow";
+
+template <size_t Size>
+void copy(wchar_t (&destination)[Size], const QString &source)
+{
+    const std::wstring value = source.toStdWString();
+    wcsncpy_s(destination, value.c_str(), _TRUNCATE);
+}
+
+class Win32TrayShellApi final : public WindowsTrayShellApi {
+public:
+    bool add(const IconSpec &icon) override
+    {
+        NOTIFYICONDATAW data{};
+        if (!fillIdentity(data, icon.identity)) return false;
+        data.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
+        data.uCallbackMessage = static_cast<UINT>(icon.callbackMessage);
+        data.hIcon = reinterpret_cast<HICON>(icon.iconHandle);
+        if (data.hIcon == nullptr) return false;
+        copy(data.szTip, icon.tooltip);
+        return Shell_NotifyIconW(NIM_ADD, &data) != FALSE;
+    }
+
+    bool modify(const IconIdentity &identity,
+                const NotificationSpec &notification) override
+    {
+        NOTIFYICONDATAW data{};
+        if (!fillIdentity(data, identity)) return false;
+        data.uFlags = static_cast<UINT>(notification.flags);
+        data.dwInfoFlags = static_cast<DWORD>(notification.infoFlags);
+        data.uTimeout = static_cast<UINT>(notification.timeoutMs);
+        copy(data.szInfoTitle, notification.title);
+        copy(data.szInfo, notification.body);
+        return Shell_NotifyIconW(NIM_MODIFY, &data) != FALSE;
+    }
+
+    bool remove(const IconIdentity &identity) override
+    {
+        NOTIFYICONDATAW data{};
+        if (!fillIdentity(data, identity)) return false;
+        return Shell_NotifyIconW(NIM_DELETE, &data) != FALSE;
+    }
+
+private:
+    static bool fillIdentity(NOTIFYICONDATAW &data, const IconIdentity &identity)
+    {
+        if (identity.window == 0 || identity.id == 0) return false;
+        data.cbSize = sizeof(data);
+        data.hWnd = reinterpret_cast<HWND>(identity.window);
+        data.uID = static_cast<UINT>(identity.id);
+        return true;
+    }
+};
 
 ATOM ensureWindowClass(HINSTANCE instance, WNDPROC procedure)
 {
@@ -35,12 +92,25 @@ ATOM ensureWindowClass(HINSTANCE instance, WNDPROC procedure)
 
 } // namespace
 
-class WindowsTrayService::Private {
+class WindowsTrayService::Private : public SystemNotificationSink {
 public:
+    bool available() const override
+    {
+        return iconAdded;
+    }
+
+    bool show(const QString &title, const QString &body) override
+    {
+        return owner != nullptr && owner->showNotification(title, body);
+    }
+
     WindowsTrayService *owner = nullptr;
     QWindow *window = nullptr;
     HWND messageWindow = nullptr;
-    NOTIFYICONDATAW icon{};
+    std::unique_ptr<WindowsTrayShellApi> shellApi;
+    WindowsTrayShellApi::IconIdentity identity;
+    WindowsTrayShellApi::IconSpec icon;
+    bool iconAdded = false;
 };
 
 static LRESULT CALLBACK trayWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
@@ -85,10 +155,13 @@ static LRESULT CALLBACK trayWindowProc(HWND hwnd, UINT message, WPARAM wParam, L
     return DefWindowProcW(hwnd, message, wParam, lParam);
 }
 
-WindowsTrayService::WindowsTrayService(QObject *parent)
+WindowsTrayService::WindowsTrayService(QObject *parent,
+                                       std::unique_ptr<WindowsTrayShellApi> shellApi)
     : QObject(parent), d_(new Private)
 {
     d_->owner = this;
+    d_->shellApi = std::move(shellApi);
+    if (d_->shellApi == nullptr) d_->shellApi = std::make_unique<Win32TrayShellApi>();
 }
 
 WindowsTrayService::~WindowsTrayService()
@@ -99,7 +172,8 @@ WindowsTrayService::~WindowsTrayService()
 
 bool WindowsTrayService::start(QWindow *window)
 {
-    if (d_->messageWindow != nullptr) return true;
+    if (d_->iconAdded) return true;
+    if (d_->shellApi == nullptr) return false;
     d_->window = window;
     const HINSTANCE instance = GetModuleHandleW(nullptr);
     if (ensureWindowClass(instance, trayWindowProc) == 0) return false;
@@ -117,35 +191,59 @@ bool WindowsTrayService::start(QWindow *window)
                                         d_);
     if (d_->messageWindow == nullptr) return false;
 
-    d_->icon = {};
-    d_->icon.cbSize = sizeof(d_->icon);
-    d_->icon.hWnd = d_->messageWindow;
-    d_->icon.uID = kTrayIconId;
-    d_->icon.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
-    d_->icon.uCallbackMessage = kTrayMessage;
-    d_->icon.hIcon = LoadIconW(instance, MAKEINTRESOURCEW(101));
-    if (d_->icon.hIcon == nullptr) d_->icon.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
-    wcscpy_s(d_->icon.szTip, L"DouyuMonitor");
-    if (!Shell_NotifyIconW(NIM_ADD, &d_->icon)) {
+    d_->identity = {reinterpret_cast<quintptr>(d_->messageWindow), kTrayIconId};
+    d_->icon = {
+        d_->identity,
+        kTrayMessage,
+        reinterpret_cast<quintptr>(LoadIconW(instance, MAKEINTRESOURCEW(101))),
+        QStringLiteral("DouyuMonitor"),
+    };
+    if (d_->icon.iconHandle == 0) {
+        d_->icon.iconHandle =
+            reinterpret_cast<quintptr>(LoadIconW(nullptr, IDI_APPLICATION));
+    }
+    if (!d_->shellApi->add(d_->icon)) {
         DestroyWindow(d_->messageWindow);
         d_->messageWindow = nullptr;
+        d_->window = nullptr;
+        d_->identity = {};
+        d_->icon = {};
         return false;
     }
+    d_->iconAdded = true;
     return true;
 }
 
 void WindowsTrayService::stop()
 {
-    if (d_->messageWindow == nullptr) return;
-    Shell_NotifyIconW(NIM_DELETE, &d_->icon);
-    DestroyWindow(d_->messageWindow);
+    if (!d_->iconAdded && d_->messageWindow == nullptr) return;
+    if (d_->iconAdded && d_->shellApi != nullptr) {
+        d_->shellApi->remove(d_->identity);
+    }
+    if (d_->messageWindow != nullptr) DestroyWindow(d_->messageWindow);
+    d_->iconAdded = false;
     d_->messageWindow = nullptr;
     d_->window = nullptr;
+    d_->identity = {};
+    d_->icon = {};
+}
+
+bool WindowsTrayService::showNotification(const QString &title, const QString &body)
+{
+    if (!d_->iconAdded || d_->shellApi == nullptr) return false;
+    return d_->shellApi->modify(
+        d_->identity,
+        {title, body, NIF_INFO, NIIF_INFO, 5000});
 }
 
 bool WindowsTrayService::isRunning() const noexcept
 {
-    return d_->messageWindow != nullptr;
+    return d_->iconAdded;
+}
+
+SystemNotificationSink *WindowsTrayService::notificationSink() noexcept
+{
+    return d_;
 }
 
 #ifdef DOUYU_TESTING
@@ -164,9 +262,11 @@ void WindowsTrayService::triggerQuitForTest()
 
 class WindowsTrayService::Private {};
 
-WindowsTrayService::WindowsTrayService(QObject *parent)
+WindowsTrayService::WindowsTrayService(QObject *parent,
+                                       std::unique_ptr<WindowsTrayShellApi> shellApi)
     : QObject(parent), d_(new Private)
 {
+    Q_UNUSED(shellApi);
 }
 
 WindowsTrayService::~WindowsTrayService()
@@ -186,6 +286,11 @@ void WindowsTrayService::stop()
 bool WindowsTrayService::isRunning() const noexcept
 {
     return false;
+}
+
+SystemNotificationSink *WindowsTrayService::notificationSink() noexcept
+{
+    return nullptr;
 }
 
 #ifdef DOUYU_TESTING

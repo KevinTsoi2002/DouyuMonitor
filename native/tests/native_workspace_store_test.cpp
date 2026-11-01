@@ -3,6 +3,7 @@
 #include <QtTest/QtTest>
 
 #include "workspace/native_workspace_store.h"
+#include "workspace/guild_roster.h"
 
 namespace {
 
@@ -59,6 +60,9 @@ class NativeWorkspaceStoreTest final : public QObject {
 
 private slots:
     void roundTripsSafeWorkspaceState();
+    void roundTripsPrimaryLayout();
+    void roundTripsLegalEmptyWorkspace();
+    void classifiesWorkspaceLoadStates();
     void rejectsMalformedAndSensitiveValues();
     void normalizesDuplicateAndInvalidReferences();
     void roundTripsPresentationSettingsAndPresets();
@@ -79,7 +83,76 @@ private slots:
     void roundTripsGuildRoomCacheWithoutSensitiveFields();
     void roundTripsGuildLiveStateCache();
     void normalizesDuplicateAndInvalidGuildRoomCacheEntries();
+    void preservesHistoricalAndNewDirectoryIdentitiesAcrossRestart();
 };
+
+void NativeWorkspaceStoreTest::preservesHistoricalAndNewDirectoryIdentitiesAcrossRestart()
+{
+    const auto *hidden = GuildRoster::findById(QStringLiteral("hamster-060"));
+    const auto *current = GuildRoster::findById(QStringLiteral("guild-51417"));
+    const auto *changed = GuildRoster::findById(QStringLiteral("hamster-017"));
+    QVERIFY(hidden != nullptr);
+    QVERIFY(current != nullptr);
+    QVERIFY(changed != nullptr);
+    QVERIFY(!hidden->directoryListed);
+    QVERIFY(current->directoryListed);
+    QCOMPARE(changed->roomId, QStringLiteral("12767534"));
+
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString path = directory.filePath(QStringLiteral("workspace.ini"));
+    NativeWorkspaceSnapshot expected = fixtureWorkspace();
+    expected.teams = {{QStringLiteral("retained-team"), QStringLiteral("保存的队伍"),
+                       {hidden->id, current->id, changed->id}}};
+    expected.guildRoomCache = {
+        {hidden->id, hidden->roomId, hidden->anchorName,
+         QUrl(QStringLiteral("https://example.invalid/hidden.png")),
+         1'700'000'000'002, 1'700'000'000'001, QStringLiteral("offline"), 1'700'000'000'003},
+        {current->id, current->roomId, current->anchorName,
+         QUrl(QStringLiteral("https://example.invalid/new.png")),
+         1'700'000'000'005, 1'700'000'000'004, QStringLiteral("online"), 1'700'000'000'006},
+        {changed->id, QStringLiteral("55588"), changed->anchorName,
+         QUrl(QStringLiteral("https://example.invalid/saved.png")),
+         1'700'000'000'008, 1'700'000'000'007, QStringLiteral("offline"), 1'700'000'000'009},
+    };
+
+    NativeRoomRecord savedRoom;
+    savedRoom.roomId = QStringLiteral("55588");
+    savedRoom.metadata.roomId = savedRoom.roomId;
+    savedRoom.metadata.anchorName = changed->anchorName;
+    savedRoom.favorite = true;
+    savedRoom.favoriteAddedAtMs = 1'700'000'000'010;
+    savedRoom.favoriteSortOrder = 1'700'000'000'010;
+    expected.library.append(savedRoom);
+    expected.groups.append({QStringLiteral("saved-room-group"), QStringLiteral("保存的房间组"),
+                            {QStringLiteral("55588")}});
+
+    {
+        QSettings settings(path, QSettings::IniFormat);
+        NativeWorkspaceStore store(&settings);
+        QVERIFY(store.save(expected));
+    }
+    {
+        QSettings settings(path, QSettings::IniFormat);
+        NativeWorkspaceStore store(&settings);
+        const auto loaded = store.load();
+        QCOMPARE(loaded.teams, expected.teams);
+        QCOMPARE(loaded.guildRoomCache, expected.guildRoomCache);
+        QCOMPARE(loaded.groups, expected.groups);
+        QCOMPARE(loaded.library.last().roomId, QStringLiteral("55588"));
+        QVERIFY(loaded.library.last().favorite);
+        QCOMPARE(loaded.library.last().favoriteAddedAtMs, savedRoom.favoriteAddedAtMs);
+        QVERIFY(store.save(loaded));
+    }
+    {
+        QSettings settings(path, QSettings::IniFormat);
+        NativeWorkspaceStore store(&settings);
+        const auto reloaded = store.load();
+        QCOMPARE(reloaded.teams, expected.teams);
+        QCOMPARE(reloaded.guildRoomCache, expected.guildRoomCache);
+        QCOMPARE(reloaded.groups, expected.groups);
+    }
+}
 
 void NativeWorkspaceStoreTest::roundTripsSafeWorkspaceState()
 {
@@ -91,6 +164,60 @@ void NativeWorkspaceStoreTest::roundTripsSafeWorkspaceState()
 
     QVERIFY(store.save(expected));
     QCOMPARE(store.load(), expected);
+}
+
+void NativeWorkspaceStoreTest::roundTripsPrimaryLayout()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSettings settings(directory.filePath(QStringLiteral("workspace.ini")), QSettings::IniFormat);
+    NativeWorkspaceStore store(&settings);
+    NativeWorkspaceSnapshot expected = fixtureWorkspace();
+    expected.layoutId = QStringLiteral("primary");
+
+    QVERIFY(store.save(expected));
+    QCOMPARE(store.load().layoutId, expected.layoutId);
+}
+
+void NativeWorkspaceStoreTest::roundTripsLegalEmptyWorkspace()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSettings settings(directory.filePath(QStringLiteral("workspace.ini")), QSettings::IniFormat);
+    NativeWorkspaceStore store(&settings);
+
+    const NativeWorkspaceSnapshot empty;
+    QVERIFY(store.save(empty));
+    const NativeWorkspaceSnapshot loaded = store.load();
+    QCOMPARE(loaded, empty);
+    QVERIFY(settings.contains(QStringLiteral("DouyuMonitor/nativeWorkspaceV1")));
+}
+
+void NativeWorkspaceStoreTest::classifiesWorkspaceLoadStates()
+{
+    const QString key = QStringLiteral("DouyuMonitor/nativeWorkspaceV1");
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSettings settings(directory.filePath(QStringLiteral("workspace.ini")), QSettings::IniFormat);
+    NativeWorkspaceStore store(&settings);
+
+    QCOMPARE(store.loadResult().status, NativeWorkspaceLoadStatus::Missing);
+
+    settings.setValue(key, QByteArrayLiteral("{not-json"));
+    settings.sync();
+    QCOMPARE(store.loadResult().status, NativeWorkspaceLoadStatus::Invalid);
+
+    settings.setValue(key, QByteArrayLiteral(R"JSON({"version":999})JSON"));
+    settings.sync();
+    QCOMPARE(store.loadResult().status, NativeWorkspaceLoadStatus::UnsupportedVersion);
+
+    settings.setValue(key, QByteArrayLiteral(
+        R"JSON({"version":8,"library":[],"groups":[],"activeRoomIds":[]})JSON"));
+    settings.sync();
+    QCOMPARE(store.loadResult().status, NativeWorkspaceLoadStatus::Invalid);
+
+    QVERIFY(store.save(NativeWorkspaceSnapshot{}));
+    QCOMPARE(store.loadResult().status, NativeWorkspaceLoadStatus::Loaded);
 }
 
 void NativeWorkspaceStoreTest::rejectsMalformedAndSensitiveValues()

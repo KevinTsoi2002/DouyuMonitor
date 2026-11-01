@@ -9,7 +9,6 @@ Rectangle {
     property int offlineCount: 0
     property int danmakuCount: 0
     property string audioLabel: "无"
-    property bool silentChecking: true
 
     height: 28
     radius: Theme.radiusSmall
@@ -26,32 +25,26 @@ Rectangle {
         Text {
             anchors.verticalCenter: parent.verticalCenter
             color: Theme.online
-            font.pixelSize: 10
+            font.pixelSize: Theme.fontCaption
             text: root.onlineCount + " 直播中"
         }
         Text {
             anchors.verticalCenter: parent.verticalCenter
             color: Theme.mutedText
-            font.pixelSize: 10
+            font.pixelSize: Theme.fontCaption
             text: root.offlineCount + " 未开播"
         }
         Text {
             anchors.verticalCenter: parent.verticalCenter
             color: Theme.mutedText
-            font.pixelSize: 10
+            font.pixelSize: Theme.fontCaption
             text: "弹幕 " + root.danmakuCount + " 已连接"
         }
         Text {
             anchors.verticalCenter: parent.verticalCenter
             color: Theme.mutedText
-            font.pixelSize: 10
+            font.pixelSize: Theme.fontCaption
             text: "声音焦点：" + root.audioLabel
-        }
-        Text {
-            anchors.verticalCenter: parent.verticalCenter
-            color: Theme.mutedText
-            font.pixelSize: 10
-            text: root.silentChecking ? "静默检查" : "检查中"
         }
     }
 }

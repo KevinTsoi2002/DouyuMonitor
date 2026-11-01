@@ -46,15 +46,20 @@ public:
     int statusCode_ = 200;
     QByteArray body_;
     int delayMs_ = 0;
+    bool includeContentLength_ = true;
 
 private:
     void writeResponse(QTcpSocket *socket)
     {
         const QByteArray reason = statusCode_ == 200 ? QByteArrayLiteral("OK")
                                                       : QByteArrayLiteral("Error");
-        const QByteArray response = QByteArrayLiteral("HTTP/1.1 ") + QByteArray::number(statusCode_)
-            + ' ' + reason + QByteArrayLiteral("\r\nContent-Type: application/json\r\nContent-Length: ")
-            + QByteArray::number(body_.size()) + QByteArrayLiteral("\r\nConnection: close\r\n\r\n") + body_;
+        QByteArray response = QByteArrayLiteral("HTTP/1.1 ") + QByteArray::number(statusCode_)
+            + ' ' + reason + QByteArrayLiteral("\r\nContent-Type: application/json\r\n");
+        if (includeContentLength_) {
+            response += QByteArrayLiteral("Content-Length: ") + QByteArray::number(body_.size())
+                + QByteArrayLiteral("\r\n");
+        }
+        response += QByteArrayLiteral("Connection: close\r\n\r\n") + body_;
         socket->write(response);
         socket->disconnectFromHost();
     }
@@ -87,6 +92,7 @@ private slots:
     void reportsHttpErrors();
     void reportsInvalidJson();
     void reportsTimeout();
+    void rejectsOversizedResponses();
     void ignoresFinishedSignalFromReplacedRequest();
 };
 
@@ -165,6 +171,30 @@ void UpdateCheckerTest::reportsTimeout()
 
     QTRY_COMPARE_WITH_TIMEOUT(checker.state(), UpdateChecker::State::Error, 2000);
     QVERIFY(checker.errorMessage().contains(QStringLiteral("超时")));
+}
+
+void UpdateCheckerTest::rejectsOversizedResponses()
+{
+    for (int scenario = 0; scenario < 2; ++scenario) {
+        HttpFixture fixture;
+        QVERIFY(fixture.listen());
+        QJsonObject object;
+        object.insert(QStringLiteral("tag_name"), QStringLiteral("v0.2.4"));
+        object.insert(QStringLiteral("html_url"),
+                      QStringLiteral("https://github.com/KevinTsoi2002/DouyuMonitor/releases/tag/v0.2.4"));
+        object.insert(QStringLiteral("draft"), false);
+        object.insert(QStringLiteral("prerelease"), false);
+        object.insert(QStringLiteral("untrusted_payload"), QString(2 * 1024 * 1024, QLatin1Char('x')));
+        fixture.body_ = QJsonDocument(object).toJson(QJsonDocument::Compact);
+        fixture.includeContentLength_ = scenario != 1;
+        UpdateChecker checker(QStringLiteral("0.2.3"), fixture.url(), 2000);
+
+        checker.check();
+
+        QTRY_COMPARE_WITH_TIMEOUT(checker.state(), UpdateChecker::State::Error, 4000);
+        QCOMPARE(checker.errorMessage(), QStringLiteral("更新信息过大"));
+        QVERIFY(checker.latestVersion().isEmpty());
+    }
 }
 
 void UpdateCheckerTest::ignoresFinishedSignalFromReplacedRequest()

@@ -1,0 +1,702 @@
+@charset "UTF-8";
+
+/* Round two keeps candidate C's geometry; palette changes only alter color. */
+body[data-scheme="c"] {
+  --radius: 3px;
+  --row-height: 54px;
+  --nav-width: 80px;
+  --video-bg: oklch(10% .008 175);
+  --video-surface: oklch(18% .015 175);
+  --video-text: oklch(96% .008 160);
+  --video-muted: oklch(82% .015 160);
+  --video-focus: oklch(86% .12 160);
+  background: var(--review-bg);
+  color: var(--text);
+}
+
+body[data-palette="c1"] {
+  color-scheme: dark;
+  --bg: oklch(18% .008 180);
+  --surface: oklch(22% .010 180);
+  --raised: oklch(26% .012 180);
+  --hover: oklch(30% .016 180);
+  --line: oklch(35% .015 180);
+  --control-line: oklch(55% .025 180);
+  --text: oklch(95% .008 170);
+  --muted: oklch(78% .018 170);
+  --subtle: oklch(72% .018 170);
+  --accent: oklch(81% .125 173);
+  --on-accent: oklch(19% .025 173);
+  --accent-soft: oklch(30% .035 173);
+  --live: oklch(81% .125 157);
+  --warning: oklch(84% .105 85);
+  --error: oklch(79% .12 25);
+  --review-bg: oklch(15% .008 180);
+  --review-line: oklch(35% .015 180);
+}
+
+body[data-palette="c2"] {
+  color-scheme: dark;
+  --bg: oklch(19% .024 145);
+  --surface: oklch(23% .030 145);
+  --raised: oklch(27% .035 145);
+  --hover: oklch(31% .040 145);
+  --line: oklch(37% .035 145);
+  --control-line: oklch(56% .045 145);
+  --text: oklch(96% .012 130);
+  --muted: oklch(80% .025 135);
+  --subtle: oklch(74% .028 135);
+  --accent: oklch(85% .140 135);
+  --on-accent: oklch(21% .035 145);
+  --accent-soft: oklch(31% .055 140);
+  --live: oklch(84% .140 145);
+  --warning: oklch(85% .105 85);
+  --error: oklch(79% .12 25);
+  --review-bg: oklch(16% .021 145);
+  --review-line: oklch(37% .035 145);
+}
+
+body[data-palette="c3"] {
+  color-scheme: light;
+  --bg: oklch(96% .009 130);
+  --surface: oklch(99% .004 130);
+  --raised: oklch(94% .013 130);
+  --hover: oklch(91% .020 130);
+  --line: oklch(81% .021 130);
+  --control-line: oklch(60% .030 140);
+  --text: oklch(26% .030 145);
+  --muted: oklch(43% .030 145);
+  --subtle: oklch(47% .027 145);
+  --accent: oklch(42% .090 145);
+  --on-accent: oklch(99% .004 130);
+  --accent-soft: oklch(90% .035 135);
+  --live: oklch(41% .095 150);
+  --warning: oklch(45% .085 75);
+  --error: oklch(47% .150 25);
+  --review-bg: oklch(92% .012 130);
+  --review-line: oklch(77% .021 130);
+}
+
+body[data-scheme="c"] .app-window,
+body[data-scheme="c"] .scheme-picker,
+body[data-scheme="c"] .scheme-choice,
+body[data-scheme="c"] .record-choice,
+body[data-scheme="c"] dialog {
+  border-radius: var(--radius);
+}
+
+body[data-scheme="c"] .review-kicker,
+body[data-scheme="c"] .review-brand small,
+body[data-scheme="c"] .scheme-choice small,
+body[data-scheme="c"] .review-footer {
+  color: var(--muted);
+}
+
+body[data-scheme="c"] .scheme-picker {
+  background: var(--surface);
+}
+
+body[data-scheme="c"] .scheme-choice:hover {
+  background: var(--hover);
+}
+
+body[data-scheme="c"] .scheme-choice[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+body[data-scheme="c"] .scheme-letter,
+body[data-scheme="c"] .review-footer button {
+  color: var(--text);
+}
+
+body[data-scheme="c"] .record-choice {
+  color: var(--on-accent);
+  background: var(--accent);
+}
+
+body[data-scheme="c"] .review-footer #saved-preference {
+  color: var(--accent);
+}
+
+.swatches-c1 {
+  background: linear-gradient(oklch(22% .010 180) 50%, oklch(81% .125 173) 50%);
+}
+
+.swatches-c2 {
+  background: linear-gradient(oklch(23% .030 145) 50%, oklch(85% .140 135) 50%);
+}
+
+.swatches-c3 {
+  background: linear-gradient(oklch(99% .004 130) 50%, oklch(42% .090 145) 50%);
+}
+
+body[data-scheme="c"] .app-nav {
+  --nav-width: 80px;
+  width: var(--nav-width);
+}
+
+body[data-scheme="c"] :is(.search, .select, .icon-button, .button:not(.primary):not(.subtle)) {
+  border-color: var(--control-line);
+}
+
+body[data-scheme="c"] :is(button, a, input, select, textarea):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+body[data-scheme="c"] .select {
+  color-scheme: inherit;
+}
+
+body[data-palette="c3"] .member-avatar[data-tone] {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--line);
+}
+
+/* The stage is the whole available content area. Overlays never reserve tracks. */
+body[data-scheme="c"] #page-content:has(> .watch-page) {
+  overflow: hidden;
+}
+
+body[data-scheme="c"] .watch-page {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+body[data-scheme="c"] .watch-stage {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  isolation: isolate;
+  background: var(--video-bg);
+}
+
+body[data-scheme="c"] .watch-stage > .video-grid {
+  position: absolute;
+  inset: 6px;
+  gap: 5px;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 23%);
+  grid-template-rows: repeat(3, minmax(0, 1fr));
+}
+
+body[data-scheme="c"] .video-grid[data-layout="主画面 + 侧列"] {
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 23%);
+  grid-template-rows: repeat(3, minmax(0, 1fr));
+}
+
+body[data-scheme="c"] .video-grid .main-video,
+body[data-scheme="c"] .video-grid[data-layout="主画面 + 侧列"] .main-video {
+  grid-column: 1;
+  grid-row: 1 / 4;
+}
+
+body[data-scheme="c"] .video-grid[data-layout="主画面 + 底列"] {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: minmax(0, 1fr) minmax(0, 30%);
+}
+
+body[data-scheme="c"] .video-grid[data-layout="主画面 + 底列"] .main-video {
+  grid-column: 1 / 4;
+  grid-row: 1;
+}
+
+body[data-scheme="c"] .video-grid[data-layout="等分网格"] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+}
+
+body[data-scheme="c"] .video-grid[data-layout="等分网格"] .main-video {
+  grid-column: auto;
+  grid-row: auto;
+}
+
+body[data-scheme="c"] .video-tile {
+  position: relative;
+  border-color: oklch(30% .015 170);
+  background: var(--video-bg);
+  color: var(--video-text);
+}
+
+body[data-scheme="c"] .video-tile:focus-visible {
+  outline: 2px solid var(--video-focus);
+  outline-offset: -3px;
+}
+
+body[data-scheme="c"] .video-scene {
+  position: absolute;
+  inset: 0;
+  min-width: 0;
+  min-height: 0;
+  background: var(--video-bg);
+}
+
+/* SVG preserveAspectRatio remains xMidYMid meet: no image cropping or stretching. */
+body[data-scheme="c"] .video-scene > svg {
+  width: 100%;
+  height: 100%;
+}
+
+body[data-scheme="c"] .video-scene::after {
+  background: none;
+}
+
+body[data-scheme="c"] .video-heading,
+body[data-scheme="c"] .video-tile:not(.main-video) .video-heading {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: 3;
+  height: 32px;
+  padding: 0 10px;
+  font-size: 11px;
+  color: var(--video-text);
+  background: var(--video-surface);
+  visibility: hidden;
+  pointer-events: none;
+}
+
+body[data-scheme="c"] .video-heading b {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+body[data-scheme="c"] .video-heading small {
+  color: var(--video-muted);
+  white-space: nowrap;
+}
+
+body[data-scheme="c"] .video-controls,
+body[data-scheme="c"] .video-tile:not(.main-video) .video-controls {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  left: 0;
+  z-index: 3;
+  display: flex;
+  gap: 5px;
+  min-height: 38px;
+  padding: 4px 6px;
+  color: var(--video-text);
+  background: var(--video-surface);
+  visibility: hidden;
+  pointer-events: none;
+}
+
+body[data-scheme="c"] .video-tile:is(:hover, :focus-within) :is(.video-heading, .video-controls) {
+  visibility: visible;
+}
+
+body[data-scheme="c"] .video-tile:is(:hover, :focus-within) .video-controls {
+  pointer-events: auto;
+}
+
+body[data-scheme="c"] .video-controls button {
+  justify-content: center;
+  min-width: 28px;
+  min-height: 28px;
+  flex: none;
+  border-radius: var(--radius);
+  color: var(--video-text);
+  padding: 4px;
+}
+
+body[data-scheme="c"] .video-controls button:hover {
+  background: oklch(33% .025 170);
+}
+
+body[data-scheme="c"] .video-controls button:focus-visible {
+  outline-color: var(--video-focus);
+  outline-offset: -2px;
+}
+
+body[data-scheme="c"] .video-controls button[aria-pressed="true"] {
+  color: var(--video-focus);
+}
+
+body[data-scheme="c"] .video-tile:not(.main-video) :is(.video-volume, [data-action="quality"], .video-heading small) {
+  display: none;
+}
+
+body[data-scheme="c"] .video-tile:not(.main-video) [data-action="room-menu"] {
+  margin-left: auto;
+}
+
+body[data-scheme="c"] .scene-caption {
+  max-width: calc(100% - 24px);
+  margin-bottom: 16px;
+  padding: 4px 8px;
+  color: var(--video-text);
+  background: oklch(10% .008 175 / .88);
+  border-radius: var(--radius);
+  pointer-events: none;
+}
+
+body[data-scheme="c"] .scene-caption b {
+  font-size: 13px;
+}
+
+body[data-scheme="c"] .video-tile:not(.main-video) .scene-caption {
+  display: none;
+}
+
+body[data-scheme="c"] .watch-watermark {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  z-index: 2;
+  padding: 3px 6px;
+  font-size: 10px;
+  color: var(--video-muted);
+  background: var(--video-surface);
+  border-radius: var(--radius);
+  pointer-events: none;
+}
+
+body[data-scheme="c"] .watch-dock {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  z-index: 5;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 44px;
+  max-width: calc(100% - 24px);
+  padding: 4px;
+  border: 1px solid var(--control-line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 4px 18px oklch(0% 0 0 / .22);
+}
+
+body[data-scheme="c"] .dock-main {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+body[data-scheme="c"] .dock-main::-webkit-scrollbar {
+  display: none;
+}
+
+body[data-scheme="c"] .watch-dock[data-collapsed="true"] .dock-main {
+  display: none;
+}
+
+body[data-scheme="c"] .watch-dock .button {
+  min-height: 32px;
+  height: 32px;
+  padding: 4px 9px;
+  flex: none;
+  gap: 6px;
+  font-size: 11px;
+  border-color: transparent;
+  background: transparent;
+}
+
+body[data-scheme="c"] .watch-dock .button:is(:hover, [aria-expanded="true"], [aria-pressed="true"]) {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+body[data-scheme="c"] .watch-dock .button:focus-visible {
+  outline-offset: -2px;
+}
+
+body[data-scheme="c"] .watch-dock .dock-toggle {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+body[data-scheme="c"] .watch-dock svg {
+  width: 16px;
+  height: 16px;
+}
+
+body[data-scheme="c"] .layout-options {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  margin: 16px 0;
+}
+
+body[data-scheme="c"] .layout-options .button {
+  width: 100%;
+  min-height: 44px;
+  justify-content: flex-start;
+  white-space: normal;
+  text-align: left;
+}
+
+body[data-scheme="c"] .layout-options .button[aria-pressed="true"] {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+body[data-scheme="c"] .immersion-exit {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  z-index: 5;
+  min-height: 32px;
+  padding: 4px 9px;
+  font-size: 11px;
+}
+
+body[data-scheme="c"] .immersion-exit[hidden] {
+  display: none !important;
+}
+
+body[data-scheme="c"] .immersion-exit kbd {
+  font: inherit;
+  color: var(--muted);
+}
+
+/* Native dialog stays in the top layer; drawer coordinates come from the stage. */
+body[data-scheme="c"] dialog {
+  overflow: hidden;
+}
+
+body[data-scheme="c"] dialog::backdrop {
+  background: oklch(10% .010 170 / .26);
+}
+
+body[data-scheme="c"] dialog :is(#dialog-content, .dialog-content) {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  max-height: inherit;
+}
+
+body[data-scheme="c"] dialog :is(.dialog-header, .dialog-actions) {
+  flex: none;
+}
+
+body[data-scheme="c"] dialog .dialog-body {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: var(--control-line) var(--surface);
+  scrollbar-width: thin;
+}
+
+body[data-scheme="c"] dialog[data-presentation="drawer"] {
+  position: fixed;
+  top: var(--drawer-top, 8px);
+  right: var(--drawer-right, 8px);
+  bottom: var(--drawer-bottom, 8px);
+  left: auto;
+  width: min(360px, calc(100vw - 24px));
+  height: auto;
+  min-height: 0;
+  max-height: none;
+  margin: 0;
+  box-shadow: -8px 0 28px oklch(0% 0 0 / .22);
+}
+
+body[data-scheme="c"] dialog[data-presentation="drawer"][open] {
+  display: flex;
+}
+
+body[data-scheme="c"] dialog[data-presentation="drawer"] :is(#dialog-content, .dialog-content) {
+  flex: 1;
+}
+
+body[data-scheme="c"] dialog[data-presentation="drawer"] .dialog-header {
+  padding: 18px 18px 14px;
+  gap: 12px;
+}
+
+body[data-scheme="c"] dialog[data-presentation="drawer"] .dialog-header h2 {
+  font-size: 17px;
+}
+
+body[data-scheme="c"] dialog[data-presentation="drawer"] .dialog-body {
+  flex: 1;
+  padding: 16px 18px;
+}
+
+body[data-scheme="c"] dialog[data-presentation="drawer"] .dialog-actions {
+  padding: 12px 18px 16px;
+  border-top: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+
+body[data-scheme="c"] dialog[data-presentation="drawer"] .setting-row {
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  padding: 16px 0;
+}
+
+body[data-scheme="c"] dialog[data-presentation="drawer"] .setting-row > div:first-child {
+  flex: 1 1 150px;
+  min-width: 0;
+}
+
+body[data-scheme="c"] dialog[data-presentation="drawer"] :is(.select, .segmented, .watch-room) {
+  min-width: 0;
+  max-width: 100%;
+}
+
+body[data-scheme="c"] dialog[data-presentation="drawer"] .segmented {
+  flex-wrap: wrap;
+}
+
+/* Immersion is gated by the actual watch page, even if a stale class is present. */
+body[data-scheme="c"].immersive:has(.watch-page) {
+  overflow: hidden;
+}
+
+body[data-scheme="c"].immersive:has(.watch-page) .app-window {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  z-index: 10;
+}
+
+body[data-scheme="c"].immersive:has(.watch-page) :is(.review-bar, .review-footer, .app-nav, .titlebar, .app-status) {
+  display: none;
+}
+
+body[data-scheme="c"].immersive:has(.watch-page) .video-grid {
+  inset: 3px;
+  gap: 3px;
+}
+
+body[data-scheme="c"].immersive:has(.watch-page) .watch-watermark {
+  right: auto;
+  left: 16px;
+}
+
+@media (max-width: 1100px) {
+  body[data-scheme="c"] .app-window {
+    height: calc(100vh - 180px);
+    min-height: 480px;
+  }
+
+  body[data-scheme="c"] .watch-stage > .video-grid,
+  body[data-scheme="c"] .video-grid[data-layout="主画面 + 侧列"] {
+    grid-template-columns: minmax(0, 1fr) minmax(150px, 25%);
+  }
+
+  body[data-scheme="c"] .video-grid[data-layout="主画面 + 底列"] {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  body[data-scheme="c"] .video-grid[data-layout="等分网格"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  body[data-scheme="c"] .watch-dock .button {
+    padding-inline: 7px;
+    gap: 5px;
+  }
+}
+
+@media (max-width: 700px) {
+  body[data-scheme="c"] .app-body {
+    flex-direction: row;
+  }
+
+  body[data-scheme="c"] .app-nav {
+    width: 80px;
+    padding: 12px 7px 8px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    border-right: 1px solid var(--line);
+    border-bottom: 0;
+  }
+
+  body[data-scheme="c"] .nav-main {
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  body[data-scheme="c"] .nav-item,
+  body[data-scheme="c"] .nav-bottom .nav-item {
+    width: 100%;
+    min-height: 54px;
+    padding: 7px 2px;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 10px;
+  }
+
+  body[data-scheme="c"] .nav-bottom {
+    display: block;
+    margin: auto 0 0;
+  }
+
+  body[data-scheme="c"] .nav-bottom .nav-item > span:last-child {
+    display: inline;
+  }
+
+  body[data-scheme="c"] .watch-stage > .video-grid,
+  body[data-scheme="c"] .video-grid[data-layout="主画面 + 侧列"] {
+    inset: 3px;
+    gap: 3px;
+    grid-template-columns: minmax(0, 1fr) minmax(112px, 38%);
+  }
+
+  body[data-scheme="c"] .video-grid[data-layout="主画面 + 底列"] {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  body[data-scheme="c"] .video-grid[data-layout="等分网格"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  body[data-scheme="c"] .video-controls,
+  body[data-scheme="c"] .video-tile:not(.main-video) .video-controls {
+    gap: 1px;
+    padding: 3px 2px;
+    flex-wrap: wrap;
+  }
+
+  body[data-scheme="c"] .video-controls button {
+    min-width: 25px;
+    padding: 3px;
+  }
+
+  body[data-scheme="c"] .video-controls :is(.video-volume, [data-action="quality"]) {
+    display: none;
+  }
+
+  body[data-scheme="c"] .watch-dock {
+    bottom: 8px;
+    max-width: calc(100% - 12px);
+  }
+
+  body[data-scheme="c"] .watch-watermark {
+    top: 8px;
+    right: 8px;
+    font-size: 9px;
+  }
+
+  body[data-scheme="c"] .scene-caption {
+    display: none;
+  }
+
+  body[data-scheme="c"] .immersion-exit {
+    top: 8px;
+    right: 8px;
+  }
+}

@@ -7,6 +7,7 @@
 #include <QMutexLocker>
 #include <QOpenGLContext>
 #include <QOpenGLFramebufferObject>
+#include <QPointer>
 #include <QQuickOpenGLUtils>
 #include <QQuickWindow>
 #include <QRunnable>
@@ -29,6 +30,7 @@ constexpr qint64 kRemoteProgressStallMs = 30'000;
 std::atomic_uint64_t g_teardownSequence = 0;
 std::atomic_uint64_t g_lastRenderContextReleaseSequence = 0;
 std::atomic_uint64_t g_lastCoreTeardownSequence = 0;
+std::atomic_bool g_failNextRenderContextCreation = false;
 #endif
 
 void *getProcAddress(void *, const char *name)
@@ -47,6 +49,9 @@ QString safeErrorLabelForCode(const QString &errorCode)
     }
     if (errorCode == QStringLiteral("PLAYER_UNAVAILABLE")) {
         return QStringLiteral("播放器不可用");
+    }
+    if (errorCode == QStringLiteral("RENDER_CONTEXT_FAILED")) {
+        return QStringLiteral("视频渲染初始化失败");
     }
     if (errorCode == QStringLiteral("LOAD_FAILED")) {
         return QStringLiteral("播放地址不可用");
@@ -109,6 +114,31 @@ struct MpvQuickItem::MpvRenderState : std::enable_shared_from_this<MpvRenderStat
                                   Qt::QueuedConnection);
     }
 
+    void notifyRenderContextFailed()
+    {
+        QMutexLocker locker(&itemMutex_);
+        if (!acceptUpdates.load() || item_ == nullptr) return;
+        QMetaObject::invokeMethod(item_, &MpvQuickItem::notifyRenderContextFailed,
+                                  Qt::QueuedConnection);
+    }
+
+    void requestPlaybackStarted()
+    {
+        if (!acceptUpdates.load() || playbackStartedQueued.exchange(true)) return;
+
+        const quint64 generation = playbackGeneration.load();
+
+        QMutexLocker locker(&itemMutex_);
+        if (!acceptUpdates.load() || item_ == nullptr) {
+            playbackStartedQueued.store(false);
+            return;
+        }
+        const QPointer<MpvQuickItem> item = item_;
+        QMetaObject::invokeMethod(item_, [item, generation] {
+            if (item != nullptr) item->notifyPlaybackStarted(generation);
+        }, Qt::QueuedConnection);
+    }
+
     void releaseRenderContextOnRenderThread()
     {
         mpv_render_context *context = renderContext.exchange(nullptr);
@@ -117,6 +147,10 @@ struct MpvQuickItem::MpvRenderState : std::enable_shared_from_this<MpvRenderStat
         mpv_render_context_set_update_callback(context, nullptr, nullptr);
         mpv_render_context_free(context);
         renderContextReady.store(false);
+        // A scene-graph context loss invalidates the previous presentation.
+        // Keep media state and the monotonic frame sequence, but require a
+        // newly presented frame before reporting recovery to callers.
+        firstFrameRendered.store(false);
 #ifdef DOUYU_TESTING
         g_lastRenderContextReleaseSequence.store(++g_teardownSequence);
 #endif
@@ -158,8 +192,12 @@ struct MpvQuickItem::MpvRenderState : std::enable_shared_from_this<MpvRenderStat
     std::atomic_bool acceptUpdates = true;
     std::atomic_bool frameUpdateQueued = false;
     std::atomic_bool eventDrainQueued = false;
+    std::atomic_bool playbackStartedQueued = false;
+    std::atomic_uint64_t playbackGeneration = 0;
     std::atomic_bool wakeupCallbackRegistered = false;
     std::atomic_bool renderContextReady = false;
+    std::atomic_bool renderContextFailed = false;
+    std::atomic_bool renderContextFailureNotified = false;
     std::atomic_bool renderingSuspended = false;
     std::atomic_bool mediaLoaded = false;
     std::atomic_bool videoConfigured = false;
@@ -201,6 +239,13 @@ public:
         if (state_ != nullptr) state_->rendererAttached.store(true);
     }
 
+#ifdef DOUYU_TESTING
+    void renderForTest()
+    {
+        render();
+    }
+#endif
+
     void render() override
     {
         if (state_ == nullptr || state_->teardownRequested.load()) return;
@@ -236,9 +281,13 @@ public:
                 && !(frameInfo.flags & (MPV_RENDER_FRAME_INFO_REDRAW | MPV_RENDER_FRAME_INFO_REPEAT))) {
                 ++state_->videoFrameSequence;
             }
+            // A successful render call writes the current decoded image into
+            // the current FBO. This also covers a context rebuild where mpv
+            // has no newly queued frame but still has the last image ready.
             state_->firstFrameRendered.store(true);
             if (state_->playbackState.load() == PlaybackState::Loading) {
                 state_->playbackState.store(PlaybackState::Playing);
+                state_->requestPlaybackStarted();
             }
         }
     }
@@ -247,11 +296,20 @@ private:
     void initializeRenderContext()
     {
         if (state_ == nullptr || state_->renderContext.load() != nullptr
-            || state_->teardownRequested.load()) {
+            || state_->teardownRequested.load() || state_->renderContextFailed.load()) {
             return;
         }
         mpv_handle *mpv = state_->handle.load();
         if (mpv == nullptr) return;
+
+#ifdef DOUYU_TESTING
+        if (g_failNextRenderContextCreation.exchange(false)) {
+            state_->renderContextFailed.store(true);
+            state_->playbackState.store(PlaybackState::Error);
+            state_->notifyRenderContextFailed();
+            return;
+        }
+#endif
 
         mpv_opengl_init_params glInitParams{
             .get_proc_address = getProcAddress,
@@ -265,7 +323,9 @@ private:
         };
         mpv_render_context *context = nullptr;
         if (mpv_render_context_create(&context, mpv, params) < 0) {
+            state_->renderContextFailed.store(true);
             state_->playbackState.store(PlaybackState::Error);
+            state_->notifyRenderContextFailed();
             return;
         }
 
@@ -274,6 +334,10 @@ private:
                                                state_.get());
         state_->renderContextReady.store(true);
         state_->notifyRenderContextReady();
+        // A newly created libmpv context may not emit an update callback for
+        // the frame already held by the decoder. Schedule one scene-graph
+        // pass so the restored context can present that frame immediately.
+        state_->requestFrame();
     }
 
     std::shared_ptr<MpvRenderState> state_;
@@ -400,6 +464,8 @@ bool MpvQuickItem::loadSource(const MediaSource &source)
     renderState_->mediaLoaded.store(false);
     renderState_->videoConfigured.store(false);
     renderState_->firstFrameRendered.store(false);
+    renderState_->playbackStartedQueued.store(false);
+    ++renderState_->playbackGeneration;
     renderState_->playbackState.store(PlaybackState::Loading);
     remotePlayback_ = source.kind() == MediaSource::Kind::RemoteStream;
     lastObservedTimePos_.reset();
@@ -456,6 +522,11 @@ void MpvQuickItem::release()
         stop();
     }
     resetMediaState(PlaybackState::Idle);
+    if (renderState_ != nullptr) {
+        renderState_->playbackStartedQueued.store(false);
+        renderState_->renderContextFailed.store(false);
+        renderState_->renderContextFailureNotified.store(false);
+    }
     remotePlayback_ = false;
     lastObservedTimePos_.reset();
     pendingProgressRequestId_ = 0;
@@ -607,6 +678,17 @@ void MpvQuickItem::scheduleCoreTeardown()
 }
 
 #ifdef DOUYU_TESTING
+void MpvQuickItem::failNextRenderContextCreationForTest()
+{
+    g_failNextRenderContextCreation.store(true);
+}
+
+void MpvQuickItem::renderForTest()
+{
+    std::unique_ptr<MpvRenderer> renderer(static_cast<MpvRenderer *>(createRenderer()));
+    renderer->renderForTest();
+}
+
 void MpvQuickItem::resetTeardownObservationForTest()
 {
     g_teardownSequence.store(0);
@@ -658,6 +740,26 @@ void MpvQuickItem::requestFrame()
 void MpvQuickItem::notifyRenderContextReady()
 {
     if (isRenderContextReady()) emit renderContextReady();
+}
+
+void MpvQuickItem::notifyRenderContextFailed()
+{
+    if (renderState_ == nullptr || !renderState_->renderContextFailed.load()) return;
+    if (renderState_->renderContextFailureNotified.exchange(true)) return;
+    errorCode_ = QStringLiteral("RENDER_CONTEXT_FAILED");
+    emit renderContextFailed(errorCode_);
+}
+
+void MpvQuickItem::notifyPlaybackStarted(quint64 generation)
+{
+    if (renderState_ == nullptr) return;
+    renderState_->playbackStartedQueued.store(false);
+    if (generation != renderState_->playbackGeneration.load()
+        || renderState_->playbackState.load() != PlaybackState::Playing
+        || !renderState_->firstFrameRendered.load()) {
+        return;
+    }
+    emit playbackStarted();
 }
 
 void MpvQuickItem::pollMpvEvents()

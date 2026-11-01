@@ -34,6 +34,7 @@ public:
                        std::unique_ptr<DanmakuSocket> socket,
                        DanmakuTimerScheduler *scheduler,
                        QObject *parent = nullptr);
+    ~DouyuDanmakuClient() override;
 
     void start() override;
     void stop() override;
@@ -45,13 +46,18 @@ private:
     void cancelTimers();
     void sendLoginAndJoin();
     void sendHeartbeat();
-    void handleFrame(const QByteArray &frame);
-    void handleSocketFailure();
-    void handleClosed(int code, const QString &reason);
-    void handleAuthenticationRequested();
-    void handleHandshakeTimeout();
-    void scheduleRetry(DanmakuErrorCode errorCode);
-    void markConnected();
+    void handleFrame(const QByteArray &frame, quint64 attemptId);
+    void continueFrameDispatch(quint64 attemptId);
+    bool processDecodedFrames(const QStringList &frames, quint64 attemptId);
+    void scheduleFrameDispatch(quint64 attemptId);
+    void handleSocketFailure(quint64 attemptId);
+    void handleClosed(int code, const QString &reason, quint64 attemptId);
+    void handleAuthenticationRequested(quint64 attemptId);
+    void handleConnectionTimeout(quint64 attemptId);
+    void handleHandshakeTimeout(quint64 attemptId);
+    void scheduleRetry(DanmakuErrorCode errorCode, quint64 attemptId);
+    void markConnected(quint64 attemptId);
+    bool isCurrentAttempt(quint64 attemptId) const;
     void setStatus(DanmakuConnectionState state, DanmakuErrorCode errorCode = DanmakuErrorCode::None);
     bool isAuthenticationClose(int code, const QString &reason) const;
 
@@ -61,15 +67,19 @@ private:
     DanmakuConnectionStatus status_;
     DanmakuConnectionState stateBeforeStop_ = DanmakuConnectionState::Idle;
     DouyuDanmakuProtocol::FrameDecoder decoder_;
+    DanmakuTimerScheduler::TimerId connectionTimerId_ = 0;
     DanmakuTimerScheduler::TimerId handshakeTimerId_ = 0;
     DanmakuTimerScheduler::TimerId heartbeatTimerId_ = 0;
     DanmakuTimerScheduler::TimerId retryTimerId_ = 0;
     DanmakuTimerScheduler::TimerId stableTimerId_ = 0;
+    DanmakuTimerScheduler::TimerId frameDispatchTimerId_ = 0;
     int retryAttempt_ = 0;
     int endpointIndex_ = 0;
     bool running_ = false;
     bool platformBlocked_ = false;
     bool handshakeComplete_ = false;
+    quint64 nextAttemptId_ = 0;
+    quint64 activeAttemptId_ = 0;
 };
 
 using DanmakuClientFactory = std::function<std::unique_ptr<DanmakuClient>(

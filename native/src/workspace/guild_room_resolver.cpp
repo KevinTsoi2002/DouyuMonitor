@@ -364,6 +364,13 @@ bool GuildRoomResolver::handleResponse(const ServiceResponse &response)
     const GuildMember member = members_.value(memberId);
     if (!response.ok || (statusOnly ? !response.status : !response.search)) {
         if (metadataRefresh) {
+            if (statusOnly && !response.ok
+                && response.errorCode == QStringLiteral("SERVICE_FAILED")) {
+                const QString unknown = QStringLiteral("unknown");
+                liveStates_.insert(memberId, unknown);
+                updateCacheLiveState(memberId, unknown);
+                emit memberChanged(memberId);
+            }
             scheduleNextRequest(kRequestSpacingMs);
             return true;
         }

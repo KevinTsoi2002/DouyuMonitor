@@ -1,6 +1,7 @@
 import QtQuick
-import QtQuick.Controls
+import QtQuick.Controls.Basic
 import ".."
+import "../controls"
 
 Dialog {
     id: root
@@ -8,25 +9,64 @@ Dialog {
     objectName: "notificationSettingsDialog"
     property var controller: null
     property var monitoringModel: null
-    readonly property var preferences: controller ? controller.notificationPreferences : fallbackPreferences
+    readonly property var preferences: controller && controller.notificationPreferences
+                                       ? controller.notificationPreferences : fallbackPreferences
     modal: true
     title: "Windows 通知"
-    width: 360
+    width: Math.min(420, parent ? parent.width - 32 : 420)
     padding: 16
+    height: Math.min(implicitHeight, parent ? parent.height - 32 : implicitHeight)
     anchors.centerIn: parent
-    palette.window: Theme.controlSurface
-    palette.base: Theme.well
-    palette.button: Theme.controlSurface
-    palette.buttonText: Theme.text
-    palette.text: Theme.text
-    palette.windowText: Theme.text
-    palette.highlight: Theme.accent
-    palette.highlightedText: Theme.text
+    palette {
+        window: Theme.managementSurface
+        base: Theme.well
+        alternateBase: Theme.controlSurface
+        light: Theme.controlHover
+        midlight: Theme.controlSurface
+        mid: Theme.border
+        dark: Theme.mutedText
+        shadow: Theme.canvas
+        toolTipBase: Theme.controlSurface
+        toolTipText: Theme.text
+        link: Theme.accent
+        linkVisited: Theme.mutedText
+        active {
+            windowText: Theme.text
+            text: Theme.text
+            button: Theme.controlSurface
+            buttonText: Theme.text
+            brightText: Theme.text
+            highlight: Theme.accent
+            highlightedText: Theme.accentText
+            placeholderText: Theme.mutedText
+        }
+        inactive {
+            windowText: Theme.text
+            text: Theme.text
+            button: Theme.controlSurface
+            buttonText: Theme.text
+            brightText: Theme.text
+            highlight: Theme.accent
+            highlightedText: Theme.accentText
+            placeholderText: Theme.mutedText
+        }
+        disabled {
+            windowText: Theme.disabledText
+            text: Theme.disabledText
+            button: Theme.controlDisabled
+            buttonText: Theme.disabledText
+            brightText: Theme.disabledText
+            highlightedText: Theme.disabledText
+            highlight: Theme.borderStrong
+            placeholderText: Theme.disabledText
+        }
+    }
+    onOpened: enabledCheckBox.forceActiveFocus()
 
     background: Rectangle {
-        color: Theme.controlSurface
+        color: Theme.managementSurface
         border.color: Theme.border
-        radius: Theme.radiusLarge
+        radius: Theme.radiusSmall
     }
 
     function savePreferences() {
@@ -58,9 +98,9 @@ Dialog {
             text: root.title
             color: Theme.text
             font.bold: true
-            font.pixelSize: 16
+            font.pixelSize: Theme.fontHeading
         }
-        ToolButton {
+        ConsoleToolButton {
             objectName: "closeNotificationSettingsButton"
             anchors.right: parent.right
             anchors.rightMargin: 10
@@ -68,141 +108,90 @@ Dialog {
             width: Theme.controlHeight
             height: Theme.controlHeight
             Accessible.name: "关闭通知设置"
-            ToolTip.visible: hovered
             ToolTip.text: Accessible.name
             onClicked: root.close()
-            contentItem: Image {
-                anchors.centerIn: parent
-                width: 14
-                height: 14
-                source: Qt.resolvedUrl("../assets/icons/x.svg")
-                opacity: parent.hovered ? 1 : 0.78
-            }
-            background: Rectangle {
-                radius: Theme.radiusSmall
-                color: parent.down ? Theme.well : (parent.hovered ? Theme.well : "transparent")
-            }
+            icon.source: Qt.resolvedUrl("../assets/icons/x.svg")
         }
     }
 
     contentItem: Column {
-        spacing: 12
-        CheckBox {
+        spacing: 4
+        ConsoleCheckBox {
+            width: parent.width
+            height: 36
             id: enabledCheckBox
             objectName: "notificationEnabledCheckBox"
             text: "启用 Windows 通知"
             checked: root.preferences.enabled
             enabled: root.controller !== null
             onClicked: root.savePreferences()
-            contentItem: Text {
-                objectName: "notificationEnabledLabel"
-                text: parent.text
-                color: Theme.text
-                verticalAlignment: Text.AlignVCenter
-                leftPadding: 14
-                font.pixelSize: 12
-            }
-            indicator: Rectangle {
-                implicitWidth: 18
-                implicitHeight: 18
-                x: 0
-                y: (parent.height - height) / 2
-                radius: 4
-                color: parent.checked ? Theme.accent : Theme.well
-                border.color: parent.checked ? Theme.accent : Theme.borderStrong
-                border.width: 1
-                Rectangle {
-                    visible: parent.parent.checked
-                    anchors.centerIn: parent
-                    width: 8
-                    height: 4
-                    color: "transparent"
-                    border.color: Theme.text
-                    border.width: 2
-                    rotation: -45
-                }
-            }
+            contentItem.objectName: "notificationEnabledLabel"
         }
-        CheckBox {
+        Rectangle { width: parent.width; height: 1; color: Theme.border }
+        Text { text: "通知事件"; color: Theme.mutedText; font.pixelSize: Theme.fontCaption }
+        ConsoleCheckBox {
+            width: parent.width
+            height: 36
             id: roomOnlineCheckBox
             objectName: "notificationRoomOnlineCheckBox"
             text: "开播"
             checked: root.preferences.roomOnline
             enabled: enabledCheckBox.checked && root.controller !== null
             onClicked: root.savePreferences()
-            contentItem: Text { text: parent.text; color: Theme.text; verticalAlignment: Text.AlignVCenter; leftPadding: 14; font.pixelSize: 12 }
-            indicator: Rectangle {
-                implicitWidth: 18; implicitHeight: 18; x: 0; y: (parent.height - height) / 2
-                radius: 4; color: parent.checked ? Theme.accent : Theme.well
-                border.color: parent.checked ? Theme.accent : Theme.borderStrong
-                Rectangle { visible: parent.parent.checked; anchors.centerIn: parent; width: 8; height: 4; color: "transparent"; border.color: Theme.text; border.width: 2; rotation: -45 }
-            }
         }
-        CheckBox {
+        ConsoleCheckBox {
+            width: parent.width
+            height: 36
             id: roomOfflineCheckBox
             objectName: "notificationRoomOfflineCheckBox"
             text: "下播"
             checked: root.preferences.roomOffline
             enabled: enabledCheckBox.checked && root.controller !== null
             onClicked: root.savePreferences()
-            contentItem: Text { text: parent.text; color: Theme.text; verticalAlignment: Text.AlignVCenter; leftPadding: 14; font.pixelSize: 12 }
-            indicator: Rectangle {
-                implicitWidth: 18; implicitHeight: 18; x: 0; y: (parent.height - height) / 2
-                radius: 4; color: parent.checked ? Theme.accent : Theme.well
-                border.color: parent.checked ? Theme.accent : Theme.borderStrong
-                Rectangle { visible: parent.parent.checked; anchors.centerIn: parent; width: 8; height: 4; color: "transparent"; border.color: Theme.text; border.width: 2; rotation: -45 }
-            }
         }
-        CheckBox {
+        ConsoleCheckBox {
+            width: parent.width
+            height: 36
             id: playbackFailedCheckBox
             objectName: "notificationPlaybackFailedCheckBox"
             text: "播放异常"
             checked: root.preferences.playbackFailed
             enabled: enabledCheckBox.checked && root.controller !== null
             onClicked: root.savePreferences()
-            contentItem: Text { text: parent.text; color: Theme.text; verticalAlignment: Text.AlignVCenter; leftPadding: 14; font.pixelSize: 12 }
-            indicator: Rectangle {
-                implicitWidth: 18; implicitHeight: 18; x: 0; y: (parent.height - height) / 2
-                radius: 4; color: parent.checked ? Theme.accent : Theme.well
-                border.color: parent.checked ? Theme.accent : Theme.borderStrong
-                Rectangle { visible: parent.parent.checked; anchors.centerIn: parent; width: 8; height: 4; color: "transparent"; border.color: Theme.text; border.width: 2; rotation: -45 }
-            }
         }
-        CheckBox {
+        ConsoleCheckBox {
+            width: parent.width
+            height: 36
             id: playbackRecoveredCheckBox
             objectName: "notificationPlaybackRecoveredCheckBox"
             text: "播放恢复"
             checked: root.preferences.playbackRecovered
             enabled: enabledCheckBox.checked && root.controller !== null
             onClicked: root.savePreferences()
-            contentItem: Text { text: parent.text; color: Theme.text; verticalAlignment: Text.AlignVCenter; leftPadding: 14; font.pixelSize: 12 }
-            indicator: Rectangle {
-                implicitWidth: 18; implicitHeight: 18; x: 0; y: (parent.height - height) / 2
-                radius: 4; color: parent.checked ? Theme.accent : Theme.well
-                border.color: parent.checked ? Theme.accent : Theme.borderStrong
-                Rectangle { visible: parent.parent.checked; anchors.centerIn: parent; width: 8; height: 4; color: "transparent"; border.color: Theme.text; border.width: 2; rotation: -45 }
-            }
         }
-        CheckBox {
+        ConsoleCheckBox {
+            width: parent.width
+            height: 36
             id: favoriteTitleCheckBox
             objectName: "notificationFavoriteTitleCheckBox"
             text: "收藏标题变化"
             checked: root.preferences.favoriteTitleChanged
             enabled: enabledCheckBox.checked && root.controller !== null
             onClicked: root.savePreferences()
-            contentItem: Text { text: parent.text; color: Theme.text; verticalAlignment: Text.AlignVCenter; leftPadding: 14; font.pixelSize: 12 }
-            indicator: Rectangle {
-                implicitWidth: 18; implicitHeight: 18; x: 0; y: (parent.height - height) / 2
-                radius: 4; color: parent.checked ? Theme.accent : Theme.well
-                border.color: parent.checked ? Theme.accent : Theme.borderStrong
-                Rectangle { visible: parent.parent.checked; anchors.centerIn: parent; width: 8; height: 4; color: "transparent"; border.color: Theme.text; border.width: 2; rotation: -45 }
-            }
         }
         Text {
+            objectName: "notificationStatusDescription"
             width: parent.width
-            text: enabledCheckBox.checked ? "当前会将状态变化发送到 Windows 通知中心" : "Windows 通知已关闭"
+            text: {
+                if (!enabledCheckBox.checked) return "Windows 通知已关闭"
+                if (root.monitoringModel
+                    && root.monitoringModel.notificationStatus === "unavailable") {
+                    return "Windows 通知后端不可用"
+                }
+                return "当前会将状态变化发送到 Windows 通知中心"
+            }
             color: Theme.mutedText
-            font.pixelSize: 12
+            font.pixelSize: Theme.fontCaption
             wrapMode: Text.Wrap
         }
     }
@@ -210,11 +199,11 @@ Dialog {
     footer: Rectangle {
         objectName: "notificationDialogFooter"
         implicitHeight: 56
-        color: Theme.controlSurface
+        color: Theme.managementSurface
         border.color: Theme.border
         topLeftRadius: 0
         topRightRadius: 0
-        Button {
+        ConsoleButton {
             objectName: "dismissNotificationSettingsButton"
             anchors.right: parent.right
             anchors.rightMargin: 0
@@ -223,8 +212,6 @@ Dialog {
             height: 34
             text: "关闭"
             onClicked: root.close()
-            contentItem: Text { text: parent.text; color: Theme.text; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.pixelSize: 12 }
-            background: Rectangle { radius: Theme.radiusSmall; color: parent.down ? Theme.borderStrong : (parent.hovered ? Theme.border : Theme.well); border.color: Theme.borderStrong }
         }
     }
 }

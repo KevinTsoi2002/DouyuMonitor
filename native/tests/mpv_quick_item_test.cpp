@@ -25,7 +25,7 @@ QString makePpmFixture(QTemporaryDir &directory)
     return path;
 }
 
-QString makeY4mFixture(QTemporaryDir &directory)
+QString makeY4mFixture(QTemporaryDir &directory, int frameCount = 150)
 {
     const QString path = directory.filePath(QStringLiteral("frame.y4m"));
     QFile fixture(path);
@@ -33,7 +33,7 @@ QString makeY4mFixture(QTemporaryDir &directory)
 
     if (fixture.write("YUV4MPEG2 W2 H2 F25:1 Ip A1:1 C444\n") < 0) return {};
     const QByteArray redFrame("RRRRZZZZ\xF0\xF0\xF0\xF0", 12);
-    for (int frame = 0; frame < 150; ++frame) {
+    for (int frame = 0; frame < frameCount; ++frame) {
         if (fixture.write("FRAME\n") < 0 || fixture.write(redFrame) != redFrame.size()) return {};
     }
     fixture.close();
@@ -47,6 +47,7 @@ class MpvQuickItemTest final : public QObject {
 private slots:
     void suspendsRenderingWithoutChangingPlaybackControls();
     void rendersOneLocalFrameAndReleasesCleanly();
+    void rebuildsRenderContextAndRendersAfterSuspension();
     void doesNotRestoreMediaStateAfterReleaseDuringLoad();
     void rendersLocalFramePixelsIntoTheQuickFramebuffer();
     void keepsRenderingAfterItemResize();
@@ -68,7 +69,25 @@ private slots:
     void handsRemoteEofToFreshSourceBeforeFailure();
     void avoidsFailureAfterSynchronousEofReplacement();
     void doesNotFailAfterReleaseFromEofObserver();
+    void reportsRenderContextInitializationFailureOnce();
 };
+
+void MpvQuickItemTest::reportsRenderContextInitializationFailureOnce()
+{
+    MpvQuickItem item;
+    QSignalSpy failures(&item, &MpvQuickItem::renderContextFailed);
+    QVERIFY(failures.isValid());
+
+    MpvQuickItem::failNextRenderContextCreationForTest();
+    item.renderForTest();
+    QTRY_COMPARE_WITH_TIMEOUT(failures.count(), 1, 1000);
+    QCOMPARE(failures.at(0).at(0).toString(), QStringLiteral("RENDER_CONTEXT_FAILED"));
+    QCOMPARE(item.playbackState(), MpvQuickItem::PlaybackState::Error);
+    QCOMPARE(item.safeErrorLabel(), QStringLiteral("视频渲染初始化失败"));
+    item.notifyRenderContextFailed();
+    QCOMPARE(failures.count(), 1);
+    QVERIFY(!item.isRenderContextReady());
+}
 
 void MpvQuickItemTest::handsRemoteEofToFreshSourceBeforeFailure()
 {
@@ -376,11 +395,52 @@ void MpvQuickItemTest::rendersOneLocalFrameAndReleasesCleanly()
 
     QTRY_VERIFY_WITH_TIMEOUT(item->isRenderContextReady(), 10000);
     QVERIFY(item->loadLocalMedia(fixture));
+    QSignalSpy started(item, &MpvQuickItem::playbackStarted);
     QTRY_VERIFY_WITH_TIMEOUT(item->isFirstFrameRendered(), 10000);
+    QTRY_COMPARE_WITH_TIMEOUT(started.count(), 1, 5000);
     item->release();
     QCOMPARE(item->playbackState(), MpvQuickItem::PlaybackState::Idle);
     QVERIFY(!item->isMediaLoaded());
     QVERIFY(!item->isFirstFrameRendered());
+}
+
+void MpvQuickItemTest::rebuildsRenderContextAndRendersAfterSuspension()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString fixture = makeY4mFixture(directory, 1500);
+    QVERIFY(!fixture.isEmpty());
+
+    QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
+    QQuickWindow window;
+    window.resize(320, 240);
+    auto *item = new MpvQuickItem(window.contentItem());
+    item->setWidth(320);
+    item->setHeight(240);
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+
+    QTRY_VERIFY_WITH_TIMEOUT(item->isRenderContextReady(), 10000);
+    QVERIFY(item->loadLocalMedia(fixture));
+    QTRY_VERIFY_WITH_TIMEOUT(item->isFirstFrameRendered(), 10000);
+    const bool firstFrameBeforeRelease = item->isFirstFrameRendered();
+    QVERIFY(firstFrameBeforeRelease);
+
+    item->suspendRendering();
+    QTRY_VERIFY_WITH_TIMEOUT(!item->isRenderContextReady(), 5000);
+    QVERIFY(!item->isFirstFrameRendered());
+
+    item->resumeRendering();
+    QTRY_VERIFY_WITH_TIMEOUT(item->isRenderContextReady(), 10000);
+    bool recoveredFrame = false;
+    for (int attempt = 0; attempt < 200 && !recoveredFrame; ++attempt) {
+        item->update();
+        window.update();
+        QTest::qWait(50);
+        recoveredFrame = item->isFirstFrameRendered();
+    }
+    QVERIFY(recoveredFrame);
+    item->release();
 }
 
 void MpvQuickItemTest::doesNotRestoreMediaStateAfterReleaseDuringLoad()
@@ -514,6 +574,7 @@ void MpvQuickItemTest::ignoresRetiredLocalLoadFailureAfterSourceSwitch()
     QVERIFY(item->playbackState() != MpvQuickItem::PlaybackState::Error);
     QCOMPARE(failures.count(), 0);
 }
+
 
 void MpvQuickItemTest::destroysMpvCoreAfterRenderContextRelease()
 {

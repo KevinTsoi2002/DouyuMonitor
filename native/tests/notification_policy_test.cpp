@@ -48,6 +48,7 @@ class NotificationPolicyTest final : public QObject {
 private slots:
     void usesFirstSnapshotAsBaseline();
     void deduplicatesAndLimitsEvents();
+    void notifiesPlaybackRecoveryAfterPendingState();
     void doesNotTreatOfflineAsPlaybackFailure();
     void titleChangesForFavoriteRoom();
 };
@@ -81,6 +82,22 @@ void NotificationPolicyTest::deduplicatesAndLimitsEvents()
          onlineRoom(QStringLiteral("5")), onlineRoom(QStringLiteral("6")),
          onlineRoom(QStringLiteral("7"))});
     QCOMPARE(events.size(), 6);
+}
+
+void NotificationPolicyTest::notifiesPlaybackRecoveryAfterPendingState()
+{
+    NotificationPolicy policy([] { return qint64{1'000}; });
+    QCOMPARE(policy.update({playingRoom(QStringLiteral("63136"))}).size(), 0);
+
+    const QVector<NotificationEvent> failed = policy.update({failedRoom(QStringLiteral("63136"))});
+    QCOMPARE(failed.size(), 1);
+    QCOMPARE(failed.front().type, NotificationEventType::PlaybackFailed);
+
+    QCOMPARE(policy.update({onlineRoom(QStringLiteral("63136"))}).size(), 0);
+    const QVector<NotificationEvent> recovered = policy.update({playingRoom(QStringLiteral("63136"))});
+    QCOMPARE(recovered.size(), 1);
+    QCOMPARE(recovered.front().type, NotificationEventType::PlaybackRecovered);
+    QCOMPARE(policy.update({playingRoom(QStringLiteral("63136"))}).size(), 0);
 }
 
 void NotificationPolicyTest::doesNotTreatOfflineAsPlaybackFailure()

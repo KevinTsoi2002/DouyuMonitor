@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import ".."
+import "../controls"
 
 Dialog {
     id: root
@@ -21,27 +22,80 @@ Dialog {
 
     modal: true
     title: "队伍管理"
-    width: 620
-    height: 680
+    width: Math.min(680, parent ? parent.width - 32 : 680)
+    height: Math.min(680, parent ? parent.height - 32 : 680)
     anchors.centerIn: parent
     padding: 16
-    palette.window: Theme.controlSurface
-    palette.base: Theme.well
-    palette.button: Theme.controlSurface
-    palette.buttonText: Theme.text
-    palette.text: Theme.text
-    palette.windowText: Theme.text
-    palette.highlight: Theme.accent
-    palette.highlightedText: Theme.text
+    palette {
+        window: Theme.managementSurface
+        base: Theme.well
+        alternateBase: Theme.controlSurface
+        light: Theme.controlHover
+        midlight: Theme.controlSurface
+        mid: Theme.border
+        dark: Theme.mutedText
+        shadow: Theme.canvas
+        toolTipBase: Theme.controlSurface
+        toolTipText: Theme.text
+        link: Theme.accent
+        linkVisited: Theme.mutedText
+        active {
+            windowText: Theme.text
+            text: Theme.text
+            button: Theme.controlSurface
+            buttonText: Theme.text
+            brightText: Theme.text
+            highlight: Theme.accent
+            highlightedText: Theme.accentText
+            placeholderText: Theme.mutedText
+        }
+        inactive {
+            windowText: Theme.text
+            text: Theme.text
+            button: Theme.controlSurface
+            buttonText: Theme.text
+            brightText: Theme.text
+            highlight: Theme.accent
+            highlightedText: Theme.accentText
+            placeholderText: Theme.mutedText
+        }
+        disabled {
+            windowText: Theme.disabledText
+            text: Theme.disabledText
+            button: Theme.controlDisabled
+            buttonText: Theme.disabledText
+            brightText: Theme.disabledText
+            highlightedText: Theme.disabledText
+            highlight: Theme.borderStrong
+            placeholderText: Theme.disabledText
+        }
+    }
+    onOpened: root.importing
+              ? cancelMaoziTeamImportButton.forceActiveFocus()
+              : teamNameInput.forceActiveFocus()
     onClosed: {
         if (root.controller && root.importing)
             root.controller.cancelMaoziTeamImport()
     }
 
+    header: Item {
+        implicitHeight: 56
+        Text {
+            anchors.left: parent.left
+            anchors.leftMargin: 16
+            anchors.verticalCenter: parent.verticalCenter
+            text: root.title
+            color: Theme.text
+            font.bold: true
+            font.pixelSize: Theme.fontHeading
+        }
+        Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: Theme.border }
+    }
+
     background: Rectangle {
-        color: Theme.controlSurface
+        color: Theme.managementSurface
         border.color: Theme.border
-        radius: Theme.radiusLarge
+        radius: Theme.radiusSmall
     }
 
     function findTeam(teamId)
@@ -152,27 +206,36 @@ Dialog {
     }
 
     contentItem: Item {
-      Column {
+      Flickable {
+        id: teamManagerGeneralScroll
+        objectName: "teamManagerGeneralScroll"
         anchors.fill: parent
         visible: !root.importing
-        spacing: 10
+        clip: true
+        contentWidth: width
+        contentHeight: teamManagerGeneralContent.implicitHeight
+        boundsBehavior: Flickable.StopAtBounds
+        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+        Column {
+          id: teamManagerGeneralContent
+          width: teamManagerGeneralScroll.width
+          spacing: Theme.spaceSmall
 
         Row {
             width: parent.width
-            spacing: 8
+            spacing: Theme.spaceSmall
             Text {
                 width: parent.width - importMaoziTeamsButton.width - 8
                 anchors.verticalCenter: parent.verticalCenter
-                text: "队伍 " + root.teams.length + "/20"
+                text: "本地队伍 · " + root.teams.length + " / 20"
                 color: Theme.mutedText
-                font.pixelSize: 11
+                font.pixelSize: Theme.fontCaption
             }
-            Button {
+            ConsoleButton {
                 id: importMaoziTeamsButton
                 objectName: "importMaoziTeamsButton"
                 text: qsTr("从野榜导入")
-                palette.button: Theme.well
-                palette.buttonText: Theme.text
                 enabled: root.controller !== null && !root.importing
                 onClicked: root.controller.previewMaoziTeamImport()
             }
@@ -180,20 +243,18 @@ Dialog {
 
         Row {
             width: parent.width
-            spacing: 6
+            spacing: Theme.spaceXS
 
-            TextField {
+            ConsoleTextField {
                 id: teamNameInput
                 objectName: "teamNameInput"
                 width: parent.width - createTeamButton.width - renameTeamButton.width - 12
                 placeholderText: "队伍名称"
-                color: Theme.text
-                placeholderTextColor: Theme.mutedText
                 selectByMouse: true
                 maximumLength: 30
             }
 
-            Button {
+            ConsoleButton {
                 id: createTeamButton
                 objectName: "createTeamButton"
                 text: "新建"
@@ -201,7 +262,7 @@ Dialog {
                 onClicked: root.createTeam()
             }
 
-            Button {
+            ConsoleButton {
                 id: renameTeamButton
                 objectName: "renameTeamButton"
                 text: "重命名"
@@ -213,13 +274,13 @@ Dialog {
 
         Row {
             width: parent.width
-            spacing: 8
+            spacing: Theme.spaceSmall
 
             Text {
                 anchors.verticalCenter: parent.verticalCenter
-                text: "队伍 " + root.teams.length + "/20"
+                text: "选择队伍后管理成员"
                 color: Theme.mutedText
-                font.pixelSize: 11
+                font.pixelSize: Theme.fontCaption
             }
 
             Item {
@@ -228,70 +289,38 @@ Dialog {
                 height: 1
             }
 
-            ToolButton {
+            ConsoleToolButton {
                 objectName: "moveTeamUpButton"
                 width: Theme.controlHeight
                 height: Theme.controlHeight
                 enabled: root.selectedTeamId.length > 0 && root.controller !== null
                 Accessible.name: "上移队伍"
-                ToolTip.visible: hovered
                 ToolTip.text: Accessible.name
                 onClicked: root.moveTeam(-1)
-                contentItem: Image {
-                    anchors.centerIn: parent
-                    width: 14
-                    height: 14
-                    source: Qt.resolvedUrl("../assets/icons/chevron-up.svg")
-                    opacity: parent.enabled ? 1 : 0.35
-                }
-                background: Rectangle {
-                    radius: Theme.radiusSmall
-                    color: parent.hovered ? Theme.well : "transparent"
-                }
+                icon.source: Qt.resolvedUrl("../assets/icons/chevron-up.svg")
             }
 
-            ToolButton {
+            ConsoleToolButton {
                 objectName: "moveTeamDownButton"
                 width: Theme.controlHeight
                 height: Theme.controlHeight
                 enabled: root.selectedTeamId.length > 0 && root.controller !== null
                 Accessible.name: "下移队伍"
-                ToolTip.visible: hovered
                 ToolTip.text: Accessible.name
                 onClicked: root.moveTeam(1)
-                contentItem: Image {
-                    anchors.centerIn: parent
-                    width: 14
-                    height: 14
-                    source: Qt.resolvedUrl("../assets/icons/chevron-down.svg")
-                    opacity: parent.enabled ? 1 : 0.35
-                }
-                background: Rectangle {
-                    radius: Theme.radiusSmall
-                    color: parent.hovered ? Theme.well : "transparent"
-                }
+                icon.source: Qt.resolvedUrl("../assets/icons/chevron-down.svg")
             }
 
-            ToolButton {
+            ConsoleToolButton {
                 objectName: "deleteTeamButton"
                 width: Theme.controlHeight
                 height: Theme.controlHeight
                 enabled: root.selectedTeamId.length > 0 && root.controller !== null
                 Accessible.name: "删除队伍"
-                ToolTip.visible: hovered
                 ToolTip.text: Accessible.name
                 onClicked: root.deleteTeam()
-                contentItem: Image {
-                    anchors.centerIn: parent
-                    width: 14
-                    height: 14
-                    source: Qt.resolvedUrl("../assets/icons/x.svg")
-                    opacity: parent.enabled ? 1 : 0.35
-                }
-                background: Rectangle {
-                    radius: Theme.radiusSmall
-                    color: parent.down ? Theme.danger : (parent.hovered ? Theme.well : "transparent")
-                }
+                icon.source: Qt.resolvedUrl("../assets/icons/x.svg")
+                destructive: true
             }
         }
 
@@ -301,7 +330,7 @@ Dialog {
             width: parent.width
             height: 142
             clip: true
-            spacing: 4
+            spacing: 0
             model: root.teams
             ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
@@ -309,7 +338,7 @@ Dialog {
                 id: teamRow
                 required property var modelData
                 width: teamList.width
-                height: 40
+                height: 48
                 radius: Theme.radiusSmall
                 color: root.selectedTeamId === modelData.id ? Theme.well : Theme.canvas
                 border.color: root.selectedTeamId === modelData.id
@@ -327,7 +356,7 @@ Dialog {
                     elide: Text.ElideRight
                 }
 
-                ToolButton {
+                ConsoleToolButton {
                     id: deleteTeamRowButton
                     objectName: "deleteTeamRowButton"
                     anchors.right: parent.right
@@ -336,23 +365,13 @@ Dialog {
                     width: 30
                     height: 30
                     Accessible.name: "删除队伍"
-                    ToolTip.visible: hovered
                     ToolTip.text: Accessible.name
                     onClicked: {
                         root.selectedTeamId = modelData.id
                         root.deleteTeam()
                     }
-                    contentItem: Image {
-                        anchors.centerIn: parent
-                        width: 12
-                        height: 12
-                        source: Qt.resolvedUrl("../assets/icons/x.svg")
-                        opacity: parent.hovered ? 1 : 0.65
-                    }
-                    background: Rectangle {
-                        radius: Theme.radiusSmall
-                        color: parent.down ? Theme.danger : (parent.hovered ? Theme.well : "transparent")
-                    }
+                    icon.source: Qt.resolvedUrl("../assets/icons/x.svg")
+                    destructive: true
                 }
 
                 MouseArea {
@@ -370,7 +389,7 @@ Dialog {
             text: "成员分配"
             color: Theme.text
             font.bold: true
-            font.pixelSize: 13
+            font.pixelSize: Theme.fontBody
         }
 
         ListView {
@@ -386,7 +405,7 @@ Dialog {
             delegate: Rectangle {
                 required property var modelData
                 width: teamMemberAssignmentList.width
-                height: 40
+                height: 48
                 radius: Theme.radiusSmall
                 color: Theme.canvas
                 border.color: Theme.border
@@ -394,7 +413,7 @@ Dialog {
                 Row {
                     anchors.fill: parent
                     anchors.margins: 5
-                    spacing: 6
+                    spacing: Theme.spaceXS
 
                     Text {
                         width: Math.max(80, parent.width - 315)
@@ -410,7 +429,7 @@ Dialog {
                         text: modelData.roomId.length > 0 ? modelData.roomId : "待确认"
                         color: Theme.mutedText
                         elide: Text.ElideRight
-                        font.pixelSize: 10
+                        font.pixelSize: Theme.fontCaption
                     }
 
                     Text {
@@ -421,10 +440,10 @@ Dialog {
                         color: root.memberBelongsToTeam(modelData.id)
                                ? Theme.text : Theme.mutedText
                         elide: Text.ElideRight
-                        font.pixelSize: 10
+                        font.pixelSize: Theme.fontCaption
                     }
 
-                    Button {
+                    ConsoleButton {
                         objectName: "assignGuildMemberButton"
                         width: 88
                         height: 28
@@ -434,7 +453,7 @@ Dialog {
                         onClicked: root.assignMember(modelData.id)
                     }
 
-                    Button {
+                    ConsoleButton {
                         objectName: "removeGuildMemberButton"
                         width: 58
                         height: 28
@@ -454,14 +473,25 @@ Dialog {
             text: root.statusMessage
             color: Theme.warning
             elide: Text.ElideRight
-            font.pixelSize: 10
+            font.pixelSize: Theme.fontCaption
+        }
         }
       }
 
-      Column {
+      Flickable {
+        id: teamManagerImportScroll
         anchors.fill: parent
         visible: root.importing
-        spacing: 12
+        clip: true
+        contentWidth: width
+        contentHeight: teamManagerImportContent.implicitHeight
+        boundsBehavior: Flickable.StopAtBounds
+        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+        Column {
+          id: teamManagerImportContent
+          width: teamManagerImportScroll.width
+          spacing: Theme.spaceMedium
         Text {
             width: parent.width
             text: root.importData.state === "loading" ? qsTr("正在刷新野榜…")
@@ -472,21 +502,21 @@ Dialog {
                     .arg(root.importData.unchangedMembers || 0)
             color: root.importData.state === "error" ? Theme.warning : Theme.text
             wrapMode: Text.Wrap
-            font.pixelSize: 13
+            font.pixelSize: Theme.fontBody
         }
         ListView {
             id: importPreview
             objectName: "maoziTeamImportPreviewList"
             width: parent.width
-            height: Math.max(100, parent.height - importIssues.height - 65)
+            height: Math.max(100, teamManagerImportScroll.height - importIssues.height - Theme.spaceLarge)
             clip: true
-            spacing: 12
+            spacing: Theme.spaceMedium
             model: root.importData.teams || []
             ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
             delegate: Column {
                 required property var modelData
                 width: importPreview.width
-                spacing: 6
+                spacing: Theme.spaceXS
                 Text {
                     width: parent.width
                     text: qsTr("%1 · 来源 %2 人 · 匹配 %3 人 · 本地保留 %4 人")
@@ -501,7 +531,7 @@ Dialog {
                     text: (modelData.members || []).join("、")
                     color: Theme.mutedText
                     wrapMode: Text.Wrap
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.fontControl
                 }
                 Text {
                     width: parent.width
@@ -509,7 +539,7 @@ Dialog {
                     text: qsTr("保留：%1").arg((modelData.retainedMembers || []).join("、"))
                     color: Theme.mutedText
                     wrapMode: Text.Wrap
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.fontCaption
                 }
             }
         }
@@ -529,81 +559,51 @@ Dialog {
                     ? qsTr("\n未分队（保留原归属）：%1").arg(root.importData.unassignedNames.join("、")) : "")
                 color: Theme.warning
                 wrapMode: Text.Wrap
-                font.pixelSize: 11
+                font.pixelSize: Theme.fontCaption
             }
         }
-      }
+        }
+    }
     }
 
     footer: Rectangle {
         implicitHeight: 56
-        color: Theme.controlSurface
+        color: Theme.managementSurface
         border.color: Theme.border
 
         Row {
             anchors.left: parent.left
             anchors.verticalCenter: parent.verticalCenter
-            spacing: 8
+            spacing: Theme.spaceSmall
             visible: root.importing
-            Button {
+            ConsoleButton {
                 objectName: "confirmMaoziTeamImportButton"
                 text: qsTr("确认导入")
                 width: 100
                 height: 34
-                contentItem: Text {
-                    text: parent.text
-                    color: parent.enabled ? Theme.text : Theme.mutedText
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                }
-                background: Rectangle {
-                    color: parent.enabled ? Theme.accent : Theme.well
-                    border.color: Theme.border
-                    radius: Theme.radiusSmall
-                }
+                highlighted: true
                 enabled: root.importData.canConfirm === true
                 onClicked: {
                     const message = root.controller.confirmMaoziTeamImport()
                     if (!message) root.showStatus(qsTr("队伍已导入"))
                 }
             }
-            Button {
+            ConsoleButton {
+                id: cancelMaoziTeamImportButton
                 objectName: "cancelMaoziTeamImportButton"
                 text: qsTr("取消")
                 width: 76
                 height: 34
-                contentItem: Text {
-                    text: parent.text
-                    color: Theme.text
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                }
-                background: Rectangle {
-                    color: parent.hovered ? Theme.well : Theme.controlSurface
-                    border.color: Theme.border
-                    radius: Theme.radiusSmall
-                }
                 onClicked: root.controller.cancelMaoziTeamImport()
             }
         }
-        Button {
+        ConsoleButton {
             anchors.right: parent.right
             anchors.rightMargin: 0
             anchors.verticalCenter: parent.verticalCenter
             width: 92
             height: 34
             text: "关闭"
-            contentItem: Text {
-                text: parent.text
-                color: Theme.text
-                horizontalAlignment: Text.AlignHCenter
-                verticalAlignment: Text.AlignVCenter
-            }
-            background: Rectangle {
-                color: parent.hovered ? Theme.well : Theme.controlSurface
-                border.color: Theme.border
-                radius: Theme.radiusSmall
-            }
             onClicked: root.close()
         }
     }

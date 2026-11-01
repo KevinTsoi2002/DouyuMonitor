@@ -1,6 +1,7 @@
 import QtQuick
-import QtQuick.Controls
+import QtQuick.Controls.Basic
 import ".."
+import "../controls"
 
 Item {
     id: root
@@ -17,8 +18,8 @@ Item {
                                        && (level === "error" || level === "warning" || level === "action")
 
     width: 380
-    height: toast.visible ? 48 : 0
-    z: 20
+    height: toast.visible ? Math.max(48, messageText.implicitHeight + 24) : 0
+    z: 200
 
     Timer {
         id: autoDismiss
@@ -39,25 +40,24 @@ Item {
         anchors.fill: parent
         visible: root.shouldDisplay
         radius: Theme.radiusMedium
-        color: root.level === "error" ? Qt.rgba(Theme.danger.r, Theme.danger.g, Theme.danger.b, 0.16)
-                                      : root.level === "warning" ? Qt.rgba(Theme.warning.r, Theme.warning.g, Theme.warning.b, 0.16)
-                                                                   : Theme.controlSurface
+        color: Theme.managementSurface
         border.color: root.level === "error" ? Theme.danger
                                                : root.level === "warning" ? Theme.warning : root.borderColor
 
         Text {
+            id: messageText
             anchors.left: parent.left
             anchors.leftMargin: 12
             anchors.right: dismiss.left
             anchors.rightMargin: 8
             anchors.verticalCenter: parent.verticalCenter
             color: root.textColor
-            elide: Text.ElideRight
-            font.pixelSize: 11
+            wrapMode: Text.Wrap
+            font.pixelSize: Theme.fontControl
             text: root.message
         }
 
-        ToolButton {
+        ConsoleToolButton {
             id: dismiss
             objectName: "toastDismissButton"
             anchors.right: parent.right
@@ -66,11 +66,10 @@ Item {
             width: 27
             height: 27
             Accessible.name: "关闭通知"
-            ToolTip.visible: hovered
+            ToolTip.visible: false
             ToolTip.text: Accessible.name
             onClicked: if (root.workspaceModel) root.workspaceModel.setLastMessage("")
-            contentItem: Image { anchors.centerIn: parent; width: 15; height: 15; source: Qt.resolvedUrl("../assets/icons/x.svg") }
-            background: Rectangle { radius: 4; color: parent.hovered ? "#252c34" : "transparent" }
+            contentItem: ThemeIcon { anchors.centerIn: parent; width: 15; height: 15; source: Qt.resolvedUrl("../assets/icons/x.svg") }
         }
     }
 }

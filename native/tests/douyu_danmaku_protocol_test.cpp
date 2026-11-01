@@ -15,6 +15,9 @@ private slots:
     void rejectsMissingTerminator();
     void rejectsInvalidUtf8();
     void rejectsOversizedFrames();
+    void acceptsFrameAtMaximumSize();
+    void boundsFramesDecodedPerPush();
+    void rejectsOversizedPendingData();
     void roundTripsEscapedSttFields();
 };
 
@@ -86,6 +89,55 @@ void DouyuDanmakuProtocolTest::rejectsOversizedFrames()
     QByteArray frame(12, '\0');
     qToLittleEndian<quint32>(1024U * 1024U + 1U, frame.data());
     QCOMPARE(decoder.push(frame).error, DouyuDanmakuProtocol::FrameError::FrameTooLarge);
+}
+
+void DouyuDanmakuProtocolTest::acceptsFrameAtMaximumSize()
+{
+    DouyuDanmakuProtocol::FrameDecoder decoder;
+    const QString payload((1024 * 1024) - 13, QChar('x'));
+    const QByteArray frame = DouyuDanmakuProtocol::encodeFrame(payload, 690);
+    QCOMPARE(frame.size(), 1024 * 1024);
+    const auto result = decoder.push(frame);
+    QCOMPARE(result.error, DouyuDanmakuProtocol::FrameError::None);
+    QCOMPARE(result.frames.size(), 1);
+    QCOMPARE(result.frames.constFirst(), payload);
+}
+
+void DouyuDanmakuProtocolTest::boundsFramesDecodedPerPush()
+{
+    DouyuDanmakuProtocol::FrameDecoder decoder;
+    QByteArray chunk;
+    for (int i = 0; i < 70; ++i) {
+        chunk += DouyuDanmakuProtocol::encodeFrame(
+            QStringLiteral("type@=chatmsg/id@=") + QString::number(i) + QLatin1Char('/'),
+            690);
+    }
+
+    const auto first = decoder.push(chunk);
+    QVERIFY(first.frames.size() < 70);
+    QVERIFY(!first.frames.isEmpty());
+    QCOMPARE(first.frames.constFirst(), QStringLiteral("type@=chatmsg/id@=0/"));
+
+    QStringList allFrames = first.frames;
+    while (true) {
+        const auto next = decoder.push({});
+        QCOMPARE(next.error, DouyuDanmakuProtocol::FrameError::None);
+        allFrames += next.frames;
+        if (next.frames.isEmpty()) break;
+    }
+    QCOMPARE(allFrames.size(), 70);
+    for (int i = 0; i < allFrames.size(); ++i) {
+        QCOMPARE(allFrames.at(i),
+                 QStringLiteral("type@=chatmsg/id@=") + QString::number(i) + QLatin1Char('/'));
+    }
+}
+
+void DouyuDanmakuProtocolTest::rejectsOversizedPendingData()
+{
+    DouyuDanmakuProtocol::FrameDecoder decoder;
+    const QByteArray oversized(4 * 1024 * 1024 + 1, '\0');
+    const auto result = decoder.push(oversized);
+    QCOMPARE(result.error, DouyuDanmakuProtocol::FrameError::PendingDataTooLarge);
 }
 
 void DouyuDanmakuProtocolTest::roundTripsEscapedSttFields()

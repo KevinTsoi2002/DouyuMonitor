@@ -1,6 +1,7 @@
 import QtQuick
-import QtQuick.Controls
+import QtQuick.Controls.Basic
 import ".."
+import "../controls"
 
 Dialog {
     id: root
@@ -8,36 +9,86 @@ Dialog {
     property var controller: null
     modal: true
     title: "关闭窗口"
-    width: 360
+    width: Math.min(420, parent ? parent.width - 32 : 420)
     padding: 16
+    height: Math.min(implicitHeight, parent ? parent.height - 32 : implicitHeight)
     anchors.centerIn: parent
-    palette.window: Theme.controlSurface
-    palette.base: Theme.well
-    palette.button: Theme.controlSurface
-    palette.buttonText: Theme.text
-    palette.text: Theme.text
-    palette.windowText: Theme.text
-    palette.highlight: Theme.accent
-    palette.highlightedText: Theme.text
-    palette.brightText: Theme.text
-    palette.dark: Theme.borderStrong
-    palette.mid: Theme.border
-    palette.shadow: "#000000"
+    palette {
+        window: Theme.managementSurface
+        base: Theme.well
+        alternateBase: Theme.controlSurface
+        light: Theme.controlHover
+        midlight: Theme.controlSurface
+        mid: Theme.border
+        dark: Theme.mutedText
+        shadow: Theme.canvas
+        toolTipBase: Theme.controlSurface
+        toolTipText: Theme.text
+        link: Theme.accent
+        linkVisited: Theme.mutedText
+        active {
+            windowText: Theme.text
+            text: Theme.text
+            button: Theme.controlSurface
+            buttonText: Theme.text
+            brightText: Theme.text
+            highlight: Theme.accent
+            highlightedText: Theme.accentText
+            placeholderText: Theme.mutedText
+        }
+        inactive {
+            windowText: Theme.text
+            text: Theme.text
+            button: Theme.controlSurface
+            buttonText: Theme.text
+            brightText: Theme.text
+            highlight: Theme.accent
+            highlightedText: Theme.accentText
+            placeholderText: Theme.mutedText
+        }
+        disabled {
+            windowText: Theme.disabledText
+            text: Theme.disabledText
+            button: Theme.controlDisabled
+            buttonText: Theme.disabledText
+            brightText: Theme.disabledText
+            highlightedText: Theme.disabledText
+            highlight: Theme.borderStrong
+            placeholderText: Theme.disabledText
+        }
+    }
+    onOpened: cancelCloseButton.forceActiveFocus()
+
+    header: Item {
+        implicitHeight: 56
+        Text {
+            anchors.left: parent.left
+            anchors.leftMargin: 16
+            anchors.verticalCenter: parent.verticalCenter
+            text: root.title
+            color: Theme.text
+            font.bold: true
+            font.pixelSize: Theme.fontHeading
+        }
+        Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: Theme.border }
+    }
 
     background: Rectangle {
-        color: Theme.controlSurface
+        color: Theme.managementSurface
         border.color: Theme.border
-        radius: Theme.radiusLarge
+        radius: Theme.radiusSmall
     }
 
     contentItem: Column {
-        spacing: 14
+        spacing: Theme.spaceMedium
         Text {
-            text: "请选择关闭后的行为"
+            width: parent.width
+            wrapMode: Text.Wrap
+            text: "进入后台将继续托管工作区；完全退出会结束播放。"
             color: Theme.text
-            font.pixelSize: 13
+            font.pixelSize: Theme.fontBody
         }
-        CheckBox {
+        ConsoleCheckBox {
             id: rememberChoice
             objectName: "rememberChoice"
             width: parent.width
@@ -45,25 +96,7 @@ Dialog {
             text: "记住我的选择"
             leftPadding: 0
             rightPadding: 0
-            indicator: Rectangle {
-                objectName: "rememberChoiceIndicator"
-                x: 0
-                anchors.verticalCenter: parent.verticalCenter
-                width: 18
-                height: 18
-                radius: 4
-                color: rememberChoice.checked ? Theme.accent : Theme.well
-                border.color: rememberChoice.checked ? Theme.accent : Theme.borderStrong
-                border.width: 1
-                Text {
-                    anchors.centerIn: parent
-                    visible: rememberChoice.checked
-                    text: "✓"
-                    color: "#ffffff"
-                    font.pixelSize: 13
-                    font.bold: true
-                }
-            }
+            indicator.objectName: "rememberChoiceIndicator"
             contentItem: Text {
                 objectName: "rememberChoiceLabel"
                 anchors.left: parent.left
@@ -71,7 +104,8 @@ Dialog {
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
                 text: rememberChoice.text
-                color: Theme.text
+                color: rememberChoice.enabled ? Theme.text : Theme.disabledText
+                font: rememberChoice.font
                 verticalAlignment: Text.AlignVCenter
             }
         }
@@ -80,14 +114,17 @@ Dialog {
     footer: DialogButtonBox {
         standardButtons: DialogButtonBox.NoButton
         alignment: Qt.AlignRight
-        spacing: 8
+        spacing: Theme.spaceSmall
+        padding: 12
 
-        Button {
+        ConsoleButton {
+            id: cancelCloseButton
             objectName: "cancelCloseButton"
             text: "取消"
             onClicked: root.close()
         }
-        Button {
+        ConsoleButton {
+            objectName: "enterBackgroundButton"
             text: "进入后台"
             onClicked: {
                 if (root.controller) {
@@ -98,7 +135,8 @@ Dialog {
                 root.close()
             }
         }
-        Button {
+        ConsoleButton {
+            objectName: "quitApplicationButton"
             text: "完全退出"
             highlighted: true
             onClicked: {

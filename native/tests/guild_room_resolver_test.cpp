@@ -60,9 +60,48 @@ private slots:
     void skipsMetadataRefreshWhenCacheAlreadyComplete();
     void reusesCachedLiveStateWhenFresh();
     void refreshesLiveStatusWithoutRefetchingIdentity();
+    void marksCachedLiveStateUnknownAfterServiceFailure();
     void preservesCachedAvatarWhenSearchStatusIsUnknown();
     void resumesCancelledMetadataTaskAfterPause();
+    void preservesSavedRoomWhenPublicDirectoryChangesDefault();
 };
+
+void GuildRoomResolverTest::preservesSavedRoomWhenPublicDirectoryChangesDefault()
+{
+    const GuildMember *member = GuildRoster::findById(QStringLiteral("hamster-017"));
+    QVERIFY(member != nullptr);
+    QVERIFY(member->directoryListed);
+    QCOMPARE(member->roomId, QStringLiteral("12767534"));
+
+    FakeSearchTransport transport;
+    GuildRoomResolver resolver(&transport);
+    resolver.setRoster({*member});
+    resolver.setCache({});
+    QCOMPARE(resolver.roomIdFor(member->id), QStringLiteral("12767534"));
+
+    GuildRoomCacheEntry saved;
+    saved.memberId = member->id;
+    saved.roomId = QStringLiteral("55588");
+    saved.anchorName = member->anchorName;
+    saved.avatarUrl = QUrl(QStringLiteral("https://example.invalid/saved-avatar.png"));
+    saved.metadataCheckedAtMs = 1;
+    saved.verifiedAtMs = 1;
+    saved.liveState = QStringLiteral("online");
+    saved.liveCheckedAtMs = QDateTime::currentMSecsSinceEpoch();
+    resolver.setCache({saved});
+    resolver.start();
+
+    QCOMPARE(resolver.roomIdFor(member->id), saved.roomId);
+    QCOMPARE(resolver.avatarUrlFor(member->id), saved.avatarUrl.toString());
+    QCOMPARE(resolver.cache(), QVector<GuildRoomCacheEntry>({saved}));
+    QCOMPARE(transport.requestCount, 0);
+    QCOMPARE(transport.statusRequestCount, 0);
+
+    resolver.refreshLiveStatus();
+    QTRY_COMPARE(transport.statusRequestCount, 1);
+    QCOMPARE(transport.lastStatusRoomId, saved.roomId);
+    QCOMPARE(transport.requestCount, 0);
+}
 
 void GuildRoomResolverTest::resumesCancelledMetadataTaskAfterPause()
 {
@@ -526,6 +565,43 @@ void GuildRoomResolverTest::refreshesLiveStatusWithoutRefetchingIdentity()
     QVERIFY(resolver.handleFailure(transport.lastStatusRequestId, "unavailable"));
     QCOMPARE(resolver.liveStateFor("member"), QStringLiteral("unknown"));
     QCOMPARE(resolver.roomIdFor("member"), QStringLiteral("123"));
+}
+
+void GuildRoomResolverTest::marksCachedLiveStateUnknownAfterServiceFailure()
+{
+    FakeSearchTransport transport;
+    GuildRoomResolver resolver(&transport);
+    resolver.setRoster({{"member", "Anchor", {}, "123"}});
+    GuildRoomCacheEntry cached;
+    cached.memberId = QStringLiteral("member");
+    cached.roomId = QStringLiteral("123");
+    cached.anchorName = QStringLiteral("Anchor");
+    cached.avatarUrl = QUrl(QStringLiteral("https://example.invalid/avatar.png"));
+    cached.verifiedAtMs = 100;
+    cached.metadataCheckedAtMs = 200;
+    cached.liveState = QStringLiteral("online");
+    cached.liveCheckedAtMs = QDateTime::currentMSecsSinceEpoch();
+    resolver.setCache({cached});
+    resolver.start();
+    QVERIFY(QMetaObject::invokeMethod(&resolver, "refreshLiveStatus"));
+    QTRY_COMPARE(transport.statusRequestCount, 1);
+
+    ServiceResponse failure;
+    failure.requestId = transport.lastStatusRequestId;
+    failure.ok = false;
+    failure.errorCode = QStringLiteral("SERVICE_FAILED");
+    failure.retryable = true;
+    QVERIFY(!failure.operation.has_value());
+    QVERIFY(resolver.handleResponse(failure));
+
+    QCOMPARE(resolver.liveStateFor(QStringLiteral("member")), QStringLiteral("unknown"));
+    QCOMPARE(resolver.roomIdFor(QStringLiteral("member")), QStringLiteral("123"));
+    QCOMPARE(resolver.avatarUrlFor(QStringLiteral("member")), cached.avatarUrl.toString());
+    QCOMPARE(resolver.cache().size(), 1);
+    QCOMPARE(resolver.cache().first().liveState, QStringLiteral("unknown"));
+    QCOMPARE(resolver.cache().first().verifiedAtMs, cached.verifiedAtMs);
+    QCOMPARE(resolver.cache().first().metadataCheckedAtMs, cached.metadataCheckedAtMs);
+    QCOMPARE(resolver.cache().first().avatarUrl, cached.avatarUrl);
 }
 
 void GuildRoomResolverTest::preservesCachedAvatarWhenSearchStatusIsUnknown()

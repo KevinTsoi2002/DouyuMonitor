@@ -1,0 +1,807 @@
+{
+  "date": "2026-10-29T15:14:11.278Z",
+  "cases": 45,
+  "results": [
+    {
+      "size": {
+        "width": 1280,
+        "height": 800
+      },
+      "scheme": "a",
+      "page": "directory",
+      "bodyWidth": 1280,
+      "viewport": 1280,
+      "mainWidth": 1032,
+      "mainScrollWidth": 1032,
+      "images": [],
+      "overflow": [],
+      "controls": [],
+      "watchHeight": 292
+    },
+    {
+      "size": {
+        "width": 1280,
+        "height": 800
+      },
+      "scheme": "a",
+      "page": "ranking",
+      "bodyWidth": 1280,
+      "viewport": 1280,
+      "mainWidth": 1032,
+      "mainScrollWidth": 1032,
+      "images": [],
+      "overflow": [],
+      "controls": [],
+      "watchHeight": 374
+    },
+    {
+      "size": {
+        "width": 1280,
+        "height": 800
+      },
+      "scheme": "a",
+      "page": "watch",
+      "bodyWidth": 1280,
+      "viewport": 1280,
+      "mainWidth": 1042,
+      "mainScrollWidth": 1042,
+      "images": [],
+      "overflow": [],
+      "controls": [
+        {
+          "bottom": 708.984375,
+          "mainBottom": 730
+        }
+      ],
+      "watchHeight": 0
+    },
+    {
+      "size": {
+        "width": 1280,
+        "height": 800
+      },
+      "scheme": "a",
+      "page": "settings",
+      "bodyWidth": 1280,
+      "viewport": 1280,
+      "mainWidth": 1032,
+      "mainScrollWidth": 1032,
+      "images": [],
+      "overflow": [],
+      "controls": [],
+      "watchHeight": 45
+    },
+    {
+      "size": {
+        "width": 1280,
+        "height": 800
+      },
+      "scheme": "a",
+      "page": "components",
+      "bodyWidth": 1280,
+      "viewport": 1280,
+      "mainWidth": 1032,
+      "mainScrollWidth": 1032,
+      "images": [],
+      "overflow": [],
+      "controls": [],
+      "watchHeight": 51
+    },
+    {
+      "size": {
+        "width": 1280,
+        "height": 800
+      },
+      "scheme": "b",
+      "page": "directory",
+      "bodyWidth": 1280,
+      "viewport": 1280,
+      "mainWidth": 1228,
+      "mainScrollWidth": 1228,
+      "images": [],
+      "overflow": [],
+      "controls": [],
+      "watchHeight": 291
+    },
+    {
+      "size": {
+        "width": 1280,
+        "height": 800
+      },
+      "scheme": "b",
+      "page": "ranking",
+      "bodyWidth": 1280,
+      "viewport": 1280,
+      "mainWidth": 1228,
+      "mainScrollWidth": 1228,
+      "images": [],
+      "overflow": [],
+      "controls": [],
+      "watchHeight": 587
+    },
+    {
+      "size": {
+        "width": 1280,
+        "height": 800
+      },
+      "scheme": "b",
+      "page": "watch",
+      "bodyWidth": 1280,
+      "viewport": 1280,
+      "mainWidth": 1238,
+      "mainScrollWidth": 1238,
+      "images": [],
+      "overflow": [],
+      "controls": [
+        {
+          "bottom": 502,
+          "mainBottom": 730
+        },
+        {
+          "bottom": 502,
+          "mainBottom": 730
+        },
+        {
+          "bottom": 709,
+          "mainBottom": 730
+        },
+        {
+          "bottom": 709,
+          "mainBottom": 730
+        }
+      ],
+      "watchHeight": 0
+    },
+    {
+      "size": {
+        "width": 1280,
+        "height": 800
+      },
+      "scheme": "b",
+      "page": "settings",
+      "bodyWidth": 1280,
+      "viewport": 1280,
+      "mainWidth": 1228,
+      "mainScrollWidth": 1228,
+      "images": [],
+      "overflow": [],
+      "controls": [],
+      "watchHeight": 102
+    },
+    {
+      "size": {
+        "width": 1280,
+        "height": 800
+      },
+      "scheme": "b",
+      "page": "components",
+      "bodyWidth": 1280,
+      "viewport": 1280,
+      "mainWidth": 1228,
+      "mainScrollWidth": 1228,
+      "images": [],
+      "overflow": [],
+      "controls": [],
+      "watchHeight": 108
+    },
+    {
+      "size": {
+        "width": 1280,
+        "height": 800
+      },
+      "scheme": "c",
+      "page": "directory",
+      "bodyWidth": 1280,
+      "viewport": 1280,
+      "mainWidth": 1148,
+      "mainScrollWidth": 1148,
+      "images": [],
+      "overflow": [],
+      "controls": [],
+      "watchHeight": 243
+    },
+    {
+      "size": {
+        "width": 1280,
+        "height": 800
+      },
+      "scheme": "c",
+      "page": "ranking",
+      "bodyWidth": 1280,
+      "viewport": 1280,
+      "mainWidth": 1148,
+      "mainScrollWidth": 1148,
+      "images": [],
+      "overflow": [],
+      "controls": [],
+      "watchHeight": 273
+    },
+    {
+      "size": {
+        "width": 1280,
+        "height": 800
+      },
+      "scheme": "c",
+      "page": "watch",
+      "bodyWidth": 1280,
+      "viewport": 1280,
+      "mainWidth": 1158,
+      "mainScrollWidth": 1158,
+      "images": [],
+      "overflow": [],
+      "controls": [
+        {
+          "bottom": 604,
+          "mainBottom": 730
+        }
+      ],
+      "watchHeight": 0
+    },
+    {
+      "size": {
+        "width": 1280,
+        "height": 800
+      },
+      "scheme": "c",
+      "page": "settings",
+      "bodyWidth": 1280,
+      "viewport": 1280,
+      "mainWidth": 1148,
+      "mainScrollWidth": 1148,
+      "images": [],
+      "overflow": [],
+      "controls": [],
+      "watchHeight": 42
+    },
+    {
+      "size": {
+        "width": 1280,
+        "height": 800
+      },
+      "scheme": "c",
+      "page": "components",
+      "bodyWidth": 1280,
+      "viewport": 1280,
+      "mainWidth": 1148,
+      "mainScrollWidth": 1148,
+      "images": [],
+      "overflow": [],
+      "controls": [],
+      "watchHeight": 48
+    },
+    {
+      "size": {
+        "width": 1366,
+        "height": 768
+      },
+      "scheme": "a",
+      "page": "directory",
+      "bodyWidth": 1366,
+      "viewport": 1366,
+      "mainWidth": 1118,
+      "mainScrollWidth": 1118,
+      "images": [],
+      "overflow": [],
+      "controls": [],
+      "watchHeight": 324
+    },
+    {
+      "size": {
+        "width": 1366,
+        "height": 768
+      },
+      "scheme": "a",
+      "page": "ranking",
+      "bodyWidth": 1366,
+      "viewport": 1366,
+      "mainWidth": 1118,
+      "mainScrollWidth": 1118,
+      "images": [],
+      "overflow": [],
+      "controls": [],
+      "watchHeight": 406
+    },
+    {
+      "size": {
+        "width": 1366,
+        "height": 768
+      },
+      "scheme": "a",
+      "page": "watch",
+      "bodyWidth": 1366,
+      "viewport": 1366,
+      "mainWidth": 1128,
+      "mainScrollWidth": 1128,
+      "images": [],
+      "overflow": [],
+      "controls": [
+        {
+          "bottom": 677,
+          "mainBottom": 698
+        }
+      ],
+      "watchHeight": 0
+    },
+    {
+      "size": {
+        "width": 1366,
+        "height": 768
+      },
+      "scheme": "a",
+      "page": "settings",
+      "bodyWidth": 1366,
+      "viewport": 1366,
+      "mainWidth": 1118,
+      "mainScrollWidth": 1118,
+      "images": [],
+      "overflow": [],
+      "controls": [],
+      "watchHeight": 77
+    },
+    {
+      "size": {
+        "width": 1366,
+        "height": 768
+      },
+      "scheme": "a",
+      "page": "components",
+      "bodyWidth": 1366,
+      "viewport": 1366,
+      "mainWidth": 1118,
+      "mainScrollWidth": 1118,
+      "images": [],
+      "overflow": [],
+      "controls": [],
+      "watchHeight": 83
+    },
+    {
+      "size": {
+        "width": 1366,
+        "height": 768
+      },
+      "scheme": "b",
+      "page": "directory",
+      "bodyWidth": 1366,
+      "viewport": 1366,
+      "mainWidth": 1314,
+      "mainScrollWidth": 1314,
+      "images": [],
+      "overflow": [],
+      "controls": [],
+      "watchHeight": 323
+    },
+    {
+      "size": {
+        "width": 1366,
+        "height": 768
+      },
+      "scheme": "b",
+      "page": "ranking",
+      "bodyWidth": 1366,
+      "viewport": 1366,
+      "mainWidth": 1314,
+      "mainScrollWidth": 1314,
+      "images": [],
+      "overflow": [],
+      "controls": [],
+      "watchHeight": 619
+    },
+    {
+      "size": {
+        "width": 1366,
+        "height": 768
+      },
+      "scheme": "b",
+      "page": "watch",
+      "bodyWidth": 1366,
+      "viewport": 1366,
+      "mainWidth": 1324,
+      "mainScrollWidth": 1324,
+      "images": [],
+      "overflow": [],
+      "controls": [
+        {
+          "bottom": 486,
+          "mainBottom": 698
+        },
+        {
+          "bottom": 486,
+          "mainBottom": 698
+        },
+        {
+          "bottom": 677,
+          "mainBottom": 698
+        },
+        {
+          "bottom": 677,
+          "mainBottom": 698
+        }
+      ],
+      "watchHeight": 0
+    },
+    {
+      "size": {
+        "width": 1366,
+        "height": 768
+      },
+      "scheme": "b",
+      "page": "settings",
+      "bodyWidth": 1366,
+      "viewport": 1366,
+      "mainWidth": 1314,
+      "mainScrollWidth": 1314,
+      "images": [],
+      "overflow": [],
+      "controls": [],
+      "watchHeight": 134
+    },
+    {
+      "size": {
+        "width": 1366,
+        "height": 768
+      },
+      "scheme": "b",
+      "page": "components",
+      "bodyWidth": 1366,
+      "viewport": 1366,
+      "mainWidth": 1314,
+      "mainScrollWidth": 1314,
+      "images": [],
+      "overflow": [],
+      "controls": [],
+      "watchHeight": 140
+    },
+    {
+      "size": {
+        "width": 1366,
+        "height": 768
+      },
+      "scheme": "c",
+      "page": "directory",
+      "bodyWidth": 1366,
+      "viewport": 1366,
+      "mainWidth": 1234,
+      "mainScrollWidth": 1234,
+      "images": [],
+      "overflow": [],
+      "controls": [],
+      "watchHeight": 275
+    },
+    {
+      "size": {
+        "width": 1366,
+        "height": 768
+      },
+      "scheme": "c",
+      "page": "ranking",
+      "bodyWidth": 1366,
+      "viewport": 1366,
+      "mainWidth": 1234,
+      "mainScrollWidth": 1234,
+      "images": [],
+      "overflow": [],
+      "controls": [],
+      "watchHeight": 305
+    },
+    {
+      "size": {
+        "width": 1366,
+        "height": 768
+      },
+      "scheme": "c",
+      "page": "watch",
+      "bodyWidth": 1366,
+      "viewport": 1366,
+      "mainWidth": 1244,
+      "mainScrollWidth": 1244,
+      "images": [],
+      "overflow": [],
+      "controls": [
+        {
+          "bottom": 572,
+          "mainBottom": 698
+        }
+      ],
+      "watchHeight": 0
+    },
+    {
+      "size": {
+        "width": 1366,
+        "height": 768
+      },
+      "scheme": "c",
+      "page": "settings",
+      "bodyWidth": 1366,
+      "viewport": 1366,
+      "mainWidth": 1234,
+      "mainScrollWidth": 1234,
+      "images": [],
+      "overflow": [],
+      "controls": [],
+      "watchHeight": 74
+    },
+    {
+      "size": {
+        "width": 1366,
+        "height": 768
+      },
+      "scheme": "c",
+      "page": "components",
+      "bodyWidth": 1366,
+      "viewport": 1366,
+      "mainWidth": 1234,
+      "mainScrollWidth": 1234,
+      "images": [],
+      "overflow": [],
+      "controls": [],
+      "watchHeight": 80
+    },
+    {
+      "size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "scheme": "a",
+      "page": "directory",
+      "bodyWidth": 1920,
+      "viewport": 1920,
+      "mainWidth": 1656,
+      "mainScrollWidth": 1656,
+      "images": [],
+      "overflow": [],
+      "controls": [],
+      "watchHeight": 135
+    },
+    {
+      "size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "scheme": "a",
+      "page": "ranking",
+      "bodyWidth": 1920,
+      "viewport": 1920,
+      "mainWidth": 1656,
+      "mainScrollWidth": 1656,
+      "images": [],
+      "overflow": [],
+      "controls": [],
+      "watchHeight": 204
+    },
+    {
+      "size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "scheme": "a",
+      "page": "watch",
+      "bodyWidth": 1920,
+      "viewport": 1920,
+      "mainWidth": 1666,
+      "mainScrollWidth": 1666,
+      "images": [],
+      "overflow": [],
+      "controls": [
+        {
+          "bottom": 983,
+          "mainBottom": 1010
+        }
+      ],
+      "watchHeight": 0
+    },
+    {
+      "size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "scheme": "a",
+      "page": "settings",
+      "bodyWidth": 1920,
+      "viewport": 1920,
+      "mainWidth": 1666,
+      "mainScrollWidth": 1666,
+      "images": [],
+      "overflow": [],
+      "controls": [],
+      "watchHeight": 0
+    },
+    {
+      "size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "scheme": "a",
+      "page": "components",
+      "bodyWidth": 1920,
+      "viewport": 1920,
+      "mainWidth": 1666,
+      "mainScrollWidth": 1666,
+      "images": [],
+      "overflow": [],
+      "controls": [],
+      "watchHeight": 0
+    },
+    {
+      "size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "scheme": "b",
+      "page": "directory",
+      "bodyWidth": 1920,
+      "viewport": 1920,
+      "mainWidth": 1852,
+      "mainScrollWidth": 1852,
+      "images": [],
+      "overflow": [],
+      "controls": [],
+      "watchHeight": 75
+    },
+    {
+      "size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "scheme": "b",
+      "page": "ranking",
+      "bodyWidth": 1920,
+      "viewport": 1920,
+      "mainWidth": 1852,
+      "mainScrollWidth": 1852,
+      "images": [],
+      "overflow": [],
+      "controls": [],
+      "watchHeight": 307
+    },
+    {
+      "size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "scheme": "b",
+      "page": "watch",
+      "bodyWidth": 1920,
+      "viewport": 1920,
+      "mainWidth": 1862,
+      "mainScrollWidth": 1862,
+      "images": [],
+      "overflow": [],
+      "controls": [
+        {
+          "bottom": 639,
+          "mainBottom": 1010
+        },
+        {
+          "bottom": 639,
+          "mainBottom": 1010
+        },
+        {
+          "bottom": 983,
+          "mainBottom": 1010
+        },
+        {
+          "bottom": 983,
+          "mainBottom": 1010
+        }
+      ],
+      "watchHeight": 0
+    },
+    {
+      "size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "scheme": "b",
+      "page": "settings",
+      "bodyWidth": 1920,
+      "viewport": 1920,
+      "mainWidth": 1862,
+      "mainScrollWidth": 1862,
+      "images": [],
+      "overflow": [],
+      "controls": [],
+      "watchHeight": 0
+    },
+    {
+      "size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "scheme": "b",
+      "page": "components",
+      "bodyWidth": 1920,
+      "viewport": 1920,
+      "mainWidth": 1862,
+      "mainScrollWidth": 1862,
+      "images": [],
+      "overflow": [],
+      "controls": [],
+      "watchHeight": 0
+    },
+    {
+      "size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "scheme": "c",
+      "page": "directory",
+      "bodyWidth": 1920,
+      "viewport": 1920,
+      "mainWidth": 1772,
+      "mainScrollWidth": 1772,
+      "images": [],
+      "overflow": [],
+      "controls": [],
+      "watchHeight": 119
+    },
+    {
+      "size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "scheme": "c",
+      "page": "ranking",
+      "bodyWidth": 1920,
+      "viewport": 1920,
+      "mainWidth": 1772,
+      "mainScrollWidth": 1772,
+      "images": [],
+      "overflow": [],
+      "controls": [],
+      "watchHeight": 84
+    },
+    {
+      "size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "scheme": "c",
+      "page": "watch",
+      "bodyWidth": 1920,
+      "viewport": 1920,
+      "mainWidth": 1782,
+      "mainScrollWidth": 1782,
+      "images": [],
+      "overflow": [],
+      "controls": [
+        {
+          "bottom": 828,
+          "mainBottom": 1010
+        }
+      ],
+      "watchHeight": 0
+    },
+    {
+      "size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "scheme": "c",
+      "page": "settings",
+      "bodyWidth": 1920,
+      "viewport": 1920,
+      "mainWidth": 1782,
+      "mainScrollWidth": 1782,
+      "images": [],
+      "overflow": [],
+      "controls": [],
+      "watchHeight": 0
+    },
+    {
+      "size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "scheme": "c",
+      "page": "components",
+      "bodyWidth": 1920,
+      "viewport": 1920,
+      "mainWidth": 1782,
+      "mainScrollWidth": 1782,
+      "images": [],
+      "overflow": [],
+      "controls": [],
+      "watchHeight": 0
+    }
+  ]
+}

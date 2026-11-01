@@ -1,0 +1,205 @@
+{
+  "version": 1,
+  "confirmed": "2026-10-30",
+  "source": "User-approved R3; sRGB colors read from rendered browser canvas",
+  "themes": {
+    "c1": {
+      "colors": {
+        "bg": {
+          "source": "oklch(18% .008 180)",
+          "hex": "#0e1312"
+        },
+        "surface": {
+          "source": "oklch(22% .010 180)",
+          "hex": "#161c1b"
+        },
+        "raised": {
+          "source": "oklch(26% .012 180)",
+          "hex": "#1e2624"
+        },
+        "hover": {
+          "source": "oklch(30% .016 180)",
+          "hex": "#25312e"
+        },
+        "line": {
+          "source": "oklch(35% .015 180)",
+          "hex": "#323d3b"
+        },
+        "control-line": {
+          "source": "oklch(55% .025 180)",
+          "hex": "#627772"
+        },
+        "text": {
+          "source": "oklch(95% .008 170)",
+          "hex": "#e9f0ee"
+        },
+        "muted": {
+          "source": "oklch(78% .018 170)",
+          "hex": "#adbbb5"
+        },
+        "subtle": {
+          "source": "oklch(72% .018 170)",
+          "hex": "#9aa8a3"
+        },
+        "accent": {
+          "source": "oklch(81% .125 173)",
+          "hex": "#59dbb9"
+        },
+        "on-accent": {
+          "source": "oklch(19% .025 173)",
+          "hex": "#071713"
+        },
+        "accent-soft": {
+          "source": "oklch(30% .035 173)",
+          "hex": "#1a342c"
+        },
+        "live": {
+          "source": "oklch(81% .125 157)",
+          "hex": "#76d9a0"
+        },
+        "warning": {
+          "source": "oklch(84% .105 85)",
+          "hex": "#eac578"
+        },
+        "error": {
+          "source": "oklch(79% .12 25)",
+          "hex": "#fe9b93"
+        },
+        "video-bg": {
+          "source": "oklch(10% .008 175)",
+          "hex": "#020403"
+        },
+        "video-surface": {
+          "source": "oklch(18% .015 175)",
+          "hex": "#0a1411"
+        },
+        "video-text": {
+          "source": "oklch(96% .008 160)",
+          "hex": "#edf3f0"
+        },
+        "video-muted": {
+          "source": "oklch(82% .015 160)",
+          "hex": "#bcc7c1"
+        },
+        "video-focus": {
+          "source": "oklch(86% .12 160)",
+          "hex": "#85e9b6"
+        }
+      },
+      "radius": "3px",
+      "font": "\"Segoe UI Variable Text\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", sans-serif"
+    },
+    "c3": {
+      "colors": {
+        "bg": {
+          "source": "oklch(96% .009 130)",
+          "hex": "#f0f3ed"
+        },
+        "surface": {
+          "source": "oklch(99% .004 130)",
+          "hex": "#fbfcfa"
+        },
+        "raised": {
+          "source": "oklch(94% .013 130)",
+          "hex": "#e8ede4"
+        },
+        "hover": {
+          "source": "oklch(91% .020 130)",
+          "hex": "#dde4d6"
+        },
+        "line": {
+          "source": "oklch(81% .021 130)",
+          "hex": "#bcc4b6"
+        },
+        "control-line": {
+          "source": "oklch(60% .030 140)",
+          "hex": "#778574"
+        },
+        "text": {
+          "source": "oklch(26% .030 145)",
+          "hex": "#1b281b"
+        },
+        "muted": {
+          "source": "oklch(43% .030 145)",
+          "hex": "#465446"
+        },
+        "subtle": {
+          "source": "oklch(47% .027 145)",
+          "hex": "#525f52"
+        },
+        "accent": {
+          "source": "oklch(42% .090 145)",
+          "hex": "#295a2c"
+        },
+        "on-accent": {
+          "source": "oklch(99% .004 130)",
+          "hex": "#fbfcfa"
+        },
+        "accent-soft": {
+          "source": "oklch(90% .035 135)",
+          "hex": "#d4e4cd"
+        },
+        "live": {
+          "source": "oklch(41% .095 150)",
+          "hex": "#1a582d"
+        },
+        "warning": {
+          "source": "oklch(45% .085 75)",
+          "hex": "#714e14"
+        },
+        "error": {
+          "source": "oklch(47% .150 25)",
+          "hex": "#9e2c2c"
+        },
+        "video-bg": {
+          "source": "oklch(10% .008 175)",
+          "hex": "#020403"
+        },
+        "video-surface": {
+          "source": "oklch(18% .015 175)",
+          "hex": "#0a1411"
+        },
+        "video-text": {
+          "source": "oklch(96% .008 160)",
+          "hex": "#edf3f0"
+        },
+        "video-muted": {
+          "source": "oklch(82% .015 160)",
+          "hex": "#bcc7c1"
+        },
+        "video-focus": {
+          "source": "oklch(86% .12 160)",
+          "hex": "#85e9b6"
+        }
+      },
+      "radius": "3px",
+      "font": "\"Segoe UI Variable Text\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", sans-serif"
+    }
+  },
+  "geometry": {
+    "titlebar": 36,
+    "navigation": 80,
+    "wordmarkWidth": 210,
+    "wordmarkHeight": 24,
+    "radius": 3,
+    "controlHeight": 32,
+    "rowHeight": 48,
+    "spacing": [
+      4,
+      8,
+      12,
+      16,
+      24,
+      32
+    ]
+  },
+  "typography": {
+    "caption": 11,
+    "label": 12,
+    "body": 14,
+    "heading": 16,
+    "pageTitle": 24,
+    "figmaChinese": "Noto Sans SC",
+    "nativeChinese": "Microsoft YaHei UI"
+  }
+}

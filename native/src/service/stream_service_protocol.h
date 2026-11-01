@@ -62,6 +62,7 @@ struct ServiceRequest {
 
 struct ServiceResponse {
     quint64 requestId = 0;
+    std::optional<ServiceOperation> operation;
     bool ok = false;
     bool pong = false;
     bool shutdown = false;
@@ -83,6 +84,8 @@ Q_DECLARE_METATYPE(StreamQualityOption)
 Q_DECLARE_METATYPE(QVector<StreamQualityOption>)
 Q_DECLARE_METATYPE(StreamVariant)
 Q_DECLARE_METATYPE(QVector<StreamVariant>)
+
+inline constexpr qsizetype kMaxServiceJsonLineBytes = 1024 * 1024;
 
 QByteArray encodeRequest(const ServiceRequest &request);
 std::optional<ServiceRequest> decodeRequest(const QByteArray &line);

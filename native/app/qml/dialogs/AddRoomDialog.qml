@@ -1,6 +1,7 @@
 import QtQuick
-import QtQuick.Controls
+import QtQuick.Controls.Basic
 import ".."
+import "../controls"
 
 Dialog {
     id: root
@@ -10,28 +11,64 @@ Dialog {
     readonly property bool canSearch: roomInput.text.trim().length > 0
                                       && roomInput.text.trim().length <= 200
                                       && root.controller !== null
-    readonly property var results: root.controller ? root.controller.searchResults : []
-    readonly property string status: root.controller ? root.controller.searchStatus : "idle"
-    readonly property string error: root.controller ? root.controller.searchError : ""
+    readonly property var results: root.controller && root.controller.searchResults ? root.controller.searchResults : []
+    readonly property string status: root.controller && root.controller.searchStatus ? root.controller.searchStatus : "idle"
+    readonly property string error: root.controller && root.controller.searchError ? root.controller.searchError : ""
     modal: true
     title: "添加房间"
-    width: 500
-    height: 560
+    width: Math.min(560, parent ? parent.width - 32 : 560)
+    height: Math.min(560, parent ? parent.height - 32 : 560)
     padding: 16
     anchors.centerIn: parent
-    palette.window: Theme.controlSurface
-    palette.base: Theme.well
-    palette.button: Theme.controlSurface
-    palette.buttonText: Theme.text
-    palette.text: Theme.text
-    palette.windowText: Theme.text
-    palette.highlight: Theme.accent
-    palette.highlightedText: Theme.text
+    palette {
+        window: Theme.managementSurface
+        base: Theme.well
+        alternateBase: Theme.controlSurface
+        light: Theme.controlHover
+        midlight: Theme.controlSurface
+        mid: Theme.border
+        dark: Theme.mutedText
+        shadow: Theme.canvas
+        toolTipBase: Theme.controlSurface
+        toolTipText: Theme.text
+        link: Theme.accent
+        linkVisited: Theme.mutedText
+        active {
+            windowText: Theme.text
+            text: Theme.text
+            button: Theme.controlSurface
+            buttonText: Theme.text
+            brightText: Theme.text
+            highlight: Theme.accent
+            highlightedText: Theme.accentText
+            placeholderText: Theme.mutedText
+        }
+        inactive {
+            windowText: Theme.text
+            text: Theme.text
+            button: Theme.controlSurface
+            buttonText: Theme.text
+            brightText: Theme.text
+            highlight: Theme.accent
+            highlightedText: Theme.accentText
+            placeholderText: Theme.mutedText
+        }
+        disabled {
+            windowText: Theme.disabledText
+            text: Theme.disabledText
+            button: Theme.controlDisabled
+            buttonText: Theme.disabledText
+            brightText: Theme.disabledText
+            highlightedText: Theme.disabledText
+            highlight: Theme.borderStrong
+            placeholderText: Theme.disabledText
+        }
+    }
 
     background: Rectangle {
-        color: Theme.controlSurface
+        color: Theme.managementSurface
         border.color: Theme.border
-        radius: Theme.radiusLarge
+        radius: Theme.radiusSmall
     }
 
     function submit() {
@@ -62,9 +99,9 @@ Dialog {
             text: root.title
             color: Theme.text
             font.bold: true
-            font.pixelSize: 16
+            font.pixelSize: Theme.fontHeading
         }
-        ToolButton {
+        ConsoleToolButton {
             objectName: "closeAddRoomDialogButton"
             anchors.right: parent.right
             anchors.rightMargin: 10
@@ -72,65 +109,36 @@ Dialog {
             width: Theme.controlHeight
             height: Theme.controlHeight
             Accessible.name: "关闭添加房间"
-            ToolTip.visible: hovered
             ToolTip.text: Accessible.name
             onClicked: root.close()
-            contentItem: Image {
-                anchors.centerIn: parent
-                width: 14
-                height: 14
-                source: Qt.resolvedUrl("../assets/icons/x.svg")
-                opacity: parent.hovered ? 1 : 0.78
-            }
-            background: Rectangle {
-                radius: Theme.radiusSmall
-                color: parent.down ? Theme.well : (parent.hovered ? Theme.well : "transparent")
-            }
+            icon.source: Qt.resolvedUrl("../assets/icons/x.svg")
         }
     }
 
     contentItem: Column {
-        spacing: 10
+        spacing: Theme.spaceMedium
 
         Row {
             width: parent.width
-            spacing: 6
+            spacing: Theme.spaceXS
 
-            TextField {
+            ConsoleTextField {
                 id: roomInput
                 objectName: "roomSearchInput"
                 width: parent.width - searchButton.width - 6
                 placeholderText: "输入房间号、斗鱼链接或主播名字"
-                color: Theme.text
-                placeholderTextColor: Theme.mutedText
                 selectByMouse: true
                 onAccepted: root.submit()
-                background: Rectangle {
-                    radius: Theme.radiusSmall
-                    color: Theme.well
-                    border.color: Theme.border
-                }
             }
 
-            Button {
+            ConsoleButton {
                 id: searchButton
                 objectName: "searchRoomsButton"
                 width: 78
+                highlighted: true
                 text: root.status === "searching" ? "搜索中" : "搜索"
                 enabled: root.canSearch && root.status !== "searching"
                 onClicked: root.submit()
-                contentItem: Text {
-                    text: parent.text
-                    color: "#1a1a1a"
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                    font.bold: true
-                    font.pixelSize: 12
-                }
-                background: Rectangle {
-                    radius: Theme.radiusSmall
-                    color: parent.down ? "#d76018" : (parent.hovered ? "#ff8d43" : Theme.accent)
-                }
             }
         }
 
@@ -138,8 +146,8 @@ Dialog {
             id: feedback
             width: parent.width
             visible: text.length > 0 || root.error.length > 0
-            color: "#ff9b92"
-            font.pixelSize: 12
+            color: Theme.danger
+            font.pixelSize: Theme.fontCaption
             wrapMode: Text.Wrap
             text: root.error
         }
@@ -147,8 +155,8 @@ Dialog {
         Text {
             width: parent.width
             visible: root.status === "empty"
-            color: "#9ba5b1"
-            font.pixelSize: 12
+            color: Theme.mutedText
+            font.pixelSize: Theme.fontCaption
             text: "没有找到匹配的直播间，请检查输入。"
         }
 
@@ -166,10 +174,10 @@ Dialog {
                 id: resultRow
                 required property var modelData
                 width: searchResultList.width - 8
-                height: 66
-                radius: 5
-                color: resultMouse.containsMouse ? "#252c34" : "#171d25"
-                border.color: resultMouse.containsMouse ? "#75462f" : "#343b45"
+                height: 76
+                radius: Theme.radiusSmall
+                color: resultMouse.containsMouse ? Theme.controlHover : Theme.well
+                border.color: resultMouse.containsMouse ? Theme.borderStrong : Theme.border
 
                 Rectangle {
                     id: avatar
@@ -178,13 +186,15 @@ Dialog {
                     width: 40
                     height: 40
                     radius: 20
-                    color: "#28313a"
+                    color: Theme.managementSurface
 
                     Image {
                         id: avatarImage
                         anchors.fill: parent
                         anchors.margins: 1
                         source: resultRow.modelData.avatarUrl
+                        sourceSize.width: 40
+                        sourceSize.height: 40
                         visible: source.toString().length > 0 && status !== Image.Error
                         fillMode: Image.PreserveAspectCrop
                         asynchronous: true
@@ -195,7 +205,7 @@ Dialog {
                     Text {
                         anchors.centerIn: parent
                         visible: !avatarImage.visible
-                        color: "#f4f6f8"
+                        color: Theme.text
                         font.bold: true
                         font.pixelSize: 14
                         text: resultRow.modelData.anchorName.length > 0
@@ -212,23 +222,23 @@ Dialog {
 
                     Text {
                         width: parent.width
-                        color: "#f4f6f8"
+                        color: Theme.text
                         font.bold: true
-                        font.pixelSize: 12
+                        font.pixelSize: Theme.fontBody
                         elide: Text.ElideRight
                         text: resultRow.modelData.anchorName
                     }
                     Text {
                         width: parent.width
-                        color: "#c0c7cf"
-                        font.pixelSize: 10
+                        color: Theme.mutedText
+                        font.pixelSize: Theme.fontCaption
                         elide: Text.ElideRight
                         text: resultRow.modelData.title
                     }
                     Text {
                         width: parent.width
-                        color: resultRow.modelData.online ? "#65d391" : "#9ba5b1"
-                        font.pixelSize: 9
+                        color: resultRow.modelData.online ? Theme.online : Theme.mutedText
+                        font.pixelSize: Theme.fontCaption
                         elide: Text.ElideRight
                         text: (resultRow.modelData.statusKnown === false ? "状态未知"
                                : (resultRow.modelData.online ? "直播中" : "未开播"))
@@ -237,7 +247,7 @@ Dialog {
                     }
                 }
 
-                Button {
+                ConsoleButton {
                     id: addButton
                     objectName: "addSearchResultButton"
                     anchors.right: parent.right
@@ -247,8 +257,7 @@ Dialog {
                     height: 30
                     text: "加入"
                     onClicked: root.addCandidate(resultRow.modelData.roomId)
-                    contentItem: Text { text: parent.text; color: Theme.text; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.pixelSize: 11 }
-                    background: Rectangle { radius: Theme.radiusSmall; color: parent.down ? Theme.borderStrong : (parent.hovered ? Theme.border : Theme.well); border.color: Theme.borderStrong }
+                    font.pixelSize: Theme.fontCaption
                 }
 
                 MouseArea {
@@ -261,10 +270,10 @@ Dialog {
 
             Text {
                 anchors.centerIn: parent
-                visible: searchResultList.count === 0 && root.status === "idle"
-                color: "#9ba5b1"
-                font.pixelSize: 11
-                text: "输入条件后搜索直播间"
+                visible: searchResultList.count === 0 && (root.status === "idle" || root.status === "searching")
+                color: Theme.mutedText
+                font.pixelSize: Theme.fontCaption
+                text: root.status === "searching" ? "正在搜索直播间…" : "输入房间号、链接或主播名开始搜索"
             }
         }
     }
@@ -272,9 +281,9 @@ Dialog {
     footer: Rectangle {
         objectName: "addRoomDialogFooter"
         implicitHeight: 56
-        color: Theme.controlSurface
+        color: Theme.managementSurface
         border.color: Theme.border
-        Button {
+        ConsoleButton {
             anchors.right: parent.right
             anchors.rightMargin: 0
             anchors.verticalCenter: parent.verticalCenter
@@ -282,8 +291,6 @@ Dialog {
             height: 34
             text: "取消"
             onClicked: root.close()
-            contentItem: Text { text: parent.text; color: Theme.text; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.pixelSize: 12 }
-            background: Rectangle { radius: Theme.radiusSmall; color: parent.down ? Theme.borderStrong : (parent.hovered ? Theme.border : Theme.well); border.color: Theme.borderStrong }
         }
     }
 }

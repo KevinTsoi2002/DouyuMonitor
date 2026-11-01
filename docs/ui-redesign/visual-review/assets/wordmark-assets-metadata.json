@@ -1,0 +1,60 @@
+[
+  {
+    "mode": "day",
+    "original": "originals\\wordmark-day.png",
+    "originalSize": [
+      2135,
+      736
+    ],
+    "originalMode": "RGBA",
+    "originalSha256": "067bfe0939e597be0f90c06f59b650e8166386d1037378115352bd3496235c27",
+    "alphaRange": [
+      0,
+      255
+    ],
+    "visibleAlphaThreshold": 8,
+    "padding": 4,
+    "crop": [
+      79,
+      230,
+      2103,
+      455
+    ],
+    "output": "wordmark-day.png",
+    "outputSize": [
+      2024,
+      225
+    ],
+    "outputSha256": "fe308e0c5475d0357e9780c683c52e1361690c9c8f79280a420be7f7ac1933b9",
+    "processing": "Crop only; original RGBA pixels inside crop preserved"
+  },
+  {
+    "mode": "night",
+    "original": "originals\\wordmark-night.png",
+    "originalSize": [
+      2135,
+      736
+    ],
+    "originalMode": "RGBA",
+    "originalSha256": "4cffc7eb419ea5202afe8e1448f49f9f851b00c0a8dc638c42ab7820e89ba4d3",
+    "alphaRange": [
+      0,
+      255
+    ],
+    "visibleAlphaThreshold": 8,
+    "padding": 4,
+    "crop": [
+      94,
+      246,
+      2036,
+      466
+    ],
+    "output": "wordmark-night.png",
+    "outputSize": [
+      1942,
+      220
+    ],
+    "outputSha256": "6b6ed1f5af50f7a27f6a1684ccf7adf871f7082826e77ea22fe2ae737b47b7d8",
+    "processing": "Crop only; original RGBA pixels inside crop preserved"
+  }
+]

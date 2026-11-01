@@ -5,6 +5,7 @@
 #include <QProcess>
 #include <QTimer>
 #include <algorithm>
+#include <limits>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -15,6 +16,27 @@ namespace {
 constexpr int kMaxInFlight = 2;
 constexpr int kMaxPlaybackBurst = 4;
 
+bool responseMatchesRequest(const ServiceResponse &response, const ServiceRequest &request)
+{
+    if (response.operation.has_value() && *response.operation != request.operation) return false;
+    if (!response.ok) return true;
+    switch (request.operation) {
+    case ServiceOperation::Ping:
+        return response.pong;
+    case ServiceOperation::Resolve:
+        return !response.roomId.isEmpty();
+    case ServiceOperation::Search:
+        return response.search;
+    case ServiceOperation::Status:
+        return response.status;
+    case ServiceOperation::Cancel:
+        return response.cancelledRequestId != 0;
+    case ServiceOperation::Shutdown:
+        return response.shutdown;
+    }
+    return false;
+}
+
 } // namespace
 
 StreamgetProcessClient::StreamgetProcessClient(QString program,
@@ -24,16 +46,25 @@ StreamgetProcessClient::StreamgetProcessClient(QString program,
     , program_(std::move(program))
     , arguments_(std::move(arguments))
     , process_(new QProcess(this))
+    , queuedDeadlineTimer_(new QTimer(this))
 {
     qRegisterMetaType<ServiceResponse>();
     process_->setProcessChannelMode(QProcess::SeparateChannels);
     connect(process_, &QProcess::started, this, &StreamgetProcessClient::onProcessStarted);
     connect(process_, &QProcess::readyReadStandardOutput,
             this, &StreamgetProcessClient::onProcessReadyRead);
+    connect(process_, &QProcess::readyReadStandardError,
+            this, &StreamgetProcessClient::onProcessReadyReadStandardError);
     connect(process_, &QProcess::errorOccurred,
             this, &StreamgetProcessClient::onProcessError);
     connect(process_, qOverload<int, QProcess::ExitStatus>(&QProcess::finished),
             this, &StreamgetProcessClient::onProcessFinished);
+    queuedDeadlineTimer_->setSingleShot(true);
+    connect(queuedDeadlineTimer_, &QTimer::timeout, this, [this] {
+        expireQueuedRequests();
+        scheduleQueuedDeadlineTimer();
+        pumpQueue();
+    });
 #ifdef Q_OS_WIN
     job_ = CreateJobObjectW(nullptr, nullptr);
     if (job_ != nullptr) {
@@ -102,7 +133,8 @@ bool StreamgetProcessClient::cancel(quint64 requestId)
     for (auto it = queuedRequests_.begin(); it != queuedRequests_.end(); ++it) {
         if (it->requestId != requestId) continue;
         queuedRequests_.erase(it);
-        queuedTimeouts_.remove(requestId);
+        queuedDeadlines_.remove(requestId);
+        scheduleQueuedDeadlineTimer();
         emit requestFailed(requestId, QStringLiteral("CANCELLED"));
         return true;
     }
@@ -150,6 +182,7 @@ void StreamgetProcessClient::shutdown(int timeoutMs)
         process_->kill();
         process_->waitForFinished(250);
     }
+    drainStandardError();
     QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
     outputBuffer_.clear();
     shuttingDown_ = false;
@@ -172,10 +205,16 @@ int StreamgetProcessClient::queuedRequestCount() const noexcept
 
 quint64 StreamgetProcessClient::enqueue(ServiceRequest request, int timeoutMs)
 {
+    if (shuttingDown_) return 0;
+    expireQueuedRequests();
+    if (queuedRequests_.size() >= kMaxQueuedRequests) return 0;
+
     request.requestId = nextRequestId_++;
     if (nextRequestId_ == 0) nextRequestId_ = 1;
     queuedRequests_.enqueue(request);
-    queuedTimeouts_.insert(request.requestId, qBound(1, timeoutMs, 60000));
+    queuedDeadlines_.insert(request.requestId,
+                            QDeadlineTimer(qBound(1, timeoutMs, 60000)));
+    scheduleQueuedDeadlineTimer();
     ensureProcessStarted();
     pumpQueue();
     return request.requestId;
@@ -192,6 +231,8 @@ void StreamgetProcessClient::ensureProcessStarted()
 void StreamgetProcessClient::pumpQueue()
 {
     if (process_->state() != QProcess::Running) return;
+
+    expireQueuedRequests();
 
     while (activeRequests_.size() < kMaxInFlight && !queuedRequests_.isEmpty()) {
         const auto playback = std::find_if(
@@ -213,16 +254,52 @@ void StreamgetProcessClient::pumpQueue()
         else consecutivePlaybackRequests_ = 0;
         PendingRequest pending;
         pending.request = request;
-        pending.timeoutMs = queuedTimeouts_.take(request.requestId);
-        if (pending.timeoutMs <= 0) pending.timeoutMs = 10000;
+        pending.deadlineAt = queuedDeadlines_.take(request.requestId);
+        const qint64 remainingMs = pending.deadlineAt.remainingTime();
+        if (remainingMs <= 0) {
+            emit requestFailed(request.requestId, QStringLiteral("TIMEOUT"));
+            continue;
+        }
         pending.deadline = new QTimer(this);
         pending.deadline->setSingleShot(true);
         connect(pending.deadline, &QTimer::timeout, this,
                 [this, requestId = request.requestId] { onRequestTimeout(requestId); });
         activeRequests_.insert(request.requestId, pending);
         writeRequest(request);
-        pending.deadline->start(pending.timeoutMs);
+        pending.deadline->start(static_cast<int>(qMin<qint64>(remainingMs, 60000)));
     }
+    scheduleQueuedDeadlineTimer();
+}
+
+void StreamgetProcessClient::expireQueuedRequests()
+{
+    for (auto it = queuedRequests_.begin(); it != queuedRequests_.end();) {
+        const auto deadline = queuedDeadlines_.constFind(it->requestId);
+        if (deadline == queuedDeadlines_.cend() || !deadline->hasExpired()) {
+            ++it;
+            continue;
+        }
+        const quint64 requestId = it->requestId;
+        it = queuedRequests_.erase(it);
+        queuedDeadlines_.remove(requestId);
+        emit requestFailed(requestId, QStringLiteral("TIMEOUT"));
+    }
+}
+
+void StreamgetProcessClient::scheduleQueuedDeadlineTimer()
+{
+    if (queuedDeadlineTimer_ == nullptr) return;
+    if (queuedDeadlines_.isEmpty()) {
+        queuedDeadlineTimer_->stop();
+        return;
+    }
+
+    qint64 remainingMs = (std::numeric_limits<qint64>::max)();
+    for (const auto &deadline : queuedDeadlines_) {
+        remainingMs = qMin(remainingMs, deadline.remainingTime());
+    }
+    if (remainingMs <= 0) remainingMs = 1;
+    queuedDeadlineTimer_->start(static_cast<int>(qMin<qint64>(remainingMs, 60000)));
 }
 
 void StreamgetProcessClient::writeRequest(const ServiceRequest &request)
@@ -262,9 +339,10 @@ void StreamgetProcessClient::failAll(const QString &errorCode)
     for (const quint64 requestId : activeIds) failRequest(requestId, errorCode);
     while (!queuedRequests_.isEmpty()) {
         const quint64 requestId = queuedRequests_.dequeue().requestId;
-        queuedTimeouts_.remove(requestId);
+        queuedDeadlines_.remove(requestId);
         emit requestFailed(requestId, errorCode);
     }
+    if (queuedDeadlineTimer_) queuedDeadlineTimer_->stop();
 }
 
 void StreamgetProcessClient::handleProtocolViolation()
@@ -312,29 +390,79 @@ void StreamgetProcessClient::terminateJob()
 
 void StreamgetProcessClient::onProcessReadyRead()
 {
-    outputBuffer_.append(process_->readAllStandardOutput());
-    while (true) {
-        const qsizetype newline = outputBuffer_.indexOf('\n');
-        if (newline < 0) return;
-        const QByteArray line = outputBuffer_.left(newline).trimmed();
-        outputBuffer_.remove(0, newline + 1);
-        if (line.isEmpty()) continue;
+    const auto drainLines = [this]() -> bool {
+        while (true) {
+            const qsizetype newline = outputBuffer_.indexOf('\n');
+            if (newline < 0) {
+                if (outputBuffer_.size() > kMaxJsonLineBytes) {
+                    handleProtocolViolation();
+                    return false;
+                }
+                return true;
+            }
+            if (newline > kMaxJsonLineBytes) {
+                handleProtocolViolation();
+                return false;
+            }
+            const QByteArray line = outputBuffer_.left(newline).trimmed();
+            outputBuffer_.remove(0, newline + 1);
+            if (line.isEmpty()) continue;
 
-        const auto response = decodeResponse(line);
-        if (!response.has_value()) {
+            const auto response = decodeResponse(line);
+            if (!response.has_value()) {
+                handleProtocolViolation();
+                return false;
+            }
+            auto active = activeRequests_.find(response->requestId);
+            if (active == activeRequests_.end()) continue;
+            if (!responseMatchesRequest(*response, active->request)) {
+                failRequest(response->requestId, QStringLiteral("INVALID_RESPONSE"));
+                pumpQueue();
+                continue;
+            }
+            if (active->deadline) {
+                active->deadline->stop();
+                active->deadline->deleteLater();
+            }
+            activeRequests_.erase(active);
+            emit responseReceived(*response);
+            pumpQueue();
+        }
+    };
+
+    while (process_->bytesAvailable() > 0) {
+        const QByteArray chunk = process_->read(kReadChunkBytes);
+        if (chunk.isEmpty()) break;
+        outputBuffer_.append(chunk);
+        if (outputBuffer_.size() > kMaxOutputBufferBytes) {
             handleProtocolViolation();
             return;
         }
-        auto active = activeRequests_.find(response->requestId);
-        if (active == activeRequests_.end()) continue;
-        if (active->deadline) {
-            active->deadline->stop();
-            active->deadline->deleteLater();
-        }
-        activeRequests_.erase(active);
-        emit responseReceived(*response);
-        pumpQueue();
+        if (!drainLines()) return;
     }
+    if (outputBuffer_.size() > kMaxOutputBufferBytes) {
+        handleProtocolViolation();
+        return;
+    }
+    if (outputBuffer_.indexOf('\n') < 0 && outputBuffer_.size() > kMaxJsonLineBytes) {
+        handleProtocolViolation();
+    }
+}
+
+void StreamgetProcessClient::onProcessReadyReadStandardError()
+{
+    drainStandardError();
+}
+
+void StreamgetProcessClient::drainStandardError()
+{
+    const QProcess::ProcessChannel previousChannel = process_->readChannel();
+    process_->setReadChannel(QProcess::StandardError);
+    char chunk[kReadChunkBytes];
+    while (process_->bytesAvailable() > 0) {
+        if (process_->read(chunk, sizeof(chunk)) <= 0) break;
+    }
+    process_->setReadChannel(previousChannel);
 }
 
 void StreamgetProcessClient::onProcessError(QProcess::ProcessError error)
@@ -346,6 +474,7 @@ void StreamgetProcessClient::onProcessError(QProcess::ProcessError error)
 
 void StreamgetProcessClient::onProcessFinished(int, QProcess::ExitStatus)
 {
+    drainStandardError();
     if (!protocolFailed_) failAll(QStringLiteral("SERVICE_FAILED"));
     outputBuffer_.clear();
     emit childStopped();

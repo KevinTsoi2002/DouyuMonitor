@@ -49,6 +49,14 @@ QString normalizeComparable(const QString &text)
     return text.trimmed().toCaseFolded();
 }
 
+void resetComparableStateIfClockRolledBack(DanmakuGovernanceRuntime &runtime, qint64 nowMs)
+{
+    if (runtime.lastComparableAtMs >= 0 && nowMs < runtime.lastComparableAtMs) {
+        runtime.lastComparableText.clear();
+        runtime.lastComparableAtMs = -1;
+    }
+}
+
 void prune(std::deque<DanmakuTimeBucket> &buckets, qint64 &count,
            qint64 nowMs, qint64 windowMs)
 {
@@ -143,14 +151,17 @@ DanmakuGovernanceRuntime createDanmakuGovernanceRuntime()
 QVector<DanmakuMessage> apply(const QVector<DanmakuMessage> &messages,
                                const DanmakuGovernanceSettings &rawSettings,
                                DanmakuGovernanceRuntime &runtime,
-                               const QDateTime &nowUtc)
+                               const QDateTime &nowUtc,
+                               std::optional<qint64> monotonicNowMs)
 {
     if (!runtime.rawSettings || *runtime.rawSettings != rawSettings) {
         runtime.rawSettings = rawSettings;
         runtime.validatedSettings = validatedGovernanceSettings(rawSettings);
     }
     const auto &settings = runtime.validatedSettings;
-    const qint64 nowMs = nowUtc.toUTC().toMSecsSinceEpoch();
+    const qint64 wallNowMs = nowUtc.toUTC().toMSecsSinceEpoch();
+    const qint64 nowMs = monotonicNowMs.value_or(wallNowMs);
+    if (!monotonicNowMs) resetComparableStateIfClockRolledBack(runtime, nowMs);
     prune(runtime.inputTimestampsMs, runtime.recentInputCount, nowMs, kInputWindowMs);
     append(runtime.inputTimestampsMs, runtime.recentInputCount, nowMs, messages.size());
     const qreal recentRate = static_cast<qreal>(runtime.recentInputCount) / 3.0;

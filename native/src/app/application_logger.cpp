@@ -1,21 +1,54 @@
 #include "app/application_logger.h"
 
+#include "app/application_logger_io.h"
+
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
+#include <QFileDevice>
 #include <QMutex>
 #include <QMutexLocker>
 #include <QRegularExpression>
 #include <QStandardPaths>
-#include <QTextStream>
 #include <QThread>
+
+#include <utility>
 
 namespace {
 
+class QFileBackend final : public ApplicationLoggerBackend {
+public:
+    bool ensureDirectory(const QString &directory) override { return QDir().mkpath(directory); }
+    bool open(const QString &path) override
+    {
+        file_.setFileName(path);
+        return file_.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text);
+    }
+    qint64 write(const QByteArray &data) override { return file_.write(data); }
+    bool flush() override { return file_.flush(); }
+    bool close() override
+    {
+        if (!file_.isOpen()) return true;
+        const bool flushed = file_.flush();
+        file_.close();
+        return flushed && file_.error() == QFileDevice::NoError;
+    }
+
+private:
+    QFile file_;
+};
+
 QMutex mutex;
-QFile *file = nullptr;
+std::unique_ptr<ApplicationLoggerBackend> backend;
 QString logPath;
 QtMessageHandler previousHandler = nullptr;
+bool handlerInstalled = false;
+ApplicationLogger::State loggerState = ApplicationLogger::State::Uninstalled;
+ApplicationLogger::Error loggerError = ApplicationLogger::Error::None;
+
+#ifdef DOUYU_APPLICATION_LOGGER_TESTING
+std::function<std::unique_ptr<ApplicationLoggerBackend>()> testBackendFactory;
+#endif
 
 QString redact(QString message)
 {
@@ -57,21 +90,36 @@ QString levelName(QtMsgType type)
 void handler(QtMsgType type, const QMessageLogContext &context, const QString &message)
 {
     const auto safeMessage = redact(message);
-    QMutexLocker locker(&mutex);
-    if (file != nullptr && file->isOpen()) {
-        QTextStream stream(file);
-        stream << QDateTime::currentDateTime().toString(Qt::ISODateWithMs)
-               << " [" << levelName(type) << "]"
-               << " [thread=" << reinterpret_cast<quintptr>(QThread::currentThreadId()) << "] ";
-        if (context.category != nullptr && *context.category != '\0') {
-            stream << '[' << context.category << "] ";
+    QtMessageHandler forward = nullptr;
+    {
+        QMutexLocker locker(&mutex);
+        if (loggerState == ApplicationLogger::State::Ready && backend != nullptr) {
+            QString line = QDateTime::currentDateTime().toString(Qt::ISODateWithMs)
+                + QStringLiteral(" [") + levelName(type)
+                + QStringLiteral("] [thread=")
+                + QString::number(reinterpret_cast<quintptr>(QThread::currentThreadId()))
+                + QStringLiteral("] ");
+            if (context.category != nullptr && *context.category != '\0') {
+                line += QStringLiteral("[") + QString::fromUtf8(context.category) + QStringLiteral("] ");
+            }
+            line += safeMessage;
+            line += QLatin1Char('\n');
+            const auto data = line.toUtf8();
+            const qint64 written = backend->write(data);
+            if (written < 0) {
+                loggerState = ApplicationLogger::State::Unavailable;
+                loggerError = ApplicationLogger::Error::WriteFailed;
+            } else if (written != data.size()) {
+                loggerState = ApplicationLogger::State::Unavailable;
+                loggerError = ApplicationLogger::Error::PartialWrite;
+            } else if (!backend->flush()) {
+                loggerState = ApplicationLogger::State::Unavailable;
+                loggerError = ApplicationLogger::Error::FlushFailed;
+            }
         }
-        stream << safeMessage << Qt::endl;
-        file->flush();
+        if (previousHandler != nullptr && previousHandler != handler) forward = previousHandler;
     }
-    if (previousHandler != nullptr && previousHandler != handler) {
-        previousHandler(type, context, safeMessage);
-    }
+    if (forward != nullptr) forward(type, context, safeMessage);
 }
 
 QString defaultDirectory()
@@ -81,31 +129,81 @@ QString defaultDirectory()
     return QDir(directory).filePath(QStringLiteral("logs"));
 }
 
-} // namespace
-
-void ApplicationLogger::install(const QString &directory)
+std::unique_ptr<ApplicationLoggerBackend> makeBackend()
 {
-    QMutexLocker locker(&mutex);
-    if (file != nullptr) return;
-
-    const QString logDirectory = directory.isEmpty() ? defaultDirectory() : directory;
-    QDir().mkpath(logDirectory);
-    logPath = QDir(logDirectory).filePath(
-        QStringLiteral("DouyuMonitor-%1.log").arg(QDate::currentDate().toString(QStringLiteral("yyyy-MM-dd"))));
-    file = new QFile(logPath);
-    if (!file->open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) {
-        delete file;
-        file = nullptr;
-        logPath.clear();
-        return;
-    }
-    previousHandler = qInstallMessageHandler(handler);
+#ifdef DOUYU_APPLICATION_LOGGER_TESTING
+    if (testBackendFactory) return testBackendFactory();
+#endif
+    return std::make_unique<QFileBackend>();
 }
 
-void ApplicationLogger::flush()
+} // namespace
+
+bool ApplicationLogger::install(const QString &directory)
 {
     QMutexLocker locker(&mutex);
-    if (file != nullptr) file->flush();
+    if (backend != nullptr) return loggerState == State::Ready;
+
+    const QString logDirectory = directory.isEmpty() ? defaultDirectory() : directory;
+    auto candidate = makeBackend();
+    if (!candidate || !candidate->ensureDirectory(logDirectory)) {
+        loggerState = State::Unavailable;
+        loggerError = Error::DirectoryCreateFailed;
+        logPath.clear();
+        return false;
+    }
+    logPath = QDir(logDirectory).filePath(
+        QStringLiteral("DouyuMonitor-%1.log").arg(QDate::currentDate().toString(QStringLiteral("yyyy-MM-dd"))));
+    if (!candidate->open(logPath)) {
+        loggerState = State::Unavailable;
+        loggerError = Error::OpenFailed;
+        logPath.clear();
+        return false;
+    }
+    backend = std::move(candidate);
+    previousHandler = qInstallMessageHandler(handler);
+    handlerInstalled = true;
+    loggerState = State::Ready;
+    loggerError = Error::None;
+    return true;
+}
+
+bool ApplicationLogger::flush()
+{
+    QMutexLocker locker(&mutex);
+    if (backend == nullptr || loggerState != State::Ready) return false;
+    if (!backend->flush()) {
+        loggerState = State::Unavailable;
+        loggerError = Error::FlushFailed;
+        return false;
+    }
+    return true;
+}
+
+bool ApplicationLogger::shutdown()
+{
+    QMutexLocker locker(&mutex);
+    if (backend == nullptr) {
+        if (loggerState == State::Uninstalled) loggerState = State::Closed;
+        return true;
+    }
+    const auto restore = previousHandler;
+    if (handlerInstalled) qInstallMessageHandler(restore);
+    handlerInstalled = false;
+    previousHandler = nullptr;
+    const auto priorError = loggerError;
+    const bool closed = backend->close();
+    if (!closed) {
+        loggerState = State::Unavailable;
+        loggerError = Error::CloseFailed;
+    } else {
+        loggerState = State::Closed;
+        // Keep the most recent I/O failure observable after the handle is closed.
+        loggerError = priorError;
+    }
+    backend.reset();
+    logPath.clear();
+    return closed;
 }
 
 QString ApplicationLogger::currentLogPath()
@@ -116,12 +214,38 @@ QString ApplicationLogger::currentLogPath()
 
 void ApplicationLogger::resetForTest()
 {
+    shutdown();
     QMutexLocker locker(&mutex);
-    if (file == nullptr) return;
-    qInstallMessageHandler(previousHandler);
-    file->close();
-    delete file;
-    file = nullptr;
-    logPath.clear();
-    previousHandler = nullptr;
+    loggerState = State::Uninstalled;
+    loggerError = Error::None;
+#ifdef DOUYU_APPLICATION_LOGGER_TESTING
+    testBackendFactory = {};
+#endif
 }
+
+ApplicationLogger::State ApplicationLogger::state()
+{
+    QMutexLocker locker(&mutex);
+    return loggerState;
+}
+
+ApplicationLogger::Error ApplicationLogger::lastError()
+{
+    QMutexLocker locker(&mutex);
+    return loggerError;
+}
+
+#ifdef DOUYU_APPLICATION_LOGGER_TESTING
+void ApplicationLogger::setTestBackendFactory(
+    std::function<std::unique_ptr<ApplicationLoggerBackend>()> factory)
+{
+    QMutexLocker locker(&mutex);
+    testBackendFactory = std::move(factory);
+}
+
+void ApplicationLogger::clearTestBackendFactory()
+{
+    QMutexLocker locker(&mutex);
+    testBackendFactory = {};
+}
+#endif

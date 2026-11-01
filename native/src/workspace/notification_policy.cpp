@@ -47,6 +47,10 @@ QVector<NotificationEvent> NotificationPolicy::update(const RoomSnapshots &snaps
 
         const auto previous = states_.constFind(snapshot.roomId);
         if (previous == states_.cend()) {
+            if (snapshot.liveStatus == RoomLiveStatus::Online
+                && snapshot.playbackHealth == RoomPlaybackHealth::Error) {
+                playbackFailuresActive_.insert(snapshot.roomId);
+            }
             states_.insert(snapshot.roomId,
                            {snapshot.liveStatus,
                             snapshot.playbackHealth,
@@ -56,6 +60,12 @@ QVector<NotificationEvent> NotificationPolicy::update(const RoomSnapshots &snaps
         }
 
         const State old = previous.value();
+        const bool oldPlaybackFailureActive = playbackFailuresActive_.contains(snapshot.roomId);
+        if (snapshot.liveStatus != RoomLiveStatus::Online) {
+            playbackFailuresActive_.remove(snapshot.roomId);
+        } else if (snapshot.playbackHealth == RoomPlaybackHealth::Error) {
+            playbackFailuresActive_.insert(snapshot.roomId);
+        }
         std::optional<NotificationEventType> eventType;
         if (old.liveStatus != snapshot.liveStatus) {
             if (snapshot.liveStatus == RoomLiveStatus::Online
@@ -70,12 +80,13 @@ QVector<NotificationEvent> NotificationPolicy::update(const RoomSnapshots &snaps
         if (!eventType.has_value()
             && snapshot.liveStatus == RoomLiveStatus::Online
             && old.liveStatus == RoomLiveStatus::Online) {
-            if (old.playbackHealth != RoomPlaybackHealth::Error
+            if (!oldPlaybackFailureActive
                 && snapshot.playbackHealth == RoomPlaybackHealth::Error) {
                 eventType = NotificationEventType::PlaybackFailed;
-            } else if (old.playbackHealth == RoomPlaybackHealth::Error
+            } else if (oldPlaybackFailureActive
                        && snapshot.playbackHealth == RoomPlaybackHealth::Playing) {
                 eventType = NotificationEventType::PlaybackRecovered;
+                playbackFailuresActive_.remove(snapshot.roomId);
             }
         }
 
@@ -105,6 +116,7 @@ QVector<NotificationEvent> NotificationPolicy::update(const RoomSnapshots &snaps
 void NotificationPolicy::resetBaseline()
 {
     states_.clear();
+    playbackFailuresActive_.clear();
     lastEmittedMs_.clear();
     emittedAtMs_.clear();
 }
@@ -112,6 +124,7 @@ void NotificationPolicy::resetBaseline()
 void NotificationPolicy::forgetRoom(const QString &roomId)
 {
     states_.remove(roomId);
+    playbackFailuresActive_.remove(roomId);
     const QString prefix = roomId + QLatin1Char(':');
     for (auto it = lastEmittedMs_.begin(); it != lastEmittedMs_.end();) {
         if (it.key().startsWith(prefix)) it = lastEmittedMs_.erase(it);

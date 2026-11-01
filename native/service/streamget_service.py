@@ -11,6 +11,7 @@ from native.service.protocol import (
     ProtocolError,
     error_response,
     parse_request,
+    serialize_jsonl_response,
     success_resolve,
     success_search,
 )
@@ -137,6 +138,12 @@ async def run_service(
             tasks[request_id] = asyncio.create_task(run_operation(request))
 
     if tasks:
+        if exit_on_shutdown:
+            for task in list(tasks.values()):
+                task.cancel()
+            # asyncio.run() otherwise waits for its default executor, even
+            # after the protocol input has reached EOF and no response is due.
+            os._exit(0)
         await asyncio.gather(*list(tasks.values()), return_exceptions=True)
     return False
 
@@ -150,7 +157,16 @@ async def _stdin_lines() -> AsyncIterable[str]:
 
 
 async def _stdout_emit(value: dict[str, Any]) -> None:
-    sys.stdout.write(json.dumps(value, ensure_ascii=False, separators=(",", ":")) + "\n")
+    try:
+        encoded = serialize_jsonl_response(value)
+    except ProtocolError:
+        request_id = value.get("requestId", 0)
+        encoded = serialize_jsonl_response(error_response(
+            request_id if isinstance(request_id, int) and not isinstance(request_id, bool)
+            and request_id > 0 else 0,
+            ErrorCode.INVALID_RESPONSE,
+        ))
+    sys.stdout.write(encoded.decode("utf-8"))
     sys.stdout.flush()
 
 

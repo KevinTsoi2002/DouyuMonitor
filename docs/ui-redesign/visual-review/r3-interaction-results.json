@@ -1,0 +1,754 @@
+{
+  "revision": "r3",
+  "date": "2026-10-29T16:42:27.076Z",
+  "url": "http://127.0.0.1:8899/",
+  "viewport": {
+    "width": 1366,
+    "height": 768
+  },
+  "passed": true,
+  "assertionCount": 113,
+  "assertions": [
+    {
+      "name": "R3 page loaded",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "four video composition placeholders",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "old permanent picture overlays removed",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "tools trigger lives in existing titlebar",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "rooms drawer: tools opened",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "rooms drawer: tools use drawer",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "rooms drawer: drawer does not resize or move video grid",
+      "passed": true,
+      "evidence": {
+        "before": {
+          "x": 107,
+          "y": 137,
+          "width": 1232,
+          "height": 555
+        },
+        "after": {
+          "x": 107,
+          "y": 137,
+          "width": 1232,
+          "height": 555
+        }
+      }
+    },
+    {
+      "name": "titlebar trigger expanded",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "opening tools preserves grid and picture nodes",
+      "passed": true,
+      "evidence": {
+        "grid": true,
+        "tiles": true,
+        "scenes": true,
+        "pictures": true
+      }
+    },
+    {
+      "name": "rooms subdrawer opened",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "rooms retains drawer presentation",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "rooms drawer lists all four initial rooms",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "rooms subdrawer preserves grid and picture nodes",
+      "passed": true,
+      "evidence": {
+        "grid": true,
+        "tiles": true,
+        "scenes": true,
+        "pictures": true
+      }
+    },
+    {
+      "name": "rooms drawer: focus returns to titlebar",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "rooms drawer: trigger collapsed",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "closing rooms preserves grid and picture nodes",
+      "passed": true,
+      "evidence": {
+        "grid": true,
+        "tiles": true,
+        "scenes": true,
+        "pictures": true
+      }
+    },
+    {
+      "name": "layout drawer: tools opened",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "layout drawer: tools use drawer",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "layout drawer: drawer does not resize or move video grid",
+      "passed": true,
+      "evidence": {
+        "before": {
+          "x": 107,
+          "y": 137,
+          "width": 1232,
+          "height": 555
+        },
+        "after": {
+          "x": 107,
+          "y": 137,
+          "width": 1232,
+          "height": 555
+        }
+      }
+    },
+    {
+      "name": "layout subdrawer opened",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "opening layout preserves grid and picture nodes",
+      "passed": true,
+      "evidence": {
+        "grid": true,
+        "tiles": true,
+        "scenes": true,
+        "pictures": true
+      }
+    },
+    {
+      "name": "layout choice applied",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "layout selection restores titlebar focus",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "changing layout preserves grid and picture nodes",
+      "passed": true,
+      "evidence": {
+        "grid": true,
+        "tiles": true,
+        "scenes": true,
+        "pictures": true
+      }
+    },
+    {
+      "name": "audio drawer: tools opened",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "audio drawer: tools use drawer",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "audio drawer: drawer does not resize or move video grid",
+      "passed": true,
+      "evidence": {
+        "before": {
+          "x": 107,
+          "y": 137,
+          "width": 1232,
+          "height": 555
+        },
+        "after": {
+          "x": 107,
+          "y": 137,
+          "width": 1232,
+          "height": 555
+        }
+      }
+    },
+    {
+      "name": "audio subdrawer opened",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "audio mute checked",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "danmaku unchecked",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "audio changes preserve grid and picture nodes",
+      "passed": true,
+      "evidence": {
+        "grid": true,
+        "tiles": true,
+        "scenes": true,
+        "pictures": true
+      }
+    },
+    {
+      "name": "audio drawer: focus returns to titlebar",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "audio drawer: trigger collapsed",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "danmaku overlay hidden after change",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "mute feedback visible on hover",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "palette applied c3",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "C component structure retained c3",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "layout retained c3",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "danmaku retained c3",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "mute retained c3",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "theme persisted c3",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "palette preserves grid and picture nodes c3",
+      "passed": true,
+      "evidence": {
+        "grid": true,
+        "tiles": true,
+        "scenes": true,
+        "pictures": true
+      }
+    },
+    {
+      "name": "palette applied c1",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "C component structure retained c1",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "layout retained c1",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "danmaku retained c1",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "mute retained c1",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "theme persisted c1",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "palette preserves grid and picture nodes c1",
+      "passed": true,
+      "evidence": {
+        "grid": true,
+        "tiles": true,
+        "scenes": true,
+        "pictures": true
+      }
+    },
+    {
+      "name": "palette applied c3",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "C component structure retained c3",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "layout retained c3",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "danmaku retained c3",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "mute retained c3",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "theme persisted c3",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "palette preserves grid and picture nodes c3",
+      "passed": true,
+      "evidence": {
+        "grid": true,
+        "tiles": true,
+        "scenes": true,
+        "pictures": true
+      }
+    },
+    {
+      "name": "dialog text input and fifth room: tools opened",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "dialog text input and fifth room: tools use drawer",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "dialog text input and fifth room: drawer does not resize or move video grid",
+      "passed": true,
+      "evidence": {
+        "before": {
+          "x": 107,
+          "y": 137,
+          "width": 1232,
+          "height": 555
+        },
+        "after": {
+          "x": 107,
+          "y": 137,
+          "width": 1232,
+          "height": 555
+        }
+      }
+    },
+    {
+      "name": "add flow changes drawer to modal",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "T is entered in dialog input",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "T in dialog input does not replace dialog with tools",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "opening add and typing preserve grid and picture nodes",
+      "passed": true,
+      "evidence": {
+        "grid": true,
+        "tiles": true,
+        "scenes": true,
+        "pictures": true
+      }
+    },
+    {
+      "name": "fifth room added",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "fifth room keeps four composition previews",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "dialog text input and fifth room: tools opened",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "dialog text input and fifth room: tools use drawer",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "dialog text input and fifth room: drawer does not resize or move video grid",
+      "passed": true,
+      "evidence": {
+        "before": {
+          "x": 107,
+          "y": 137,
+          "width": 1232,
+          "height": 555
+        },
+        "after": {
+          "x": 107,
+          "y": 137,
+          "width": 1232,
+          "height": 555
+        }
+      }
+    },
+    {
+      "name": "fifth room remains in room drawer",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "fifth room is visible",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "fifth room explicitly marked outside composition",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "dialog text input and fifth room: focus returns to titlebar",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "dialog text input and fifth room: trigger collapsed",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "fifth-room drawer operations preserve current picture nodes",
+      "passed": true,
+      "evidence": {
+        "grid": true,
+        "tiles": true,
+        "scenes": true,
+        "pictures": true
+      }
+    },
+    {
+      "name": "immersive entry and Escape order: tools opened",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "immersive entry and Escape order: tools use drawer",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "immersive entry and Escape order: drawer does not resize or move video grid",
+      "passed": true,
+      "evidence": {
+        "before": {
+          "x": 107,
+          "y": 137,
+          "width": 1232,
+          "height": 555
+        },
+        "after": {
+          "x": 107,
+          "y": 137,
+          "width": 1232,
+          "height": 555
+        }
+      }
+    },
+    {
+      "name": "immersive entry and Escape order: immersive enabled",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "immersive entry and Escape order: stage receives focus",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "immersive entry and Escape order: idle edge panel hidden",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "entering immersive preserves grid and picture nodes",
+      "passed": true,
+      "evidence": {
+        "grid": true,
+        "tiles": true,
+        "scenes": true,
+        "pictures": true
+      }
+    },
+    {
+      "name": "T opens tools in immersive mode",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "T leaves immersive mode active",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "first Escape only closes tools",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "keyboard tools close returns to stage",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "second Escape exits immersive",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "immersive exit returns focus to titlebar trigger",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "edge unavailable outside immersive mode",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "Escape sequence preserves grid and picture nodes",
+      "passed": true,
+      "evidence": {
+        "grid": true,
+        "tiles": true,
+        "scenes": true,
+        "pictures": true
+      }
+    },
+    {
+      "name": "immersive edge hover and keyboard focus: tools opened",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "immersive edge hover and keyboard focus: tools use drawer",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "immersive edge hover and keyboard focus: drawer does not resize or move video grid",
+      "passed": true,
+      "evidence": {
+        "before": {
+          "x": 107,
+          "y": 137,
+          "width": 1232,
+          "height": 555
+        },
+        "after": {
+          "x": 107,
+          "y": 137,
+          "width": 1232,
+          "height": 555
+        }
+      }
+    },
+    {
+      "name": "immersive edge hover and keyboard focus: immersive enabled",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "immersive edge hover and keyboard focus: stage receives focus",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "immersive edge hover and keyboard focus: idle edge panel hidden",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "idle edge has a hit area",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "hover reveals edge panel",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "leaving unfocused edge hides panel",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "edge keyboard focus reveals panel",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "Tab enters revealed tools button",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "pointer departure does not hide focused controls",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "edge button opens tools with Enter",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "closing edge tools returns to visible focused trigger",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "edge flow exits to titlebar trigger",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "edge interaction preserves grid and picture nodes",
+      "passed": true,
+      "evidence": {
+        "grid": true,
+        "tiles": true,
+        "scenes": true,
+        "pictures": true
+      }
+    },
+    {
+      "name": "R3 preference saved with confirmed day/night themes",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "day theme restored after reload",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "saved layout feedback restored after reload",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "saved layout note restored after reload",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "night theme restored after reload",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "original preferences restored and app reloaded",
+      "passed": true,
+      "evidence": {
+        "storage": true,
+        "reloaded": true,
+        "viewport": true
+      }
+    },
+    {
+      "name": "original viewport restored",
+      "passed": true,
+      "evidence": null
+    },
+    {
+      "name": "no runtime JavaScript errors",
+      "passed": true,
+      "evidence": []
+    }
+  ],
+  "failure": null,
+  "runtimeErrors": [],
+  "restoration": {
+    "storage": true,
+    "reloaded": true,
+    "viewport": true
+  },
+  "limits": [
+    "DOM picture placeholders only; no real playback",
+    "Touch, responsive matrix and screenshots are separate checks"
+  ]
+}

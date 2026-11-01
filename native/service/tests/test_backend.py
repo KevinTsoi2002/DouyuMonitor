@@ -1,8 +1,51 @@
 import asyncio
+import io
+import json
 import unittest
+from unittest import mock
 
+from native.service import douyu_backend
 from native.service.douyu_backend import BackendError, DouyuBackend
 from native.service.protocol import ErrorCode
+
+
+class _FakeHttpResponse(io.BytesIO):
+    def __init__(self, payload, headers=None):
+        super().__init__(payload)
+        self.headers = headers or {}
+        self.read_calls = 0
+
+    def getheader(self, name, default=None):
+        return self.headers.get(name, default)
+
+    def read(self, size=-1):
+        self.read_calls += 1
+        return super().read(size)
+
+
+class _FakeStreamgetResponse:
+    def __init__(self, text):
+        self.text = text
+
+
+class _FakeStreamgetHttpClient:
+    responses = {}
+    options = []
+
+    def __init__(self, **options):
+        type(self).options.append(options)
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_args):
+        return False
+
+    async def get(self, url, **_kwargs):
+        return _FakeStreamgetResponse(self.responses[url])
+
+    async def post(self, url, **_kwargs):
+        return _FakeStreamgetResponse(self.responses[url])
 
 
 def live_payload(rate=4):
@@ -51,6 +94,95 @@ class FakeStream:
 
 
 class BackendTests(unittest.TestCase):
+    def test_default_douyu_stream_verifies_tls_for_all_requests(self):
+        from streamget.requests import async_http
+
+        _FakeStreamgetHttpClient.options = []
+        _FakeStreamgetHttpClient.responses = {
+            "https://www.douyu.com/betard/63136": json.dumps({"room": {
+                "room_name": "Test Room",
+                "show_status": 1,
+                "videoLoop": 0,
+                "nickname": "Test Anchor",
+                "room_id": "63136",
+            }}),
+            "https://www.douyu.com/wgapi/livenc/liveweb/websec/getEncryption"
+            "?did=10000000000000000000000000001501": json.dumps({
+                "error": 0,
+                "data": {
+                    "rand_str": "seed",
+                    "key": "key",
+                    "enc_time": 1,
+                    "is_special": False,
+                    "enc_data": "encoded",
+                },
+            }),
+            "https://playweb.douyucdn.cn/lapi/live/getH5PlayV1/63136": json.dumps({
+                "error": 0,
+                "data": {
+                    "rate": 4,
+                    "multirates": [{"name": "Smooth 4M", "rate": 4}],
+                    "rtmp_url": "https://stream-shantou.edgesrv.com:443/live",
+                    "rtmp_live": "63136.flv?wsAuth=redacted",
+                },
+            }),
+        }
+
+        with mock.patch.object(async_http.httpx, "AsyncClient", _FakeStreamgetHttpClient):
+            asyncio.run(DouyuBackend().resolve("63136", "auto"))
+
+        self.assertEqual(len(_FakeStreamgetHttpClient.options), 3)
+        self.assertTrue(all(options.get("verify") is True
+                            for options in _FakeStreamgetHttpClient.options))
+
+    def test_default_fetch_json_accepts_response_at_limit(self):
+        target_size = 1024 * 1024
+        padding_size = target_size - len(b'{"error":0,"data":{"padding":""}}')
+        payload = json.dumps({"error": 0, "data": {"padding": "x" * padding_size}},
+                             separators=(",", ":")).encode()
+        self.assertEqual(len(payload), target_size)
+        response = _FakeHttpResponse(payload, headers={"Content-Length": str(len(payload))})
+        with mock.patch.object(douyu_backend, "urlopen", return_value=response):
+            self.assertEqual(douyu_backend._default_fetch_json("https://example.test", 1),
+                             {"error": 0, "data": {"padding": "x" * padding_size}})
+
+    def test_default_fetch_json_rejects_body_over_limit_during_read(self):
+        payload = b"{" + b"x" * (1024 * 1024 + 1) + b"}"
+        response = _FakeHttpResponse(payload)
+        with mock.patch.object(douyu_backend, "urlopen", return_value=response):
+            with self.assertRaises(BackendError) as context:
+                douyu_backend._default_fetch_json("https://example.test", 1)
+        self.assertEqual(context.exception.code, ErrorCode.SERVICE_FAILED)
+        self.assertGreater(response.read_calls, 1)
+
+    def test_default_fetch_json_rejects_declared_length_before_reading(self):
+        response = _FakeHttpResponse(b'{"error":0,"data":{}}',
+                                     headers={"Content-Length": str(1024 * 1024 + 1)})
+        with mock.patch.object(douyu_backend, "urlopen", return_value=response):
+            with self.assertRaises(BackendError) as context:
+                douyu_backend._default_fetch_json("https://example.test", 1)
+        self.assertEqual(context.exception.code, ErrorCode.SERVICE_FAILED)
+        self.assertEqual(response.read_calls, 0)
+
+    def test_default_fetch_json_uses_actual_bytes_when_length_header_is_wrong(self):
+        payload = b'{"error":0,"data":{}}'
+        for declared in ("1", str(len(payload) + 100), "not-a-length"):
+            with self.subTest(declared=declared):
+                response = _FakeHttpResponse(payload, headers={"Content-Length": declared})
+                with mock.patch.object(douyu_backend, "urlopen", return_value=response):
+                    self.assertEqual(
+                        douyu_backend._default_fetch_json("https://example.test", 1),
+                        {"error": 0, "data": {}},
+                    )
+
+    def test_default_fetch_json_rejects_chunked_body_without_length(self):
+        payload = b"{" + b"x" * (1024 * 1024 + 1) + b"}"
+        response = _FakeHttpResponse(payload)
+        with mock.patch.object(douyu_backend, "urlopen", return_value=response):
+            with self.assertRaises(BackendError) as context:
+                douyu_backend._default_fetch_json("https://example.test", 1)
+        self.assertEqual(context.exception.code, ErrorCode.SERVICE_FAILED)
+
     def test_searches_numeric_room_and_maps_metadata(self):
         calls = []
 
@@ -85,6 +217,54 @@ class BackendTests(unittest.TestCase):
             ],
         )
         self.assertEqual(calls, ["https://open.douyucdn.cn/api/RoomApi/room/63136"])
+
+    def test_search_with_nan_viewer_count_preserves_room_metadata(self):
+        backend = DouyuBackend(fetch_json=lambda _url, _timeout: {
+            "error": 0,
+            "data": {
+                "room_id": "63136",
+                "room_name": "Test Live",
+                "owner_name": "Anchor",
+                "room_status": "1",
+                "online": float("nan"),
+            },
+        })
+
+        self.assertEqual(backend.search("63136"), [{
+            "roomId": "63136",
+            "anchorName": "Anchor",
+            "title": "Test Live",
+            "category": "未分类",
+            "online": True,
+            "viewerLabel": "",
+        }])
+
+    def test_viewer_count_boundary_labels(self):
+        def fetch_json(_url, _timeout):
+            return {"error": 0, "data": {
+                "room_id": "63136", "room_name": "Test Live",
+                "owner_name": "Anchor", "room_status": "1",
+                "online": viewer_count,
+            }}
+
+        backend = DouyuBackend(fetch_json=fetch_json)
+        cases = (
+            (None, "0"), ("", "0"), ("invalid", "0"),
+            (0, "0"), (-1, "0"), (1234, "1,234"),
+            ("1234", "1,234"), (1234.5, "1,234"),
+            (12345, "1.2 万"), ("NaN", ""),
+            (float("inf"), ""), (float("-inf"), ""),
+        )
+        for viewer_count, label in cases:
+            with self.subTest(viewer_count=viewer_count):
+                self.assertEqual(backend.search("63136")[0]["viewerLabel"], label)
+
+    def test_default_json_fetch_can_decode_nonstandard_nan(self):
+        payload = (b'{"error":0,"data":{"room_id":"63136","room_name":"Test Live",'
+                   b'"owner_name":"Anchor","room_status":"1","online":NaN}}')
+        with mock.patch.object(douyu_backend, "urlopen", return_value=_FakeHttpResponse(payload)):
+            backend = DouyuBackend()
+            self.assertEqual(backend.search("63136")[0]["viewerLabel"], "")
 
     def test_searches_anchor_name_and_deduplicates_room_ids(self):
         def fetch_json(_url, _timeout):

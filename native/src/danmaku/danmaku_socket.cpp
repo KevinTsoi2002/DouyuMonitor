@@ -1,38 +1,55 @@
 #include "danmaku/danmaku_socket.h"
 
+#include "danmaku/douyu_danmaku_protocol.h"
+
 #include <QAuthenticator>
 #include <QWebSocket>
 
 QtDanmakuSocket::QtDanmakuSocket(QObject *parent)
     : DanmakuSocket(parent)
-    , socket_(new QWebSocket(QString(), QWebSocketProtocol::VersionLatest, this))
 {
-    connect(socket_, &QWebSocket::connected, this, &DanmakuSocket::connected);
-    connect(socket_, &QWebSocket::binaryMessageReceived,
-            this, &DanmakuSocket::binaryFrameReceived);
-    connect(socket_, &QWebSocket::errorOccurred, this,
-            [this](QAbstractSocket::SocketError) { emit networkFailure(); });
-    connect(socket_, &QWebSocket::disconnected, this, [this] {
-        emit closed(static_cast<int>(socket_->closeCode()), socket_->closeReason());
-    });
-    connect(socket_, &QWebSocket::authenticationRequired, this,
-            [this](QAuthenticator *) {
-                emit authenticationRequested();
-                socket_->close();
-            });
 }
 
-void QtDanmakuSocket::connectTo(const QUrl &url)
+void QtDanmakuSocket::connectTo(const QUrl &url, quint64 attemptId)
 {
+    if (socket_) {
+        socket_->close();
+        socket_->deleteLater();
+        socket_ = nullptr;
+    }
+    socket_ = new QWebSocket(QString(), QWebSocketProtocol::VersionLatest, this);
+    QWebSocket *const connectionSocket = socket_;
+    connect(connectionSocket, &QWebSocket::connected, this, [this, attemptId] {
+        emit connected(attemptId);
+    });
+    connect(connectionSocket, &QWebSocket::binaryMessageReceived,
+            this, [this, attemptId](const QByteArray &frame) {
+                emit binaryFrameReceived(frame, attemptId);
+            });
+    connect(connectionSocket, &QWebSocket::errorOccurred, this,
+            [this, attemptId](QAbstractSocket::SocketError) {
+                emit networkFailure(attemptId);
+            });
+    connect(connectionSocket, &QWebSocket::disconnected, this, [this, attemptId, connectionSocket] {
+        emit closed(static_cast<int>(connectionSocket->closeCode()),
+                    connectionSocket->closeReason(), attemptId);
+    });
+    connect(connectionSocket, &QWebSocket::authenticationRequired, this,
+            [this, attemptId, connectionSocket](QAuthenticator *) {
+                emit authenticationRequested(attemptId);
+                connectionSocket->close();
+            });
+    socket_->setMaxAllowedIncomingMessageSize(
+        static_cast<quint64>(DouyuDanmakuProtocol::kMaxWebSocketMessageBytes));
     socket_->open(url);
 }
 
 void QtDanmakuSocket::sendBinary(const QByteArray &frame)
 {
-    if (socket_->isValid()) socket_->sendBinaryMessage(frame);
+    if (socket_ && socket_->isValid()) socket_->sendBinaryMessage(frame);
 }
 
 void QtDanmakuSocket::close()
 {
-    socket_->close();
+    if (socket_) socket_->close();
 }

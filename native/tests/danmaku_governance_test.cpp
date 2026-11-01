@@ -12,6 +12,8 @@ private slots:
     void boundsRepeatedTimestampStorage();
     void keepsInclusiveRateWindowBoundaries();
     void handlesClockRollbackAndKeywordChanges();
+    void doesNotExtendDuplicateWindowAfterClockRollback();
+    void usesMonotonicTimeForGovernanceWindows();
 };
 
 void DanmakuGovernanceTest::boundsRepeatedTimestampStorage()
@@ -64,6 +66,34 @@ void DanmakuGovernanceTest::handlesClockRollbackAndKeywordChanges()
     QCOMPARE(runtime.stats.filtered, 1);
     settings.keywordBlacklist.clear();
     QCOMPARE(DanmakuGovernance::apply(message, settings, runtime, now.addSecs(4)).size(), 1);
+}
+
+void DanmakuGovernanceTest::doesNotExtendDuplicateWindowAfterClockRollback()
+{
+    DanmakuGovernanceRuntime runtime;
+    DanmakuGovernanceSettings settings;
+    settings.duplicateWindowSeconds = 3;
+    const auto initial = QDateTime::fromMSecsSinceEpoch(100'000, Qt::UTC);
+    const QVector<DanmakuMessage> message{{"id", "room", "user", "same", initial}};
+
+    QCOMPARE(DanmakuGovernance::apply(message, settings, runtime, initial).size(), 1);
+    const auto rolledBack = initial.addMSecs(-1);
+    QCOMPARE(DanmakuGovernance::apply(message, settings, runtime, rolledBack).size(), 1);
+    QCOMPARE(runtime.stats.duplicates, 0);
+}
+
+void DanmakuGovernanceTest::usesMonotonicTimeForGovernanceWindows()
+{
+    DanmakuGovernanceRuntime runtime;
+    DanmakuGovernanceSettings settings;
+    settings.duplicateWindowSeconds = 3;
+    const auto firstWallTime = QDateTime::fromMSecsSinceEpoch(100'000, Qt::UTC);
+    const QVector<DanmakuMessage> message{{"id", "room", "user", "same", firstWallTime}};
+
+    QCOMPARE(DanmakuGovernance::apply(message, settings, runtime, firstWallTime, 0).size(), 1);
+    const auto jumpedWallTime = firstWallTime.addSecs(24 * 60 * 60);
+    QCOMPARE(DanmakuGovernance::apply(message, settings, runtime, jumpedWallTime, 1000).size(), 0);
+    QCOMPARE(DanmakuGovernance::apply(message, settings, runtime, jumpedWallTime, 3001).size(), 1);
 }
 
 void DanmakuGovernanceTest::sanitizesAndBoundsChatFields()

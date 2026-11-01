@@ -27,6 +27,7 @@ Item {
 
     Text {
         id: shadow
+        objectName: "danmakuShadowText"
         visible: root.rendering === "advanced"
         anchors.left: foreground.left
         anchors.leftMargin: 1
@@ -36,11 +37,13 @@ Item {
         font.family: root.fontFamily
         font.pixelSize: root.fontSize
         font.bold: true
+        textFormat: Text.PlainText
         text: root.messageText
     }
 
     Text {
         id: foreground
+        objectName: "danmakuForegroundText"
         anchors.left: parent.left
         anchors.top: parent.top
         color: "#f5f7fa"
@@ -50,6 +53,7 @@ Item {
         font.bold: root.rendering === "advanced"
         style: Text.Outline
         styleColor: root.rendering === "advanced" ? "#090d12" : "#1c2731"
+        textFormat: Text.PlainText
         text: root.messageText
     }
 

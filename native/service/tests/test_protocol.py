@@ -7,6 +7,7 @@ from native.service.protocol import (
     ProtocolError,
     error_response,
     parse_request,
+    serialize_jsonl_response,
     success_resolve,
 )
 
@@ -93,6 +94,27 @@ class ProtocolTests(unittest.TestCase):
                     parse_request(line)
                 self.assertEqual(context.exception.code, ErrorCode.INVALID_INPUT)
 
+    def test_rejects_invalid_operation_types_and_values(self):
+        for operation in (None, False, True, 0, 1, [], ["ping"], {}, {"name": "ping"},
+                          "", "unknown", " PING "):
+            with self.subTest(operation=operation):
+                line = json.dumps({"requestId": 7, "op": operation})
+                with self.assertRaises(ProtocolError) as context:
+                    parse_request(line)
+                self.assertEqual(context.exception.code, ErrorCode.INVALID_INPUT)
+
+        for value in ({"requestId": 7}, {"requestId": True, "op": []}):
+            with self.subTest(request=value):
+                with self.assertRaises(ProtocolError) as context:
+                    parse_request(json.dumps(value))
+                self.assertEqual(context.exception.code, ErrorCode.INVALID_INPUT)
+
+        for value in ([], "ping", 1, None):
+            with self.subTest(top_level=value):
+                with self.assertRaises(ProtocolError) as context:
+                    parse_request(json.dumps(value))
+                self.assertEqual(context.exception.code, ErrorCode.INVALID_INPUT)
+
     def test_rejects_room_ids_longer_than_twenty_digits(self):
         with self.assertRaises(ProtocolError):
             parse_request(
@@ -135,6 +157,23 @@ class ProtocolTests(unittest.TestCase):
         )
         self.assertNotIn("message", json.dumps(response))
         self.assertNotIn("url", json.dumps(response).lower())
+
+    def test_serializes_jsonl_responses_with_a_byte_bound(self):
+        small = serialize_jsonl_response({"requestId": 1, "ok": True})
+        self.assertEqual(small, b'{"requestId":1,"ok":true}\n')
+
+        with self.assertRaises(ProtocolError):
+            serialize_jsonl_response({
+                "requestId": 2,
+                "ok": True,
+                "results": [{"roomId": "1", "anchorName": "x" * 1_100_000,
+                              "online": False}],
+            })
+        bounded_error = serialize_jsonl_response(error_response(2, ErrorCode.INVALID_RESPONSE))
+        decoded = json.loads(bounded_error)
+        self.assertEqual(decoded["requestId"], 2)
+        self.assertFalse(decoded["ok"])
+        self.assertLessEqual(len(bounded_error) - 1, protocol.MAX_JSONL_RESPONSE_BYTES)
 
 
 if __name__ == "__main__":

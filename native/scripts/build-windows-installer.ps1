@@ -1,6 +1,8 @@
 param(
     [string]$ReleaseDir = '',
-    [string]$Version = ''
+    [string]$Version = '',
+    [string]$StageRoot = '',
+    [string]$InstallerOutputDir = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -11,20 +13,55 @@ $releaseDir = if ([string]::IsNullOrWhiteSpace($ReleaseDir)) {
 } else {
     (Resolve-Path $ReleaseDir).Path
 }
-$installerRoot = Join-Path $nativeRoot 'out\installer'
-$stageRoot = Join-Path $installerRoot 'stage'
+$customOutputRoots = @($StageRoot, $InstallerOutputDir |
+    Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+if ($customOutputRoots.Count -ne 0 -and $customOutputRoots.Count -ne 2) {
+    throw 'StageRoot and InstallerOutputDir must be provided together for isolated output.'
+}
+
+$installerRoot = if ([string]::IsNullOrWhiteSpace($InstallerOutputDir)) {
+    Join-Path $nativeRoot 'out\installer'
+} else {
+    [System.IO.Path]::GetFullPath($InstallerOutputDir)
+}
+$stageRoot = if ([string]::IsNullOrWhiteSpace($StageRoot)) {
+    Join-Path $installerRoot 'stage'
+} else {
+    [System.IO.Path]::GetFullPath($StageRoot)
+}
+if ($customOutputRoots.Count -eq 2) {
+    if ([string]::Equals($stageRoot, $installerRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw 'StageRoot and InstallerOutputDir must be different directories.'
+    }
+    if (Test-Path -LiteralPath $stageRoot) {
+        throw "Isolated stage root already exists: $stageRoot"
+    }
+}
+if (Test-Path -LiteralPath $installerRoot) {
+    throw "Installer output root already exists; use fresh StageRoot and InstallerOutputDir paths: $installerRoot"
+}
 $stageDir = Join-Path $stageRoot 'DouyuMonitor'
 $installerScript = Join-Path $nativeRoot 'installer\DouyuMonitor.iss'
 $appIconPath = Join-Path $nativeRoot 'app\assets\douyu_monitor.ico'
 $cmakeListPath = Join-Path $nativeRoot 'CMakeLists.txt'
+$serviceVerifierScript = Join-Path $nativeRoot 'cmake\verify_streamget_service_package.cmake'
+$stageIntegrityScript = Join-Path $PSScriptRoot 'stage-integrity.ps1'
 
 foreach ($requiredFile in @(
     (Join-Path $releaseDir 'douyu_monitor_native.exe'),
     (Join-Path $releaseDir 'streamget_service\streamget_service.exe'),
     $appIconPath,
-    $installerScript
+    $installerScript,
+    $stageIntegrityScript
 )) {
     if (-not (Test-Path $requiredFile)) { throw "Required installer input was not found: $requiredFile" }
+}
+
+$serviceSourceDir = Join-Path $releaseDir 'streamget_service'
+& cmake "-DPACKAGE_DIR:PATH=$serviceSourceDir" "-DNATIVE_ROOT:PATH=$nativeRoot" `
+    -P $serviceVerifierScript
+if ($LASTEXITCODE -ne 0) {
+    throw 'Release StreamGet package failed source provenance verification.'
 }
 
 $cmakeText = Get-Content -Raw $cmakeListPath
@@ -54,7 +91,7 @@ if ($null -eq $innoCompiler) {
     throw 'Inno Setup 6 compiler (ISCC.exe) was not found. Install Inno Setup 6 or set INNO_SETUP_COMPILER.'
 }
 
-Remove-Item $installerRoot -Recurse -Force -ErrorAction SilentlyContinue
+New-Item -ItemType Directory -Path $installerRoot | Out-Null
 New-Item -ItemType Directory -Force -Path $stageDir | Out-Null
 
 $runtimeFiles = @(
@@ -124,11 +161,16 @@ foreach ($unusedQmlStyle in $unusedQmlStyles) {
     Remove-Item $unusedPath -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-$serviceSourceDir = Join-Path $releaseDir 'streamget_service'
 if (-not (Test-Path (Join-Path $serviceSourceDir 'streamget_service.exe'))) {
     throw "Required StreamGet service package was not found: $serviceSourceDir"
 }
 Copy-Item $serviceSourceDir -Destination $stageDir -Recurse
+$serviceStageDir = Join-Path $stageDir 'streamget_service'
+& cmake "-DPACKAGE_DIR:PATH=$serviceStageDir" "-DNATIVE_ROOT:PATH=$nativeRoot" `
+    -P $serviceVerifierScript
+if ($LASTEXITCODE -ne 0) {
+    throw 'Staged StreamGet package failed provenance verification.'
+}
 Copy-Item $appIconPath -Destination $stageDir
 
 if (-not (Test-Path (Join-Path $stageDir 'platforms\qwindows.dll'))) {
@@ -192,9 +234,105 @@ cmake -DRUNTIME_DIR="$stageDir" -DRUNTIME_EXE="$stageDir\douyu_monitor_native.ex
     -DDUMPBIN_EXECUTABLE="$($dumpbin.FullName)" `
     -P (Join-Path $nativeRoot 'cmake\verify_runtime_dependencies.cmake') | Out-Null
 
-& $innoCompiler "/DSourceDir=$stageDir" "/DOutputDir=$installerRoot" "/DAppVersion=$projectVersion" $installerScript
-if ($LASTEXITCODE -ne 0) { throw "Inno Setup compilation failed with exit code $LASTEXITCODE." }
+$manifestDir = Join-Path $installerRoot 'stage-manifests'
+$preManifestPath = Join-Path $manifestDir 'stage-before-inno.json'
+$postManifestPath = Join-Path $manifestDir 'stage-after-inno.json'
+$manifestDiffPath = Join-Path $manifestDir 'stage-compare.json'
+New-Item -ItemType Directory -Force -Path $manifestDir | Out-Null
+
 $installerExe = Join-Path $installerRoot "DouyuMonitor-Setup-V$projectVersion.exe"
-if (-not (Test-Path $installerExe)) { throw "Inno Setup did not create $installerExe." }
+$resultPath = Join-Path $installerRoot 'build-result.json'
+$buildResult = [ordered]@{
+    formatVersion = 1
+    runId = [Guid]::NewGuid().ToString('N')
+    state = 'not-generated'
+    updatedAtUtc = [DateTime]::UtcNow.ToString('o')
+    version = $projectVersion
+    stageRoot = $stageDir
+    installerPath = $installerExe
+    preManifestPath = $preManifestPath
+    postManifestPath = $postManifestPath
+    comparisonPath = $manifestDiffPath
+    compilerExitCode = $null
+    preManifestExitCode = $null
+    postManifestExitCode = $null
+    compareExitCode = $null
+    installer = $null
+    errors = @()
+}
+
+function Save-BuildResult {
+    $buildResult.updatedAtUtc = [DateTime]::UtcNow.ToString('o')
+    $buildResult | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $resultPath -Encoding utf8
+}
+
+$failures = [Collections.Generic.List[string]]::new()
+try {
+    Save-BuildResult
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $stageIntegrityScript `
+        -Mode Write -StageRoot $stageDir -ManifestPath $preManifestPath
+    $buildResult.preManifestExitCode = $LASTEXITCODE
+    if ($buildResult.preManifestExitCode -ne 0) {
+        throw 'Failed to write the pre-Inno Setup stage manifest.'
+    }
+
+    try {
+        & $innoCompiler "/DSourceDir=$stageDir" "/DOutputDir=$installerRoot" "/DAppVersion=$projectVersion" $installerScript
+        $buildResult.compilerExitCode = $LASTEXITCODE
+        if ($buildResult.compilerExitCode -ne 0) {
+            $failures.Add("Inno Setup compilation failed with exit code $($buildResult.compilerExitCode).")
+        }
+    } catch {
+        $failures.Add("Inno Setup compiler invocation failed: $($_.Exception.Message)")
+    }
+    # A compiler output remains unverified until both the Stage gate and output checks pass.
+    if (Test-Path -LiteralPath $installerExe -PathType Leaf) {
+        $buildResult.state = 'generated-unverified'
+    }
+    Save-BuildResult
+
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $stageIntegrityScript `
+        -Mode Write -StageRoot $stageDir -ManifestPath $postManifestPath
+    $buildResult.postManifestExitCode = $LASTEXITCODE
+    if ($buildResult.postManifestExitCode -ne 0) {
+        $failures.Add('Failed to write the post-Inno Setup stage manifest.')
+    } else {
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $stageIntegrityScript `
+            -Mode Compare -ExpectedManifestPath $preManifestPath -ActualManifestPath $postManifestPath `
+            -DiffPath $manifestDiffPath
+        $buildResult.compareExitCode = $LASTEXITCODE
+        if ($buildResult.compareExitCode -ne 0) {
+            $failures.Add("Stage integrity gate failed after Inno Setup compilation. See $manifestDiffPath.")
+        }
+    }
+
+    if (-not (Test-Path -LiteralPath $installerExe -PathType Leaf)) {
+        $failures.Add("Inno Setup did not create an installer file: $installerExe.")
+    } else {
+        $file = Get-Item -LiteralPath $installerExe -Force
+        if (($file.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            $failures.Add("Installer output must not be a reparse point: $installerExe.")
+        } else {
+            $buildResult.installer = [ordered]@{
+                bytes = $file.Length
+                sha256 = (Get-FileHash -LiteralPath $installerExe -Algorithm SHA256 -ErrorAction Stop).Hash
+            }
+            if ($file.Length -eq 0) { $failures.Add("Installer output is empty: $installerExe.") }
+        }
+    }
+    if ($failures.Count -gt 0) { throw ($failures -join ' ') }
+
+    $buildResult.state = 'validated'
+    Save-BuildResult
+} catch {
+    $message = $_.Exception.Message
+    if (($failures -join ' ') -ne $message) { $failures.Add($message) }
+    $buildResult.state = 'failed'
+    $buildResult.errors = @($failures.ToArray())
+    try { Save-BuildResult } catch {
+        Write-Warning "Could not save failed candidate status to $resultPath. This run is unverified: $($_.Exception.Message)"
+    }
+    throw ($failures -join ' ')
+}
 
 Write-Output $installerExe

@@ -4,6 +4,8 @@
 
 #include <QDateTime>
 #include <QDebug>
+#include <QCryptographicHash>
+#include <QTimer>
 
 #include "workspace/room_capacity.h"
 
@@ -12,26 +14,46 @@ namespace {
 constexpr int kMaxSeenIds = 200;
 constexpr int kMaxPendingMessages = 100;
 
+QByteArray deduplicationKey(const QString &id)
+{
+    return QCryptographicHash::hash(id.toUtf8(), QCryptographicHash::Sha256);
+}
+
 } // namespace
 
 DanmakuSessionManager::DanmakuSessionManager(DanmakuClientFactory factory, QObject *parent)
     : QObject(parent)
     , factory_(std::move(factory))
 {
+    governanceClock_.start();
 }
 
 void DanmakuSessionManager::synchronize(const QVector<DanmakuRoomEligibility> &rooms)
 {
-    QSet<QString> eligibleIds;
+    if (synchronizing_) {
+        pendingSynchronizeRooms_ = rooms;
+        synchronizePending_ = true;
+        return;
+    }
+    synchronizing_ = true;
+    pendingSynchronizeRooms_.clear();
+    synchronizePending_ = false;
+    synchronizeOnce(rooms);
+    while (synchronizePending_) {
+        const auto pendingRooms = pendingSynchronizeRooms_;
+        pendingSynchronizeRooms_.clear();
+        synchronizePending_ = false;
+        synchronizeOnce(pendingRooms);
+    }
+    synchronizing_ = false;
+}
+
+void DanmakuSessionManager::synchronizeOnce(
+    const QVector<DanmakuRoomEligibility> &rooms)
+{
     for (const DanmakuRoomEligibility &room : rooms) {
         statuses_[room.roomId] = statuses_.value(
             room.roomId, DanmakuConnectionStatus{room.roomId});
-        if (isEligible(room)) eligibleIds.insert(room.roomId);
-    }
-
-    const auto existingIds = sessions_.keys();
-    for (const QString &roomId : existingIds) {
-        if (!eligibleIds.contains(roomId)) removeSession(roomId);
     }
 
     QVector<DanmakuRoomEligibility> prioritized = rooms;
@@ -42,12 +64,29 @@ void DanmakuSessionManager::synchronize(const QVector<DanmakuRoomEligibility> &r
                      });
 
     const int maxSessions = RoomCapacity::currentLimits().defaultDanmakuSessions;
+    QSet<QString> targetIds;
+    for (const DanmakuRoomEligibility &room : prioritized) {
+        if (!isEligible(room) || targetIds.contains(room.roomId)) continue;
+        if (targetIds.size() >= maxSessions) break;
+        targetIds.insert(room.roomId);
+    }
+
+    const auto existingIds = sessions_.keys();
+    for (const QString &roomId : existingIds) {
+        if (!targetIds.contains(roomId)) removeSession(roomId);
+    }
+
     int sessionCount = sessions_.size();
     for (const DanmakuRoomEligibility &room : prioritized) {
         if (!isEligible(room)) {
             if (!sessions_.contains(room.roomId)) {
                 statuses_[room.roomId] = DanmakuConnectionStatus{room.roomId};
             }
+            continue;
+        }
+        if (!targetIds.contains(room.roomId)) {
+            statuses_[room.roomId] = DanmakuConnectionStatus{
+                room.roomId, DanmakuConnectionState::WaitingForSession};
             continue;
         }
         auto existing = sessions_.find(room.roomId);
@@ -130,6 +169,8 @@ void DanmakuSessionManager::clearStats(const QString &roomId)
     auto it = sessions_.find(roomId);
     if (it == sessions_.end()) return;
     it.value()->runtime = DanmakuGovernance::createRuntime();
+    pendingStatisticsNotifications_.remove(roomId);
+    emit statisticsChanged(roomId);
     emit roomStateChanged(roomId);
 }
 
@@ -143,6 +184,8 @@ void DanmakuSessionManager::stopAll()
         it.value()->client->stop();
         it.value()->queue.clear();
         statuses_[roomId] = DanmakuConnectionStatus{roomId};
+        pendingStatisticsNotifications_.remove(roomId);
+        emit statisticsChanged(roomId);
         emit roomStateChanged(roomId);
     }
 }
@@ -193,19 +236,21 @@ void DanmakuSessionManager::handleChat(const QString &roomId,
     const auto message = DanmakuGovernance::sanitizeMessage(
         roomId, id, rawChat.value(QStringLiteral("nn")), rawChat.value(QStringLiteral("txt")),
         QDateTime::currentDateTimeUtc());
-    if (!message.has_value() || id.isEmpty() || it.value()->seenIds.contains(id)) return;
+    if (!message.has_value() || id.isEmpty()) return;
 
-    it.value()->seenIds.insert(id);
-    it.value()->seenOrder.push_back(id);
+    const QByteArray key = deduplicationKey(id);
+    if (it.value()->seenIds.contains(key)) return;
+    it.value()->seenIds.insert(key);
+    it.value()->seenOrder.push_back(key);
     if (it.value()->seenOrder.size() > kMaxSeenIds) {
-        const QString oldest = it.value()->seenOrder.takeFirst();
+        const QByteArray oldest = it.value()->seenOrder.takeFirst();
         it.value()->seenIds.remove(oldest);
     }
 
     const bool wasEmpty = it.value()->queue.isEmpty();
     const QVector<DanmakuMessage> accepted = DanmakuGovernance::apply(
         {*message}, it.value()->governance, it.value()->runtime,
-        QDateTime::currentDateTimeUtc());
+        QDateTime::currentDateTimeUtc(), governanceClock_.elapsed());
     for (const DanmakuMessage &acceptedMessage : accepted) {
         it.value()->queue.enqueue(acceptedMessage);
     }
@@ -213,7 +258,18 @@ void DanmakuSessionManager::handleChat(const QString &roomId,
         it.value()->queue.dequeue();
         ++it.value()->runtime.stats.queueOverflow;
     }
+    scheduleStatisticsChanged(roomId);
     if (wasEmpty && !it.value()->queue.isEmpty()) emit messageAvailable(roomId);
+}
+
+void DanmakuSessionManager::scheduleStatisticsChanged(const QString &roomId)
+{
+    if (pendingStatisticsNotifications_.contains(roomId)) return;
+    pendingStatisticsNotifications_.insert(roomId);
+    QTimer::singleShot(0, this, [this, roomId] {
+        if (!pendingStatisticsNotifications_.remove(roomId)) return;
+        emit statisticsChanged(roomId);
+    });
 }
 
 void DanmakuSessionManager::removeSession(const QString &roomId)
@@ -227,6 +283,8 @@ void DanmakuSessionManager::removeSession(const QString &roomId)
     sessions_.erase(it);
     qInfo().noquote() << "danmaku session stopping room=" << roomId;
     session->client->stop();
+    pendingStatisticsNotifications_.remove(roomId);
+    emit statisticsChanged(roomId);
     statuses_[roomId] = DanmakuConnectionStatus{roomId};
     emit roomStateChanged(roomId);
 }

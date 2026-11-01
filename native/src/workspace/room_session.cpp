@@ -229,6 +229,10 @@ bool RoomSession::attachPlayer(MpvQuickItem *player)
     player_ = player;
     connect(player_, &MpvQuickItem::playbackFailed,
             this, &RoomSession::onSurfacePlaybackFailed);
+    connect(player_, &MpvQuickItem::renderContextFailed,
+            this, &RoomSession::onSurfaceRenderContextFailed);
+    connect(player_, &MpvQuickItem::playbackStarted,
+            this, &RoomSession::onSurfacePlaybackStarted);
     connect(player_, &MpvQuickItem::remoteStreamEnded,
             this, &RoomSession::onSurfaceRemoteStreamEnded);
     connect(player_, &MpvQuickItem::playbackProgress, this, [this] {
@@ -255,7 +259,10 @@ bool RoomSession::attachPlayer(MpvQuickItem *player)
         pendingSource_ = activeSource_;
         return true;
     }
-    if (player_->loadSource(*activeSource_)) return true;
+    if (player_->loadSource(*activeSource_)) {
+        setPlaybackHealth(RoomPlaybackHealth::Pending);
+        return true;
+    }
 
     onControllerFailed(QStringLiteral("PLAYER_FAILED"));
     return false;
@@ -389,9 +396,8 @@ bool RoomSession::startPendingSource()
     activeSource_ = pendingSource_;
     pendingSource_.reset();
     if (playbackRecoveryTimer_ != nullptr) playbackRecoveryTimer_->stop();
-    schedulePrefetch();
     setLiveStatus(RoomLiveStatus::Online);
-    setPlaybackHealth(RoomPlaybackHealth::Playing);
+    setPlaybackHealth(RoomPlaybackHealth::Pending);
     setState(State::Ready);
     emit sourceReady();
     return true;
@@ -420,6 +426,22 @@ void RoomSession::onControllerFailed(QString errorCode)
     if (recoveringPlayback_) scheduleRecovery();
 }
 
+void RoomSession::onSurfaceRenderContextFailed(QString errorCode)
+{
+    if (state_ == State::Error || state_ == State::Idle) return;
+    onControllerFailed(std::move(errorCode));
+}
+
+void RoomSession::onSurfacePlaybackStarted()
+{
+    if (player_ == nullptr || state_ == State::Idle || state_ == State::Error
+        || !activeSource_.has_value()) {
+        return;
+    }
+    setPlaybackHealth(RoomPlaybackHealth::Playing);
+    schedulePrefetch();
+}
+
 #ifdef DOUYU_TESTING
 bool RoomSession::hasPendingSourceForTest() const noexcept
 {
@@ -439,7 +461,8 @@ void RoomSession::onControllerStateChanged(RemotePlaybackController::State state
 
 void RoomSession::onSurfacePlaybackFailed()
 {
-    if (state_ == State::Idle || liveStatus_ == RoomLiveStatus::Offline) return;
+    if (state_ == State::Idle || state_ == State::Error
+        || liveStatus_ == RoomLiveStatus::Offline) return;
     const bool remote = (activeSource_ && activeSource_->kind() == MediaSource::Kind::RemoteStream)
         || (pendingSource_ && pendingSource_->kind() == MediaSource::Kind::RemoteStream);
     if (remote && controller_->state() == RemotePlaybackController::State::Resolving) return;
@@ -465,9 +488,8 @@ void RoomSession::onSurfaceRemoteStreamEnded()
     cancelPrefetch();
     if (!player_->loadSource(replacement)) return;
     activeSource_ = replacement;
-    schedulePrefetch();
     setLiveStatus(RoomLiveStatus::Online);
-    setPlaybackHealth(RoomPlaybackHealth::Playing);
+    setPlaybackHealth(RoomPlaybackHealth::Pending);
     setState(State::Ready);
 }
 
@@ -576,5 +598,7 @@ void RoomSession::setLiveStatus(RoomLiveStatus status)
 
 void RoomSession::setPlaybackHealth(RoomPlaybackHealth health)
 {
+    if (playbackHealth_ == health) return;
     playbackHealth_ = health;
+    emit playbackHealthChanged(health);
 }

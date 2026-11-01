@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QByteArray>
 #include <QObject>
 #include <QUrl>
 
@@ -43,11 +44,13 @@ signals:
 private:
     void setState(State state);
     void finishError(const QString &message);
+    bool collectResponseData(QNetworkReply *reply);
     void handleReply(QNetworkReply *reply);
 
     QNetworkAccessManager *manager_ = nullptr;
     QNetworkReply *reply_ = nullptr;
     QTimer *timeoutTimer_ = nullptr;
+    QByteArray responseBody_;
     QString currentVersion_;
     QUrl endpoint_;
     int timeoutMs_ = 8000;

@@ -1,12 +1,15 @@
 import QtQuick
 import QtQuick.Controls
 import ".."
+import "../controls"
 
 Item {
     id: root
 
     property var controller: null
     signal fullScreenToggleRequested()
+    signal addRoomRequested()
+    signal navigationRequested()
     property var roomModel: null
     property string layoutMode: "auto"
     property string primaryRoomId: ""
@@ -18,6 +21,21 @@ Item {
     property color textColor: Theme.text
     property color mutedTextColor: Theme.mutedText
     readonly property int roomCount: roomRepeater.count
+    property int delegateRevision: 0
+    readonly property int connectedDanmakuCount: {
+        // Re-evaluate after delegate replacement even if the model count is unchanged.
+        const revision = delegateRevision
+        let connected = 0
+        for (let i = 0; i < roomRepeater.count; ++i) {
+            const tile = roomRepeater.itemAt(i)
+            if (tile && tile.danmakuState === "connected") ++connected
+        }
+        return connected
+    }
+
+    function refreshDelegateRevision() {
+        ++delegateRevision
+    }
 
     function columnsFor(count) {
         if (count <= 1) return 1
@@ -208,6 +226,8 @@ Item {
         Repeater {
             id: roomRepeater
             model: root.roomModel
+            onItemAdded: Qt.callLater(root.refreshDelegateRevision)
+            onItemRemoved: Qt.callLater(root.refreshDelegateRevision)
 
             delegate: RoomTile {
                 readonly property var tileGeometry: root.geometryFor(index)
@@ -216,12 +236,13 @@ Item {
                 width: tileGeometry.width
                 height: tileGeometry.height
                 controller: root.controller
+                onDanmakuStateChanged: root.refreshDelegateRevision()
                 onFullScreenToggleRequested: root.fullScreenToggleRequested()
                 secondaryPrimary: roomId === root.secondaryPrimaryRoomId
                 borderColor: root.borderColor
                 accentColor: root.accentColor
-                textColor: root.textColor
-                mutedTextColor: root.mutedTextColor
+                textColor: Theme.videoText
+                mutedTextColor: Theme.videoMutedText
             }
         }
     }
@@ -238,10 +259,10 @@ Item {
             anchors.horizontalCenter: parent.horizontalCenter
             width: 52
             height: 52
-            radius: 7
+            radius: Theme.radiusSmall
             color: Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.16)
             border.color: Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.46)
-            Image { anchors.centerIn: parent; width: 26; height: 26; source: Qt.resolvedUrl("../assets/icons/plus.svg") }
+            ThemeIcon { anchors.centerIn: parent; width: 26; height: 26; tint: root.accentColor; source: Qt.resolvedUrl("../assets/icons/plus.svg") }
         }
         Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; color: root.textColor; text: "把直播间放进同一张画布"; font.bold: true; font.pixelSize: 16 }
         Text {
@@ -249,13 +270,24 @@ Item {
             horizontalAlignment: Text.AlignHCenter
             wrapMode: Text.Wrap
             color: root.mutedTextColor
-            text: "输入房间号后即可添加。工作区最多容纳 "
-                  + (root.controller && root.controller.workspace
-                     && root.controller.workspace.maxRooms
-                     ? root.controller.workspace.maxRooms : 16)
-                  + " 路。"
-            font.pixelSize: 11
+            text: qsTr("添加房间号，或从 CSTG 主播导航开始观看。")
+            font.pixelSize: Theme.fontCaption
             lineHeight: 1.4
+        }
+        Row {
+            anchors.horizontalCenter: parent.horizontalCenter
+            spacing: Theme.spaceSmall
+            ConsoleButton {
+                objectName: "emptyAddRoomButton"
+                text: qsTr("添加房间")
+                highlighted: true
+                onClicked: root.addRoomRequested()
+            }
+            ConsoleButton {
+                objectName: "emptyNavigationButton"
+                text: qsTr("主播导航")
+                onClicked: root.navigationRequested()
+            }
         }
     }
 }

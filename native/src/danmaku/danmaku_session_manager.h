@@ -4,6 +4,8 @@
 #include "danmaku/douyu_danmaku_client.h"
 
 #include <QHash>
+#include <QByteArray>
+#include <QElapsedTimer>
 #include <QObject>
 #include <QQueue>
 #include <QSet>
@@ -42,6 +44,7 @@ public:
 signals:
     void roomStateChanged(const QString &roomId);
     void messageAvailable(const QString &roomId);
+    void statisticsChanged(const QString &roomId);
 
 private:
     struct Session {
@@ -49,19 +52,26 @@ private:
         DanmakuGovernanceSettings governance;
         DanmakuGovernanceRuntime runtime = DanmakuGovernance::createRuntime();
         QQueue<DanmakuMessage> queue;
-        QSet<QString> seenIds;
-        QList<QString> seenOrder;
+        QSet<QByteArray> seenIds;
+        QList<QByteArray> seenOrder;
         DanmakuConnectionStatus status;
     };
 
     static bool sameGovernance(const DanmakuGovernanceSettings &left,
                                const DanmakuGovernanceSettings &right);
     static bool isEligible(const DanmakuRoomEligibility &room);
+    void synchronizeOnce(const QVector<DanmakuRoomEligibility> &rooms);
     void attachSessionSignals(const QString &roomId, Session &session);
     void handleChat(const QString &roomId, const QMap<QString, QString> &rawChat);
     void removeSession(const QString &roomId);
+    void scheduleStatisticsChanged(const QString &roomId);
 
     DanmakuClientFactory factory_;
     QHash<QString, std::shared_ptr<Session>> sessions_;
     QHash<QString, DanmakuConnectionStatus> statuses_;
+    QElapsedTimer governanceClock_;
+    QVector<DanmakuRoomEligibility> pendingSynchronizeRooms_;
+    bool synchronizing_ = false;
+    bool synchronizePending_ = false;
+    QSet<QString> pendingStatisticsNotifications_;
 };

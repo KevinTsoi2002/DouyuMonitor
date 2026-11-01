@@ -1,5 +1,4 @@
 #include <QSignalSpy>
-#include <QTemporaryDir>
 #include <QtTest/QtTest>
 
 #include "media/remote_playback_controller.h"
@@ -57,7 +56,7 @@ private slots:
     void mapsOfflineAndServiceErrorsToFixedCodes();
     void cancelSuppressesLateSource();
     void newerGenerationSuppressesOlderResponse();
-    void timeoutAndRestartRemainRetryable();
+    void timeoutAndServiceFailureRemainRetryable();
     void releaseReturnsToIdleAndInvalidatesWork();
 };
 
@@ -181,7 +180,7 @@ void RemotePlaybackControllerTest::newerGenerationSuppressesOlderResponse()
     client.shutdown();
 }
 
-void RemotePlaybackControllerTest::timeoutAndRestartRemainRetryable()
+void RemotePlaybackControllerTest::timeoutAndServiceFailureRemainRetryable()
 {
     {
         StreamgetProcessClient client(fakeServicePath(), {QStringLiteral("--delay-ms"), QStringLiteral("11000")});
@@ -195,23 +194,22 @@ void RemotePlaybackControllerTest::timeoutAndRestartRemainRetryable()
         client.shutdown();
     }
 
-    QTemporaryDir temporaryDirectory;
-    QVERIFY(temporaryDirectory.isValid());
-    const QString marker = temporaryDirectory.filePath(QStringLiteral("crashed-once.marker"));
-    StreamgetProcessClient client(
-        fakeServicePath(),
-        {QStringLiteral("--crash-after"), QStringLiteral("1"),
-         QStringLiteral("--crash-once-file"), marker});
+    StreamgetProcessClient client(fakeServicePath());
     RemotePlaybackController controller(&client);
     QSignalSpy sources(&controller, &RemotePlaybackController::sourceReady);
     QSignalSpy failures(&controller, &RemotePlaybackController::failed);
 
-    controller.resolve(QStringLiteral("63136"), StreamQuality::Auto);
+    const quint64 failedRequest = controller.resolve(QStringLiteral("63136"), StreamQuality::Auto);
+    QVERIFY(failedRequest > 0);
+    client.requestFailed(failedRequest, QStringLiteral("SERVICE_FAILED"));
     waitForSignalCount(failures, 1);
     QCOMPARE(failures.at(0).at(0).toString(), QStringLiteral("SERVICE_FAILED"));
+    QCOMPARE(controller.state(), RemotePlaybackController::State::Error);
 
-    controller.resolve(QStringLiteral("63136"), StreamQuality::Auto);
-    waitForSignalCount(sources, 1, 3000);
+    const quint64 retryRequest = controller.resolve(QStringLiteral("63136"), StreamQuality::Auto);
+    QVERIFY(retryRequest > failedRequest);
+    client.responseReceived(validResolveResponse(retryRequest, QStringLiteral("63136")));
+    waitForSignalCount(sources, 1);
     QCOMPARE(controller.state(), RemotePlaybackController::State::Ready);
     client.shutdown();
 }

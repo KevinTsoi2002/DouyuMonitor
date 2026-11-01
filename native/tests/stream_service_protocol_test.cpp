@@ -20,7 +20,34 @@ private slots:
     void rejectsMalformedAndInvalidResponses();
     void rejectsDuplicateVariantsAndCredentialUrls();
     void preservesUnknownSearchStatus();
+    void acceptsResponseAtByteLimit();
+    void rejectsOversizedResponseBeforeParsing();
+    void validatesOptionalResponseOperation();
 };
+
+void StreamServiceProtocolTest::validatesOptionalResponseOperation()
+{
+    const auto legacy = decodeResponse(R"({"requestId":1,"ok":true,"pong":true})");
+    QVERIFY(legacy.has_value());
+    QVERIFY(!legacy->operation.has_value());
+
+    const auto tagged = decodeResponse(R"({"requestId":1,"ok":true,"op":"ping","pong":true})");
+    QVERIFY(tagged.has_value());
+    QVERIFY(tagged->operation.has_value());
+    QCOMPARE(*tagged->operation, ServiceOperation::Ping);
+
+    const QList<QByteArray> invalid = {
+        R"({"requestId":1,"ok":true,"op":null,"pong":true})",
+        R"({"requestId":1,"ok":true,"op":false,"pong":true})",
+        R"({"requestId":1,"ok":true,"op":3,"pong":true})",
+        R"({"requestId":1,"ok":true,"op":[],"pong":true})",
+        R"({"requestId":1,"ok":true,"op":{},"pong":true})",
+        R"({"requestId":1,"ok":true,"op":"unknown","pong":true})",
+    };
+    for (const QByteArray &line : invalid) {
+        QVERIFY(!decodeResponse(line).has_value());
+    }
+}
 
 void StreamServiceProtocolTest::preservesUnknownSearchStatus()
 {
@@ -30,6 +57,26 @@ void StreamServiceProtocolTest::preservesUnknownSearchStatus()
     // Unknown is projected separately, not confused with an authoritative offline result.
     const auto invalid = decodeResponse(QByteArray(R"({"requestId":1,"ok":true,"results":[{"roomId":"123","anchorName":"Hint","online":false,"statusKnown":"false"}]})"));
     QVERIFY(!invalid.has_value());
+}
+
+void StreamServiceProtocolTest::rejectsOversizedResponseBeforeParsing()
+{
+    QByteArray line = R"({"requestId":1,"ok":true,"pong":true,"padding":")";
+    line.append(kMaxServiceJsonLineBytes, 'x');
+    line.append("\"}");
+    QVERIFY(!decodeResponse(line).has_value());
+}
+
+void StreamServiceProtocolTest::acceptsResponseAtByteLimit()
+{
+    QByteArray line = R"({"requestId":1,"ok":true,"pong":true,"padding":")";
+    line.append(kMaxServiceJsonLineBytes - line.size() - 2, 'x');
+    line.append("\"}");
+    QCOMPARE(line.size(), kMaxServiceJsonLineBytes);
+    QVERIFY(decodeResponse(line).has_value());
+
+    line.append('x');
+    QVERIFY(!decodeResponse(line).has_value());
 }
 
 void StreamServiceProtocolTest::encodesPingRequest()

@@ -2,6 +2,7 @@
 
 #include <QByteArray>
 #include <QString>
+#include <QStringList>
 #include <QVector>
 
 struct GuildMember {
@@ -10,6 +11,12 @@ struct GuildMember {
     QString searchName;
     QString roomId;
     QString pinyinKey;
+    QString directoryName;
+    QString gender;
+    QString avatarUrl;
+    int directoryOrder = -1;
+    bool directoryListed = false;
+    QStringList portraitRoomIds;
 
     bool operator==(const GuildMember &) const = default;
 };

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(DouyuMonitorNative VERSION 0.2.20 LANGUAGES CXX)
+project(DouyuMonitorNative VERSION 1.0.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -58,6 +58,11 @@ qt_policy(SET QTP0001 NEW)
 qt_policy(SET QTP0004 NEW)
 
 set(DOUYU_QML_ICON_ASSETS
+    app/qml/assets/brand/wordmark-day.png
+    app/qml/assets/brand/wordmark-night.png
+    app/qml/assets/brand/icon-app.png
+    app/qml/assets/brand/icon-navigation.png
+    app/qml/assets/brand/icon-ranking.png
     app/qml/assets/douyu_monitor.svg
     app/qml/assets/icons/hamster-agent.svg
     app/qml/assets/icons/activity.svg
@@ -103,6 +108,23 @@ qt_add_resources(douyu_guild guild_roster_resources
     BASE "${CMAKE_CURRENT_SOURCE_DIR}"
     FILES
         app/resources/hamster_agent_roster.json
+        app/resources/guild_directory.json
+        app/resources/guild_portraits.json
+)
+
+add_library(douyu_s1_archive STATIC src/app/s1_archive.cpp)
+target_link_libraries(douyu_s1_archive PUBLIC Qt6::Core)
+target_include_directories(douyu_s1_archive PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+qt_add_resources(douyu_s1_archive s1_archive_resources
+    PREFIX "/archive"
+    BASE "${CMAKE_CURRENT_SOURCE_DIR}/app/resources"
+    FILES app/resources/cstg_s1_archive.json
+)
+add_executable(s1_archive_test tests/s1_archive_test.cpp)
+target_link_libraries(s1_archive_test PRIVATE Qt6::Test douyu_s1_archive)
+add_test(NAME s1_archive_test COMMAND s1_archive_test)
+set_property(TEST s1_archive_test PROPERTY ENVIRONMENT_MODIFICATION
+    "PATH=path_list_prepend:${QT_ROOT}/bin"
 )
 
 add_executable(guild_roster_test
@@ -138,20 +160,36 @@ set_property(TEST guild_room_resolver_test PROPERTY ENVIRONMENT_MODIFICATION
 )
 
 qt_add_library(douyu_qml STATIC)
+set(DOUYU_QML_CONTROLS
+    app/qml/controls/ThemeIcon.qml
+    app/qml/controls/ControlBackground.qml
+    app/qml/controls/ConsoleButton.qml
+    app/qml/controls/ConsoleToolButton.qml
+    app/qml/controls/ConsoleTextField.qml
+    app/qml/controls/ConsoleComboBox.qml
+    app/qml/controls/ConsoleCheckBox.qml
+    app/qml/controls/ConsoleRadioButton.qml
+    app/qml/controls/ConsoleToolTip.qml
+)
 set_source_files_properties(app/qml/Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 qt_add_qml_module(douyu_qml
     URI DouyuMonitor
     VERSION 1.0
     OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/DouyuMonitor"
     QML_FILES
+        ${DOUYU_QML_CONTROLS}
         app/qml/Theme.qml
         app/qml/Main.qml
         app/qml/components/AppHeader.qml
+        app/qml/components/AppNavigationRail.qml
+        app/qml/components/WatchToolsPanel.qml
+        app/qml/components/ImmersiveEdge.qml
         app/qml/components/WindowControls.qml
         app/qml/components/RoomSidebar.qml
         app/qml/components/GuildNavigationPanel.qml
         app/qml/components/GuildMemberRow.qml
         app/qml/components/GuildRankHoverCard.qml
+        app/qml/components/RadarChart.qml
         app/qml/components/RoomLibraryView.qml
         app/qml/components/WorkspaceGrid.qml
         app/qml/components/PrimaryRoomDivider.qml
@@ -166,6 +204,10 @@ qt_add_qml_module(douyu_qml
         app/qml/panels/WorkspacePresetsPanel.qml
         app/qml/pages/SettingsPage.qml
         app/qml/pages/MaoziRankPage.qml
+        app/qml/pages/SeasonArchivePanel.qml
+        app/qml/pages/ArchiveDetailModel.js
+        app/qml/pages/SeasonMatchDetail.qml
+        app/qml/pages/FootballMatchDetail.qml
         app/qml/dialogs/AddRoomDialog.qml
         app/qml/dialogs/NotificationSettingsDialog.qml
         app/qml/dialogs/CloseBehaviorDialog.qml
@@ -177,6 +219,22 @@ target_link_libraries(douyu_qml PRIVATE
     Qt6::Qml
     Qt6::Quick
     Qt6::QuickControls2
+)
+
+add_executable(qml_controls_style_test tests/qml_controls_style_test.cpp)
+target_link_libraries(qml_controls_style_test PRIVATE
+    Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2 Qt6::Test
+)
+target_compile_definitions(qml_controls_style_test PRIVATE
+    CONTROLS_FIXTURE_PATH="${CMAKE_CURRENT_SOURCE_DIR}/tests/qml/ControlsFixture.qml"
+)
+add_test(NAME qml_controls_style_test COMMAND qml_controls_style_test)
+set_property(TEST qml_controls_style_test PROPERTY ENVIRONMENT_MODIFICATION
+    "PATH=path_list_prepend:${QT_ROOT}/bin"
+    "QT_PLUGIN_PATH=set:${QT_ROOT}/plugins"
+    "QML2_IMPORT_PATH=set:${QT_ROOT}/qml"
+    "QT_QPA_PLATFORM=set:offscreen"
+    "QT_QUICK_CONTROLS_STYLE=set:Basic"
 )
 
 add_executable(qml_engine_smoke_test
@@ -201,15 +259,20 @@ qt_add_resources(qml_engine_smoke_test qml_engine_test_resources
     PREFIX "/qml"
     BASE "${CMAKE_CURRENT_SOURCE_DIR}/app/qml"
     FILES
+        ${DOUYU_QML_CONTROLS}
         app/qml/qmldir
         app/qml/Theme.qml
         app/qml/Main.qml
         app/qml/components/AppHeader.qml
+        app/qml/components/AppNavigationRail.qml
+        app/qml/components/WatchToolsPanel.qml
+        app/qml/components/ImmersiveEdge.qml
         app/qml/components/WindowControls.qml
         app/qml/components/RoomSidebar.qml
         app/qml/components/GuildNavigationPanel.qml
         app/qml/components/GuildMemberRow.qml
         app/qml/components/GuildRankHoverCard.qml
+        app/qml/components/RadarChart.qml
         app/qml/components/RoomLibraryView.qml
         app/qml/components/WorkspaceGrid.qml
         app/qml/components/PrimaryRoomDivider.qml
@@ -224,6 +287,10 @@ qt_add_resources(qml_engine_smoke_test qml_engine_test_resources
         app/qml/panels/WorkspacePresetsPanel.qml
         app/qml/pages/SettingsPage.qml
         app/qml/pages/MaoziRankPage.qml
+        app/qml/pages/SeasonArchivePanel.qml
+        app/qml/pages/ArchiveDetailModel.js
+        app/qml/pages/SeasonMatchDetail.qml
+        app/qml/pages/FootballMatchDetail.qml
         app/qml/dialogs/AddRoomDialog.qml
         app/qml/dialogs/NotificationSettingsDialog.qml
         app/qml/dialogs/CloseBehaviorDialog.qml
@@ -249,6 +316,7 @@ add_executable(qml_visual_smoke_test
     src/ui/mpv_quick_item.cpp
 )
 target_link_libraries(qml_visual_smoke_test PRIVATE
+    douyu_guild
     Qt6::Core
     Qt6::Gui
     Qt6::Qml
@@ -269,15 +337,20 @@ qt_add_resources(qml_visual_smoke_test qml_visual_smoke_test_resources
     PREFIX "/qml"
     BASE "${CMAKE_CURRENT_SOURCE_DIR}/app/qml"
     FILES
+        ${DOUYU_QML_CONTROLS}
         app/qml/qmldir
         app/qml/Theme.qml
         app/qml/Main.qml
         app/qml/components/AppHeader.qml
+        app/qml/components/AppNavigationRail.qml
+        app/qml/components/WatchToolsPanel.qml
+        app/qml/components/ImmersiveEdge.qml
         app/qml/components/WindowControls.qml
         app/qml/components/RoomSidebar.qml
         app/qml/components/GuildNavigationPanel.qml
         app/qml/components/GuildMemberRow.qml
         app/qml/components/GuildRankHoverCard.qml
+        app/qml/components/RadarChart.qml
         app/qml/components/RoomLibraryView.qml
         app/qml/components/WorkspaceGrid.qml
         app/qml/components/PrimaryRoomDivider.qml
@@ -292,6 +365,10 @@ qt_add_resources(qml_visual_smoke_test qml_visual_smoke_test_resources
         app/qml/panels/WorkspacePresetsPanel.qml
         app/qml/pages/SettingsPage.qml
         app/qml/pages/MaoziRankPage.qml
+        app/qml/pages/SeasonArchivePanel.qml
+        app/qml/pages/ArchiveDetailModel.js
+        app/qml/pages/SeasonMatchDetail.qml
+        app/qml/pages/FootballMatchDetail.qml
         app/qml/dialogs/AddRoomDialog.qml
         app/qml/dialogs/NotificationSettingsDialog.qml
         app/qml/dialogs/CloseBehaviorDialog.qml
@@ -345,7 +422,7 @@ set_property(TEST qml_visual_regression_test PROPERTY ENVIRONMENT_MODIFICATION
     "PATH=path_list_prepend:${QT_ROOT}/bin"
     "QT_PLUGIN_PATH=set:${QT_ROOT}/plugins"
     "QML2_IMPORT_PATH=set:${QT_ROOT}/qml"
-    "QT_QPA_PLATFORM=set:offscreen"
+    "QT_QPA_PLATFORM=set:windows"
     "QT_QUICK_CONTROLS_STYLE=set:Basic"
 )
 
@@ -364,6 +441,7 @@ target_link_libraries(qml_interaction_test PRIVATE
     Qt6::Quick
     Qt6::OpenGL
     Qt6::Test
+    douyu_s1_archive
     remote_playback
     mpv::mpv
 )
@@ -372,15 +450,20 @@ qt_add_resources(qml_interaction_test qml_interaction_test_resources
     PREFIX "/qml"
     BASE "${CMAKE_CURRENT_SOURCE_DIR}/app/qml"
     FILES
+        ${DOUYU_QML_CONTROLS}
         app/qml/qmldir
         app/qml/Theme.qml
         app/qml/Main.qml
         app/qml/components/AppHeader.qml
+        app/qml/components/AppNavigationRail.qml
+        app/qml/components/WatchToolsPanel.qml
+        app/qml/components/ImmersiveEdge.qml
         app/qml/components/WindowControls.qml
         app/qml/components/RoomSidebar.qml
         app/qml/components/GuildNavigationPanel.qml
         app/qml/components/GuildMemberRow.qml
         app/qml/components/GuildRankHoverCard.qml
+        app/qml/components/RadarChart.qml
         app/qml/components/RoomLibraryView.qml
         app/qml/components/WorkspaceGrid.qml
         app/qml/components/PrimaryRoomDivider.qml
@@ -395,6 +478,10 @@ qt_add_resources(qml_interaction_test qml_interaction_test_resources
         app/qml/panels/WorkspacePresetsPanel.qml
         app/qml/pages/SettingsPage.qml
         app/qml/pages/MaoziRankPage.qml
+        app/qml/pages/SeasonArchivePanel.qml
+        app/qml/pages/ArchiveDetailModel.js
+        app/qml/pages/SeasonMatchDetail.qml
+        app/qml/pages/FootballMatchDetail.qml
         app/qml/dialogs/AddRoomDialog.qml
         app/qml/dialogs/NotificationSettingsDialog.qml
         app/qml/dialogs/CloseBehaviorDialog.qml
@@ -407,11 +494,12 @@ add_custom_command(TARGET qml_interaction_test POST_BUILD
         "$<TARGET_FILE_DIR:qml_interaction_test>/mpv.dll"
 )
 add_test(NAME qml_interaction_test COMMAND qml_interaction_test)
+set_tests_properties(qml_interaction_test PROPERTIES TIMEOUT 120)
 set_property(TEST qml_interaction_test PROPERTY ENVIRONMENT_MODIFICATION
     "PATH=path_list_prepend:${QT_ROOT}/bin"
     "QT_PLUGIN_PATH=set:${QT_ROOT}/plugins"
     "QML2_IMPORT_PATH=set:${QT_ROOT}/qml"
-    "QT_QPA_PLATFORM=set:offscreen"
+    "QT_QPA_PLATFORM=set:windows"
     "QT_QUICK_CONTROLS_STYLE=set:Basic"
 )
 
@@ -447,6 +535,7 @@ target_link_libraries(qml_close_regression_test PRIVATE
     Qt6::Test
     douyu_danmaku
     douyu_guild
+    douyu_s1_archive
     remote_playback
     mpv::mpv
 )
@@ -460,15 +549,20 @@ qt_add_resources(qml_close_regression_test qml_close_regression_test_resources
     PREFIX "/qml"
     BASE "${CMAKE_CURRENT_SOURCE_DIR}/app/qml"
     FILES
+        ${DOUYU_QML_CONTROLS}
         app/qml/qmldir
         app/qml/Theme.qml
         app/qml/Main.qml
         app/qml/components/AppHeader.qml
+        app/qml/components/AppNavigationRail.qml
+        app/qml/components/WatchToolsPanel.qml
+        app/qml/components/ImmersiveEdge.qml
         app/qml/components/WindowControls.qml
         app/qml/components/RoomSidebar.qml
         app/qml/components/GuildNavigationPanel.qml
         app/qml/components/GuildMemberRow.qml
         app/qml/components/GuildRankHoverCard.qml
+        app/qml/components/RadarChart.qml
         app/qml/components/RoomLibraryView.qml
         app/qml/components/WorkspaceGrid.qml
         app/qml/components/PrimaryRoomDivider.qml
@@ -483,6 +577,10 @@ qt_add_resources(qml_close_regression_test qml_close_regression_test_resources
         app/qml/panels/WorkspacePresetsPanel.qml
         app/qml/pages/SettingsPage.qml
         app/qml/pages/MaoziRankPage.qml
+        app/qml/pages/SeasonArchivePanel.qml
+        app/qml/pages/ArchiveDetailModel.js
+        app/qml/pages/SeasonMatchDetail.qml
+        app/qml/pages/FootballMatchDetail.qml
         app/qml/dialogs/AddRoomDialog.qml
         app/qml/dialogs/NotificationSettingsDialog.qml
         app/qml/dialogs/CloseBehaviorDialog.qml
@@ -626,6 +724,7 @@ target_link_libraries(app_controller_test PRIVATE
     Qt6::Test
     douyu_danmaku
     douyu_guild
+    douyu_s1_archive
     remote_playback
     mpv::mpv
 )
@@ -759,6 +858,7 @@ add_executable(application_logger_test
 )
 target_link_libraries(application_logger_test PRIVATE Qt6::Core Qt6::Test)
 target_include_directories(application_logger_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_definitions(application_logger_test PRIVATE DOUYU_APPLICATION_LOGGER_TESTING)
 add_test(NAME application_logger_test COMMAND application_logger_test)
 set_tests_properties(application_logger_test PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${QT_ROOT}/bin"
@@ -870,6 +970,8 @@ add_test(NAME windows_notification_service_test COMMAND windows_notification_ser
 add_executable(windows_tray_service_test
     tests/windows_tray_service_test.cpp
     src/app/windows_tray_service.cpp
+    src/app/windows_notification_service.cpp
+    src/workspace/notification_policy.cpp
 )
 target_link_libraries(windows_tray_service_test
     PRIVATE
@@ -1059,6 +1161,7 @@ target_link_libraries(douyu_monitor_native
         douyu_qmlplugin
         douyu_danmaku
         douyu_guild
+        douyu_s1_archive
         remote_playback
         mpv::mpv
 )

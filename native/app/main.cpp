@@ -142,19 +142,27 @@ int main(int argc, char *argv[])
     QCoreApplication::setOrganizationName(QStringLiteral("DouyuMonitor"));
     QCoreApplication::setOrganizationDomain(QStringLiteral("douyu-monitor.local"));
     QCoreApplication::setApplicationName(QStringLiteral("DouyuMonitor"));
-    ApplicationLogger::install();
+    QGuiApplication::setApplicationDisplayName(QStringLiteral("CSTG特勤终端"));
+    (void)ApplicationLogger::install();
+    QObject::connect(&application, &QCoreApplication::aboutToQuit, [] {
+        (void)ApplicationLogger::shutdown();
+    });
     QGuiApplication::setWindowIcon(QIcon(QStringLiteral(":/app/assets/douyu_monitor.ico")));
     qInfo() << "application started";
     QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
     QQuickStyle::setStyle(QStringLiteral("Basic"));
 
     QCommandLineParser parser;
-    parser.setApplicationDescription(QStringLiteral("Douyu Monitor native client"));
+    parser.setApplicationDescription(QStringLiteral("CSTG特勤终端"));
     parser.addHelpOption();
     const QCommandLineOption selfTestOption(
         QStringLiteral("self-test"),
         QStringLiteral("Load the Qt Quick renderer and verify libmpv before exiting."));
     parser.addOption(selfTestOption);
+    const QCommandLineOption reduceMotionOption(
+        QStringLiteral("reduce-motion"),
+        QStringLiteral("Disable optional interface transitions."));
+    parser.addOption(reduceMotionOption);
     const QCommandLineOption mediaOption(
         QStringLiteral("media"),
         QStringLiteral("Load a local media fixture during --self-test."),
@@ -179,6 +187,7 @@ int main(int argc, char *argv[])
     engine.setInitialProperties({
         {QStringLiteral("appController"),
          QVariant::fromValue(static_cast<QObject *>(controller.get()))},
+        {QStringLiteral("reducedMotion"), parser.isSet(reduceMotionOption)},
     });
     engine.loadFromModule(QStringLiteral("DouyuMonitor"), QStringLiteral("Main"));
     if (engine.rootObjects().isEmpty()) return 1;

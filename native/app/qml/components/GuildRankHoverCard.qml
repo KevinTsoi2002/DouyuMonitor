@@ -1,5 +1,5 @@
 import QtQuick
-import QtQuick.Controls
+import QtQuick.Controls.Basic
 import ".."
 
 Popup {
@@ -7,16 +7,17 @@ Popup {
 
     property var member: null
     readonly property bool hasRankData: member && member.rankMatched
+    onMemberChanged: radar.requestPaint()
 
     width: 320
-    height: 258
+    height: implicitContentHeight + topPadding + bottomPadding
     padding: 12
     closePolicy: Popup.NoAutoClose
     focus: false
     modal: false
     spacing: 8
     background: Rectangle {
-        radius: 6
+        radius: Theme.radiusSmall
         color: Theme.managementSurface
         border.color: Theme.border
     }
@@ -63,19 +64,23 @@ Popup {
                              : root.member.role === "member" ? "队员" : "其他")
                           : ""
                     color: Theme.mutedText
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fontCaption
                 }
             }
         }
 
         Canvas {
             id: radar
+            readonly property color accentColor: Theme.accent
+            readonly property color gridColor: Theme.borderStrong
             width: parent.width
             height: 120
             visible: root.hasRankData
             onWidthChanged: requestPaint()
             onHeightChanged: requestPaint()
             onVisibleChanged: if (visible) requestPaint()
+            onAccentColorChanged: requestPaint()
+            onGridColorChanged: requestPaint()
             onPaint: {
                 const ctx = getContext("2d")
                 ctx.clearRect(0, 0, width, height)
@@ -85,7 +90,7 @@ Popup {
                 const cx = width / 2
                 const cy = height / 2
                 const radius = Math.min(width, height) * 0.38
-                ctx.strokeStyle = "#4a515a"
+                ctx.strokeStyle = radar.gridColor
                 ctx.lineWidth = 1
                 for (let ring = 1; ring <= 3; ++ring) {
                     ctx.beginPath()
@@ -120,8 +125,8 @@ Popup {
                     else ctx.lineTo(x, y)
                 }
                 ctx.closePath()
-                ctx.fillStyle = "rgba(255, 141, 67, 0.28)"
-                ctx.strokeStyle = Theme.accent
+                ctx.fillStyle = Qt.rgba(radar.accentColor.r, radar.accentColor.g, radar.accentColor.b, 0.28)
+                ctx.strokeStyle = radar.accentColor
                 ctx.lineWidth = 2
                 ctx.fill()
                 ctx.stroke()
@@ -141,30 +146,30 @@ Popup {
             columns: 2
             spacing: 6
             visible: root.hasRankData
-            Text { text: "综合"; color: Theme.mutedText; font.pixelSize: 10 }
+            Text { text: "综合"; color: Theme.mutedText; font.pixelSize: Theme.fontCaption }
             Text {
                 text: root.member && root.member.score >= 0
                       ? Number(root.member.score).toFixed(1) : "—"
                 color: Theme.text
                 font.bold: true
-                font.pixelSize: 10
+                font.pixelSize: Theme.fontCaption
             }
-            Text { text: "定级赛总评"; color: Theme.mutedText; font.pixelSize: 10 }
+            Text { text: "定级赛总评"; color: Theme.mutedText; font.pixelSize: Theme.fontCaption }
             Text {
                 text: root.member && root.member.placementAverage >= 0
                       ? Number(root.member.placementAverage).toFixed(2) : "—"
                 color: Theme.text
                 font.bold: true
-                font.pixelSize: 10
+                font.pixelSize: Theme.fontCaption
             }
-            Text { text: "游乐值"; color: Theme.mutedText; font.pixelSize: 10 }
+            Text { text: "游乐值"; color: Theme.mutedText; font.pixelSize: Theme.fontCaption }
             Text {
                 text: root.member && root.member.playValue !== null
                       && root.member.playValue !== undefined
                       ? Number(root.member.playValue).toFixed(1) : "—"
                 color: Theme.text
                 font.bold: true
-                font.pixelSize: 10
+                font.pixelSize: Theme.fontCaption
             }
         }
     }

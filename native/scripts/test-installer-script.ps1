@@ -2,9 +2,13 @@ $ErrorActionPreference = 'Stop'
 
 $nativeRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $buildScriptPath = Join-Path $PSScriptRoot 'build-windows-installer.ps1'
+$buildResultVerifierPath = Join-Path $PSScriptRoot 'verify-installer-build-result.ps1'
+$candidateVerifierPath = Join-Path $PSScriptRoot 'verify-installer-candidate.ps1'
 $innoScriptPath = Join-Path $nativeRoot 'installer\DouyuMonitor.iss'
 $cmakeText = Get-Content -Raw (Join-Path $nativeRoot 'CMakeLists.txt')
 $buildText = Get-Content -Raw $buildScriptPath
+$buildResultVerifierText = if (Test-Path $buildResultVerifierPath) { Get-Content -Raw $buildResultVerifierPath } else { '' }
+$candidateVerifierText = if (Test-Path $candidateVerifierPath) { Get-Content -Raw $candidateVerifierPath } else { '' }
 $innoText = if (Test-Path $innoScriptPath) { Get-Content -Raw $innoScriptPath } else { '' }
 
 function Assert-Contains([string]$name, [string]$needle, [string]$text = $buildText) {
@@ -30,6 +34,8 @@ function Assert-FileExists([string]$name, [string]$path) {
 Assert-FileExists 'app icon SVG' (Join-Path $nativeRoot 'app\assets\douyu_monitor.svg')
 Assert-FileExists 'app icon ICO' (Join-Path $nativeRoot 'app\assets\douyu_monitor.ico')
 Assert-FileExists 'Inno Setup installer script' $innoScriptPath
+Assert-FileExists 'build result verifier' $buildResultVerifierPath
+Assert-FileExists 'candidate postbuild verifier' $candidateVerifierPath
 Assert-Contains 'Inno compiler lookup' 'INNO_SETUP_COMPILER'
 Assert-Contains 'Inno compiler invocation' '$innoCompiler'
 Assert-Contains 'CMake version parsing' 'projectVersion'
@@ -48,6 +54,24 @@ Assert-Contains 'desktop platform plugin allowlist' '$platformSourceDir'
 Assert-Contains 'offscreen platform plugin exclusion' 'platforms\qoffscreen.dll'
 Assert-Contains 'forbidden debug extension check' '$forbiddenStageExtensions = @('
 Assert-Contains 'duplicate payload check' '$payloadFiles = @('
+Assert-Contains 'stage integrity helper' 'stage-integrity.ps1'
+Assert-Contains 'pre-Inno stage manifest' 'stage-before-inno.json'
+Assert-Contains 'post-Inno stage manifest' 'stage-after-inno.json'
+Assert-Contains 'stage manifest comparison' 'stage-compare.json'
+Assert-Contains 'stage integrity failure' 'Stage integrity gate failed'
+Assert-Contains 'fresh installer output claim' 'New-Item -ItemType Directory -Path $installerRoot'
+Assert-NotContains 'existing installer output cleanup' 'Remove-Item $installerRoot'
+Assert-Contains 'candidate result file' 'build-result.json'
+Assert-Contains 'validated candidate state' '$buildResult.state = ''validated'''
+Assert-Contains 'build result verifier requires validated state' "Build result state is not validated." $buildResultVerifierText
+Assert-Contains 'build result verifier checks output SHA-256' 'Installer SHA-256 does not match the file.' $buildResultVerifierText
+Assert-Contains 'build result verifier rechecks Stage manifests' 'Referenced Stage manifests do not compare as identical' $buildResultVerifierText
+Assert-Contains 'baseline-only verifier mode' 'SkipInstallerIdentity' $buildResultVerifierText
+Assert-Contains 'candidate verifier uses saved baseline' 'baselineManifestPath' $candidateVerifierText
+Assert-Contains 'candidate verifier writes independent result' 'candidate-verification.json' $candidateVerifierText
+Assert-Contains 'candidate verifier checks current Stage' 'Current Stage differs from the saved build-time manifest.' $candidateVerifierText
+Assert-Contains 'ordinary installer file check' 'Test-Path -LiteralPath $installerExe -PathType Leaf'
+Assert-Contains 'nonempty installer check' '$file.Length -eq 0'
 Assert-NotContains 'IExpress packaging' 'iexpress.exe'
 Assert-NotContains 'generated hidden install script' 'install.ps1'
 Assert-NotContains 'ZIP payload packaging' 'DouyuMonitor-runtime.zip'

@@ -148,15 +148,33 @@ Item {
     function relayoutActiveItems() {
         if (activeItems.length === 0) return
         const laneList = DanmakuLaneScheduler.lanes(usableHeight, fontSize, region, density)
+        const assigned = []
+        const retained = []
+        const removed = []
         for (let index = 0; index < activeItems.length; ++index) {
             const item = activeItems[index]
             if (!item) continue
-            const lane = laneList.length > 0 ? laneList[index % laneList.length] : null
-            if (lane === null) continue
+            const candidate = {
+                width: item.lineWidth,
+                containerWidth: item.containerWidth,
+                launchedAt: item.launchedAt,
+                durationMs: item.durationMs,
+                fontSize: item.fontSize
+            }
+            const lane = DanmakuLaneScheduler.selectLane(laneList, assigned, candidate)
+            if (lane === null) {
+                removed.push(item)
+                continue
+            }
             item.laneIndex = lane.index
             item.laneTop = safeTopInset + lane.top
             item.y = item.laneTop
+            candidate.laneIndex = lane.index
+            assigned.push(candidate)
+            retained.push(item)
         }
+        activeItems = retained
+        for (let index = 0; index < removed.length; ++index) removed[index].destroy()
     }
 
     onWidthChanged: relayoutActiveItems()

@@ -307,15 +307,53 @@ void QmlCloseRegressionTest::cancelCloseDialogLeavesControllerStateUnchanged()
     });
     engine.load(QUrl(QStringLiteral("qrc:/qml/Main.qml")));
     QVERIFY(!engine.rootObjects().isEmpty());
+    auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().constFirst());
+    QVERIFY(window != nullptr);
+    window->resize(QSize(1280, 800));
+    window->show();
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+
+    // Leave a previous surface as the remembered popup focus target, then switch
+    // to Settings and focus its editor. Cancelling native close must return here.
+    auto *tools = window->findChild<QObject *>(QStringLiteral("watchToolsPanel"));
+    auto *toolsButton = window->findChild<QQuickItem *>(QStringLiteral("watchToolsButton"));
+    QVERIFY(tools != nullptr);
+    QVERIFY(toolsButton != nullptr);
+    toolsButton->forceActiveFocus(Qt::TabFocusReason);
+    QTRY_VERIFY(toolsButton->hasActiveFocus());
+    QVERIFY(QMetaObject::invokeMethod(window, "toggleWatchTools"));
+    QTRY_VERIFY(tools->property("visible").toBool());
+    QVERIFY(QMetaObject::invokeMethod(tools, "close"));
+    QTRY_VERIFY(!tools->property("visible").toBool());
+    QTRY_VERIFY(toolsButton->hasActiveFocus());
+
+    auto *settingsPage = window->findChild<QObject *>(QStringLiteral("settingsPage"));
+    auto *eventName = window->findChild<QQuickItem *>(QStringLiteral("eventMappingName"));
+    QVERIFY(settingsPage != nullptr);
+    QVERIFY(eventName != nullptr);
+    QVERIFY(QMetaObject::invokeMethod(window, "showPage",
+                                      Q_ARG(QVariant, QStringLiteral("settings"))));
+    QTRY_VERIFY(settingsPage->property("visible").toBool());
+    eventName->forceActiveFocus(Qt::TabFocusReason);
+    QTRY_VERIFY(eventName->hasActiveFocus());
+    auto *eventNameObject = qobject_cast<QObject *>(eventName);
+    QVERIFY(eventNameObject != nullptr);
+    // Seed the same edited value the user would have typed while retaining focus.
+    QVERIFY(eventNameObject->setProperty("text", QStringLiteral("focus-retained")));
+    QCOMPARE(eventNameObject->property("text").toString(), QStringLiteral("focus-retained"));
+
     auto *dialog = engine.rootObjects().constFirst()->findChild<QObject *>(
         QStringLiteral("closeBehaviorDialog"));
     QVERIFY(dialog != nullptr);
-    QVERIFY(QMetaObject::invokeMethod(dialog, "open"));
+    QVERIFY(QMetaObject::invokeMethod(window, "close"));
     QTRY_VERIFY(dialog->property("visible").toBool());
     auto *cancel = dialog->findChild<QObject *>(QStringLiteral("cancelCloseButton"));
     QVERIFY(cancel != nullptr);
     QVERIFY(QMetaObject::invokeMethod(cancel, "click"));
     QTRY_VERIFY(!dialog->property("visible").toBool());
+    QTRY_VERIFY(eventName->hasActiveFocus());
+    QCOMPARE(eventName->property("text").toString(), QStringLiteral("focus-retained"));
+    QVERIFY(toolsButton->isEnabled());
     QVERIFY(!controller.quitRequested());
     QVERIFY(!controller.backgroundHosted());
 }
@@ -467,20 +505,51 @@ void QmlCloseRegressionTest::appliesPresetAndRefreshesAllRoomDelegates()
     QTRY_COMPARE_WITH_TIMEOUT(roomList->property("count").toInt(), 5, 5000);
 
     for (int index = 0; index < 5; ++index) {
-        QQuickItem *row = nullptr;
-        QTRY_VERIFY_WITH_TIMEOUT(QMetaObject::invokeMethod(roomList, "itemAtIndex",
-            Q_RETURN_ARG(QQuickItem *, row), Q_ARG(int, index)) && row, 5000);
-        QCOMPARE(row->property("roomId").toString(), QString::number(63136 + index));
+        QTRY_COMPARE_WITH_TIMEOUT(roomItemModel->data(roomItemModel->index(index, 0),
+            RoomListModel::RoomIdRole).toString(), QString::number(63136 + index), 5000);
+        const auto visibleRoomId = [roomList, index] {
+            QQuickItem *row = nullptr;
+            if (!QMetaObject::invokeMethod(roomList, "itemAtIndex",
+                    Q_RETURN_ARG(QQuickItem *, row), Q_ARG(int, index)) || !row) return QString();
+            return row->property("roomId").toString();
+        };
+        QTRY_COMPARE_WITH_TIMEOUT(visibleRoomId(), QString::number(63136 + index), 5000);
     }
     QCOMPARE(controller.setPrimaryRoom("63140"), QString());
     QCOMPARE(controller.removeRoom("63138"), QString());
     QCOMPARE(controller.removeRoom("63139"), QString());
-    QCOMPARE(controller.applyWorkspacePreset("p1"), QString());
+    QVERIFY(controller.setLayout(QStringLiteral("primary")));
+    QCOMPARE(controller.moveRoom(QStringLiteral("63140"), -1), QString());
+    QObject *presetPanel = window->findChild<QObject *>(QStringLiteral("workspacePresetsPanel"));
+    QVERIFY(presetPanel != nullptr);
+    QVERIFY(QMetaObject::invokeMethod(presetPanel, "open"));
+    QTRY_VERIFY_WITH_TIMEOUT(presetPanel->property("visible").toBool(), 5000);
+    QObject *presetList = presetPanel->findChild<QObject *>(QStringLiteral("workspacePresetList"));
+    QVERIFY(presetList != nullptr);
+    QQuickItem *presetRow = nullptr;
+    QTRY_VERIFY_WITH_TIMEOUT(QMetaObject::invokeMethod(presetList, "itemAtIndex",
+        Q_RETURN_ARG(QQuickItem *, presetRow), Q_ARG(int, 0)) && presetRow, 5000);
+    QObject *applyButton = presetRow->findChild<QObject *>(
+        QStringLiteral("applyWorkspacePresetButton"));
+    QVERIFY(applyButton != nullptr);
+    QVERIFY(QMetaObject::invokeMethod(applyButton, "click"));
+    QTRY_COMPARE_WITH_TIMEOUT(controller.workspace()->layoutMode(), QStringLiteral("auto"), 5000);
     QTRY_COMPARE_WITH_TIMEOUT(roomList->property("count").toInt(), 5, 5000);
     QQuickItem *firstRow = nullptr;
     QTRY_VERIFY_WITH_TIMEOUT(QMetaObject::invokeMethod(roomList, "itemAtIndex",
         Q_RETURN_ARG(QQuickItem *, firstRow), Q_ARG(int, 0)) && firstRow, 5000);
     QTRY_VERIFY_WITH_TIMEOUT(firstRow->property("primary").toBool(), 5000);
+    for (int index = 0; index < 5; ++index) {
+        QTRY_COMPARE_WITH_TIMEOUT(roomItemModel->data(roomItemModel->index(index, 0),
+            RoomListModel::RoomIdRole).toString(), QString::number(63136 + index), 5000);
+        const auto visibleRoomId = [roomList, index] {
+            QQuickItem *row = nullptr;
+            if (!QMetaObject::invokeMethod(roomList, "itemAtIndex",
+                    Q_RETURN_ARG(QQuickItem *, row), Q_ARG(int, index)) || !row) return QString();
+            return row->property("roomId").toString();
+        };
+        QTRY_COMPARE_WITH_TIMEOUT(visibleRoomId(), QString::number(63136 + index), 5000);
+    }
     for (const QVariant &value : sidebar->property("libraryRooms").toList()) {
         const QVariantMap entry = value.toMap();
         QVERIFY(entry.value("active").toBool());

@@ -1,58 +1,36 @@
-# DouyuMonitor
+# CSTG 特勤终端
 
-DouyuMonitor 是基于 Qt Quick/QML、C++ 和 libmpv 的 Windows x64 斗鱼多直播间监看工具。当前 `main` 只维护原生 Qt 实现，正式版布局最多支持 16 路并全部解码，24 路全解码测试版通过独立构建开关生成；旧 Electron/TypeScript 实现已从 `main` 移除，并保存在 `legacy-framework` 分支供历史追溯。
+DouyuMonitor（CSTG 特勤终端）是面向斗鱼直播的 Windows x64 原生桌面客户端，基于 Qt Quick/QML、C++20 和 libmpv。它提供多房间观看、CSTG 主播导航、郎团 S1 榜单与历史档案。`main` 仅维护原生 Qt 实现；旧 Electron/TypeScript 实现保存在 `legacy-framework` 分支供历史追溯。
 
 ## 界面预览
 
-图一 单直播间监看，顶部信息栏显示热度，右侧房间列表可展开收起：
+以下为当前生产 QML 页面在 Qt 中实际渲染的截图。主播导航使用内置的 62 位公开目录和公开头像，截图未查询开播状态；榜单与详情展示 `2026-10-27` 的 S1 历史档案。这些是独立页面预览，不代表实时直播或当前在线状态。详见[截图来源与验证](docs/images/V1.0.0-PREVIEWS.md)。
 
-![单直播间监控](docs/images/screenshot-single-room.png)
+![主播导航与全部/男主播/女主播筛选](docs/images/v1.0.0-cstg-navigation.png)
 
-图二 多直播间同时监看，每路独立弹幕、音量、清晰度和开播状态：
+![S1 历史榜单（日间模式）](docs/images/v1.0.0-s1-ranking-day.png)
 
-![多直播间监控](docs/images/screenshot-multi-room.png)
+![S1 历史榜单（夜间模式）](docs/images/v1.0.0-s1-ranking-night.png)
 
-图三、图四 房间列表支持历史与收藏，并显示主播头像和当前开播状态：
-
-![房间列表与历史收藏一](docs/images/screenshot-room-sidebar.png)
-
-![房间列表与历史收藏二](docs/images/screenshot-room-sidebar-2.png)
-
-郎团S1野榜支持综合排名、定级赛榜和游乐值榜：
-
-![郎团S1野榜综合排名](docs/images/screenshot-maozi-rank.png)
-
-![郎团S1定级赛榜](docs/images/screenshot-maozi-placement.png)
-
-![郎团S1游乐值榜](docs/images/screenshot-maozi-play-value.png)
-
-24 路全解码测试版在 1920x1080 下的自动布局：
-
-![24路自动布局](docs/images/screenshot-24-rooms.png)
+![主播详情与雷达图](docs/images/v1.0.0-s1-detail-radar.png)
 
 ## 当前版本
 
-- 正式版：`V0.2.20`
-- Windows 正式版安装包：`DouyuMonitor-Setup-V0.2.20.exe`
-- 24 路全解码测试版：`V0.2.20-beta.24`
-- Windows 24 路测试版安装包：`DouyuMonitor-Setup-V0.2.20-beta.24.exe`
-- 正式版 Release：[DouyuMonitor V0.2.20](https://github.com/KevinTsoi2002/DouyuMonitor/releases/tag/V0.2.20)
-- 24 路测试版 Release：[DouyuMonitor V0.2.20-beta.24](https://github.com/KevinTsoi2002/DouyuMonitor/releases/tag/V0.2.20-beta.24)
+- 当前稳定版：`V1.0.0`
+- Windows x64 安装包：[`DouyuMonitor-Setup-V1.0.0.exe`](https://github.com/KevinTsoi2002/DouyuMonitor/releases/tag/V1.0.0)
+- 历史 24 路测试版：[`V0.2.20-beta.24`](https://github.com/KevinTsoi2002/DouyuMonitor/releases/tag/V0.2.20-beta.24)，不属于当前稳定版
 - 未提供代码签名；下载后请以 Release 页面中的 SHA-256 值校验安装包
 
 ## 功能
 
 - 按房间号或主播名搜索并添加斗鱼直播间
-- 自动布局、主直播间布局和双主直播间布局
-- 正式版自动布局、主直播间布局和双主直播间布局最多 16 路并全部解码；双主布局要求至少 4 路，两个主画面均享有高画质优先级
-- 24 路全解码测试版支持三种布局最多 24 路，并同时创建 24 路播放器
-- 每个房间独立弹幕、弹幕过滤、重复抑制和峰值治理
-- 房间资料、主播头像、标题、热度和开播状态定时刷新
-- 历史记录、收藏、自定义分组和工作区预设
-- 顶栏房间列表按钮右侧提供CSTG狼团S1导航页入口，按独立队伍展示内置公会名单；未分配成员进入“未分队”，队伍管理位于“设置 -> 队伍管理”
-- CSTG狼团S1导航页按“团长、队伍、队长、队员、其他”分层展示；角色通过设置页的本地活动配置维护，主播列表按昵称拼音首字母排序
-- 鼠标悬停导航页主播可查看雷达图、定级赛总评和游乐值，详细数据位于“郎团S1野榜”页面
-- 导航页可见期间按版本号增量同步野榜数据，版本未变化时不重复拉取完整快照
+- 自动、主直播间和双主直播间布局；稳定版最多 16 路解码
+- 每个房间独立播放控制、清晰度、音量、弹幕及状态信息
+- 可收起的房间列表、导航栏和观看工具面板，为直播画面保留空间
+- CSTG 主播导航提供全部、男主播和女主播筛选、搜索及直播状态
+- 郎团 S1 榜单、赛事分类、历史档案、主播详情与能力雷达图
+- 日间与夜间主题，设置会保存并在下次启动时恢复
+- 历史记录、收藏、自定义分组、工作区预设、状态监控和播放恢复
 - 主播开播状态写入本地缓存，短时间重复打开导航页不会再次排队检查全部主播
 - 声音总控、单声道/多声道、独立音量和默认音频焦点
 - StreamGet 动态清晰度列表、播放源重试和状态 Toast
@@ -77,7 +55,7 @@ DouyuMonitor 是基于 Qt Quick/QML、C++ 和 libmpv 的 Windows x64 斗鱼多�
 - Windows x64
 - Visual Studio 2022，含 MSVC x64 工具链
 - CMake 3.24 或更高版本、Ninja
-- Qt `6.8.3` MSVC 2022 x64
+- Qt 6 MSVC 2022 x64（V1.0.0 使用 `6.12.0` 构建并验证）
 - 已准备好的 libmpv SDK，包含头文件、`libmpv.lib` 和 `libmpv-2.dll`
 
 ### 配置和构建
@@ -85,7 +63,7 @@ DouyuMonitor 是基于 Qt Quick/QML、C++ 和 libmpv 的 Windows x64 斗鱼多�
 在项目根目录的 Visual Studio x64 Developer PowerShell 中设置依赖路径：
 
 ```powershell
-$env:QT_ROOT = 'D:\Qt\6.8.3\msvc2022_64'
+$env:QT_ROOT = 'D:\Qt\6.12.0\msvc2022_64'
 $env:MPV_ROOT = (Resolve-Path .\native\sdk\mpv).Path
 Set-Location .\native
 ```
@@ -94,7 +72,7 @@ Set-Location .\native
 
 ```powershell
 cmake --preset windows-x64-release
-cmake --build --preset windows-x64-release --target douyu_monitor_native
+cmake --build --preset windows-x64-release
 ctest --preset windows-x64-release
 ```
 
@@ -104,7 +82,7 @@ ctest --preset windows-x64-release
 .\out\build\windows-x64-release\douyu_monitor_native.exe
 ```
 
-关闭窗口或最小化会进入 Windows 托盘后台托管，不会停止直播音频、StreamGet 或状态通知。需要真正退出时，在托盘图标右键选择“退出程序”；托盘双击或选择“显示窗口”可恢复画面和弹幕。
+关闭按钮支持询问、后台托管或完全退出，按设置执行；最小化进入托盘后台托管。后台继续保留音频、StreamGet 与状态通知。托盘“退出程序”可完全退出，双击或选择“显示窗口”可恢复画面和弹幕。
 
 ### 构建 Windows 安装包
 
@@ -114,23 +92,17 @@ ctest --preset windows-x64-release
 .\scripts\build-windows-installer.ps1
 ```
 
-安装包输出到 `native/out/installer/DouyuMonitor-Setup-V0.2.20.exe`。后续版本会自动将版本号加入安装包文件名。构建 24 路全解码测试版时执行 `.\scripts\build-windows-installer.ps1 -ReleaseDir .\out\build\windows-x64-beta24 -Version 0.2.20-beta.24`。运行安装包时可选择安装目录；如果选择 `D:\` 这样的磁盘根目录，安装器会自动使用 `D:\DouyuMonitor`，不会把程序文件直接写入根目录。安装完成后会创建开始菜单和可选的桌面快捷方式，并可直接启动程序。卸载入口由 Inno Setup 生成的 `unins000.exe` 提供，同时登记到 Windows 设置的“已安装的应用”。
+输出目录必须尚不存在；重复构建请同时传入一对新的 `-StageRoot` 与 `-InstallerOutputDir`，已有产物会被保留。
+
+安装包输出到 `native/out/installer/DouyuMonitor-Setup-V1.0.0.exe`。安装器文件名会从 CMake 项目版本自动生成。24 路全解码测试版仅保留在历史 Release 中，不作为 V1.0.0 稳定包发布。运行安装包时可选择安装目录；如果选择 `D:\` 这样的磁盘根目录，安装器会自动使用 `D:\DouyuMonitor`，不会把程序文件直接写入根目录。安装完成后会创建开始菜单和可选的桌面快捷方式，并可直接启动程序。卸载入口由 Inno Setup 生成的 `unins000.exe` 提供，同时登记到 Windows 设置的“已安装的应用”。
 
 CSTG狼团S1导航页展示应用内置的公会名单、主播头像和开播状态，不根据直播资料动态扩张名单。已确认房间号可以直接加入当前工作区；无法自动确认的成员需要在行内手工输入房间号。快捷加入受当前构建的布局容量限制。隐藏导航页的空工作区启动时不会为名单检查启动服务。
 
 ### CSTG狼团S1导航与郎团S1野榜
 
-导航页按“团长 -> 队伍 -> 队长 -> 队员 -> 其他”排列主播。设置页的“活动角色（本地配置）”支持维护角色和队长回退队伍；远端明确队伍优先于回退配置，角色配置不代表远端角色自动同步。导航页中存在但野榜中没有记录的成员归入“其他”。每个小分类内按主播昵称拼音首字母排序。队伍管理支持预览后从野榜一键导入，身份匹配有歧义的主播不会被移动。
+主播导航按公会主播目录列出名单，可按全部、男主播和女主播筛选，并支持搜索、直播状态查看和加入工作区。郎团 S1 榜单提供总览、赛事页面和历史档案；主播详情显示能力维度与雷达图，历史档案缺失的数据保持为空，不以虚构分值补齐。
 
-鼠标悬停在主播上会显示共享卡片，包含雷达图、定级赛总评和游乐值；详细数据位于郎团S1野榜页面。导航页可见时每 60 秒做一次轻量版本检查并刷新开播状态，野榜版本变化后才重新拉取完整快照；同步失败时保留上一次成功数据并提示数据可能已过期。重复打开导航页会复用 15 分钟内的开播缓存；可见期间的定时状态刷新不受该缓存期限限制。状态更新保留现有列表行，收起导航页、切换页面或窗口失去激活时会关闭悬浮卡片。
-
-郎团S1野榜页面展示排名、主播、房间号、队伍、评级、综合评分、参与人数和开播状态：
-
-![郎团S1野榜](docs/images/screenshot-rank-page.jpg)
-
-队伍管理位于“设置 -> 队伍管理”，队伍是导航页的主分组，可创建空队伍并调整成员归属：
-
-![队伍管理](docs/images/screenshot-team-manager.jpg)
+榜单按列对齐排名、主播、房间号、队伍、评级与综合评分；人数等来源缺失字段保留为空，归档页面明确标注历史赛季成绩。
 
 ## StreamGet 服务
 

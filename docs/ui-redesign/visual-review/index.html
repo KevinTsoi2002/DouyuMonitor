@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>CSTG 特勤终端 · 视觉方向评审</title>
+  <link rel="icon" href="assets/icon-navigation.png">
+  <link rel="stylesheet" href="review.css">
+  <link rel="stylesheet" href="review-r2.css">
+  <script src="review.js" defer></script>
+</head>
+<body data-scheme="c" data-palette="c1" data-review="r3">
+  <header class="review-bar" aria-label="视觉评审工具">
+    <div class="review-brand"><span class="review-kicker">CSTG / VISUAL REVIEW · 03</span><strong>让画面回到中心</strong><small>已选 C 组件与日夜配色 · 当前为示意画面</small></div>
+    <div class="scheme-picker" role="group" aria-label="日夜模式">
+      <button class="scheme-choice" data-palette="c1" aria-pressed="true"><span class="scheme-letter">C1</span><span><b>夜间模式</b><small>石墨 · 青绿</small></span><i class="swatches swatches-c1" aria-hidden="true"></i></button>
+      <button class="scheme-choice" data-palette="c3" aria-pressed="false"><span class="scheme-letter">C3</span><span><b>白天模式</b><small>雾白 · 苔绿</small></span><i class="swatches swatches-c3" aria-hidden="true"></i></button>
+    </div>
+    <button class="record-choice" id="record-choice">记录布局意见 <span aria-hidden="true">↗</span></button>
+  </header>
+
+  <div class="app-window">
+    <div class="titlebar"><div><img src="assets/icon-app.png" alt="" width="24" height="24"><span class="app-title" role="img" aria-label="CSTG 特勤终端"><img class="title-wordmark wordmark-night" src="assets/wordmark-night.png" alt="" aria-hidden="true" width="1942" height="220"><img class="title-wordmark wordmark-day" src="assets/wordmark-day.png" alt="" aria-hidden="true" width="2024" height="225"></span><span class="prototype-label">视觉评审原型</span></div><button id="watch-tools-trigger" class="button titlebar-tools" data-action="tools" aria-haspopup="dialog" aria-controls="review-dialog" aria-expanded="false" aria-keyshortcuts="T" hidden>观看工具 <kbd>T</kbd></button><span class="window-size" id="window-size"></span><div class="window-glyphs" aria-hidden="true"><span>−</span><span>□</span><span>×</span></div></div>
+    <div class="app-body">
+      <nav class="app-nav" aria-label="应用导航">
+        <div class="nav-caption">CSTG <span>WORKSPACE</span></div>
+        <div class="nav-main">
+          <button class="nav-item active" data-page="directory" aria-current="page"><img src="assets/icon-navigation.png" alt=""><span>主播导航</span></button>
+          <button class="nav-item" data-page="ranking"><img src="assets/icon-ranking.png" alt=""><span>团播榜单</span></button>
+          <button class="nav-item" data-page="watch"><span class="nav-vector" data-icon="screens"></span><span>直播工作区</span><em id="nav-room-count">4</em></button>
+        </div>
+        <div class="nav-context"><span class="nav-caption">当前工作区</span><button class="workspace-shortcut" data-page="watch"><span class="workspace-dot"></span><span>晚间一起看<small>4 个演示房间</small></span><span>↗</span></button><p>声音焦点 · 北屿<br>主画面布局</p></div>
+        <div class="nav-bottom"><button class="nav-item" data-page="settings" aria-label="设置"><span class="nav-vector" data-icon="settings"></span><span>设置</span></button><button class="nav-item" data-page="components" aria-label="组件与状态"><span class="nav-vector" data-icon="grid"></span><span>组件与状态</span></button><small>仅供评审 · 未连接业务服务</small></div>
+      </nav>
+      <main id="page-content" tabindex="-1"><header class="page-header"><div class="page-heading"><div class="eyebrow">CSTG / DIRECTORY</div><h1>找到同伴，一起看直播</h1><p>这是不启用脚本时的静态概览。启用 JavaScript 后可切换日夜模式并查看观看布局。</p></div></header><div class="content-wrap"><div class="archive-banner">所有姓名、房间和数值均为评审占位。</div><section class="member-list"><article class="member-row"><div class="member-info"><h2>北屿</h2><p>一队 · 队长 · 示例 10001</p></div><span class="status online">直播中（示例）</span></article><article class="member-row"><div class="member-info"><h2>小满</h2><p>一队 · 队员 · 示例 10002</p></div><span class="status online">直播中（示例）</span></article></section></div></main>
+    </div>
+    <footer class="app-status"><span><i class="dot muted-dot"></i>占位示例 · 非当前直播数据</span><span id="status-context">主播导航 / 候选 C1</span><span>原生 Qt Quick 实施待确认</span></footer>
+  </div>
+
+  <footer class="review-footer"><span id="scheme-description">C1 夜间 / C3 白天已选定 · 观看布局待确认</span><button id="review-notes">查看本轮调整</button><span id="saved-preference" role="status">日夜配色已确认</span></footer>
+  <span id="watch-announcement" class="sr-only" role="status" aria-live="polite"></span>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <dialog id="review-dialog" aria-labelledby="dialog-title"><div id="dialog-content"></div></dialog>
+  <noscript><div class="noscript">此评审需要 JavaScript 才能切换方案与页面。请启用脚本后重新打开；没有脚本时不记录选择。</div></noscript>
+</body>
+</html>

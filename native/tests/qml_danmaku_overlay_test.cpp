@@ -7,6 +7,8 @@
 
 #include <memory>
 
+#include "test_font_support.h"
+
 class FakeDanmakuQmlController final : public QObject {
     Q_OBJECT
     Q_PROPERTY(QVariantMap displaySettings READ displaySettings NOTIFY settingsChanged)
@@ -107,20 +109,43 @@ QList<QObject *> activeLines(QQuickItem *overlay)
     return overlay->findChildren<QObject *>(QStringLiteral("danmakuLine"));
 }
 
+bool rectanglesOverlap(QObject *left, QObject *right)
+{
+    const qreal leftX = left->property("x").toReal();
+    const qreal rightX = right->property("x").toReal();
+    const qreal leftY = left->property("y").toReal();
+    const qreal rightY = right->property("y").toReal();
+    const qreal leftRight = leftX + left->property("width").toReal();
+    const qreal rightRight = rightX + right->property("width").toReal();
+    const qreal leftBottom = leftY + left->property("height").toReal();
+    const qreal rightBottom = rightY + right->property("height").toReal();
+    return leftX < rightRight && rightX < leftRight && leftY < rightBottom
+        && rightY < leftBottom;
+}
+
 } // namespace
 
 class QmlDanmakuOverlayTest final : public QObject {
     Q_OBJECT
 
 private slots:
+    void initTestCase();
     void launchesAQueuedMessageIntoTheConfiguredRegion();
+    void rendersMessageTextAsPlainText();
     void doesNotReuseAnUnsafeLane();
     void keepsLaneSpacingSafeForOutlinedText();
     void relayoutsActiveDanmakuWhenContainerHeightChanges();
+    void shrinksLanesWithoutOverlappingActiveLines();
     void clearsActiveAndQueuedMessagesWhenDisabled();
     void pausesHiddenOverlayWithoutConsumingQueuedMessages();
     void keepsLaunchingDuringContinuousMessageArrival();
 };
+
+void QmlDanmakuOverlayTest::initTestCase()
+{
+    QVERIFY2(DouyuTestSupport::prepareTestFonts(),
+             "No Simplified Chinese font is available for QML tests (check QT_QPA_FONTDIR)");
+}
 
 void QmlDanmakuOverlayTest::pausesHiddenOverlayWithoutConsumingQueuedMessages()
 {
@@ -183,6 +208,39 @@ void QmlDanmakuOverlayTest::launchesAQueuedMessageIntoTheConfiguredRegion()
     QObject *line = activeLines(overlay.get()).constFirst();
     QVERIFY(line->property("y").toDouble() >= 0);
     QVERIFY(line->property("y").toDouble() < overlay->height() / 2.0);
+}
+
+void QmlDanmakuOverlayTest::rendersMessageTextAsPlainText()
+{
+    QQmlEngine engine;
+    QQmlComponent component(&engine,
+                            QUrl(QStringLiteral("qrc:/qml/components/DanmakuLine.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+
+    const QString payload = QStringLiteral("<b>test</b><img src=\"x\"><a href=\"u\">link</a>");
+    std::unique_ptr<QObject> line(component.createWithInitialProperties({
+        {QStringLiteral("messageText"), payload},
+        {QStringLiteral("laneIndex"), 0},
+        {QStringLiteral("laneTop"), 0},
+        {QStringLiteral("lineWidth"), 320},
+        {QStringLiteral("containerWidth"), 320},
+        {QStringLiteral("durationMs"), 1000},
+        {QStringLiteral("fontSize"), 20},
+        {QStringLiteral("fontFamily"), QStringLiteral("Arial")},
+        {QStringLiteral("messageOpacity"), 1.0},
+        {QStringLiteral("rendering"), QStringLiteral("native")},
+        {QStringLiteral("launchedAt"), 0.0},
+    }));
+    QVERIFY2(line != nullptr, qPrintable(component.errorString()));
+
+    QObject *foreground = line->findChild<QObject *>(QStringLiteral("danmakuForegroundText"));
+    QObject *shadow = line->findChild<QObject *>(QStringLiteral("danmakuShadowText"));
+    QVERIFY(foreground != nullptr);
+    QVERIFY(shadow != nullptr);
+    QCOMPARE(foreground->property("text").toString(), payload);
+    QCOMPARE(shadow->property("text").toString(), payload);
+    QCOMPARE(foreground->property("textFormat").toInt(), 0);
+    QCOMPARE(shadow->property("textFormat").toInt(), 0);
 }
 
 void QmlDanmakuOverlayTest::doesNotReuseAnUnsafeLane()
@@ -260,6 +318,38 @@ void QmlDanmakuOverlayTest::relayoutsActiveDanmakuWhenContainerHeightChanges()
     }
     QVERIFY(after.at(0)->property("laneIndex").toInt()
             != after.at(1)->property("laneIndex").toInt());
+}
+
+void QmlDanmakuOverlayTest::shrinksLanesWithoutOverlappingActiveLines()
+{
+    QQmlEngine engine;
+    QQuickWindow window;
+    window.resize(320, 180);
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+
+    FakeDanmakuQmlController controller;
+    controller.enqueue(message(QStringLiteral("1"), QString(70, QChar('a'))));
+    controller.enqueue(message(QStringLiteral("2"), QString(70, QChar('b'))));
+    std::unique_ptr<QQuickItem> overlay(createOverlay(engine, window, controller));
+    QVERIFY(overlay != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(activeLines(overlay.get()).size() == 2, 2000);
+
+    overlay->setHeight(30);
+    QTRY_VERIFY_WITH_TIMEOUT(activeLines(overlay.get()).size() <= 1, 1000);
+    const QList<QObject *> lines = activeLines(overlay.get());
+    for (int index = 0; index < lines.size(); ++index) {
+        for (int other = index + 1; other < lines.size(); ++other)
+            QVERIFY(!rectanglesOverlap(lines.at(index), lines.at(other)));
+    }
+
+    controller.enqueue(message(QStringLiteral("3"), QString(70, QChar('c'))));
+    QTRY_VERIFY_WITH_TIMEOUT(activeLines(overlay.get()).size() <= 1, 1000);
+    const QList<QObject *> after = activeLines(overlay.get());
+    for (int index = 0; index < after.size(); ++index) {
+        for (int other = index + 1; other < after.size(); ++other)
+            QVERIFY(!rectanglesOverlap(after.at(index), after.at(other)));
+    }
 }
 
 void QmlDanmakuOverlayTest::clearsActiveAndQueuedMessagesWhenDisabled()

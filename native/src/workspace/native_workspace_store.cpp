@@ -24,6 +24,7 @@ const QRegularExpression kRoomIdPattern(QStringLiteral(R"(^[0-9]{1,20}$)"));
 bool isSupportedLayoutId(const QString &layoutId)
 {
     return layoutId == QStringLiteral("auto") || layoutId == QStringLiteral("single")
+        || layoutId == QStringLiteral("primary")
         || layoutId == QStringLiteral("grid-2x2") || layoutId == QStringLiteral("grid-3x2")
         || layoutId == QStringLiteral("grid-3x3") || layoutId == QStringLiteral("primary-two")
         || layoutId == QStringLiteral("split-horizontal")
@@ -871,7 +872,7 @@ std::optional<NativeWorkspacePreset> presetFromJson(const QJsonObject &object, i
     return preset;
 }
 
-NativeWorkspaceSnapshot fromJson(const QJsonObject &object)
+std::optional<NativeWorkspaceSnapshot> fromJson(const QJsonObject &object)
 {
     const int version = object.value(QStringLiteral("version")).toInt();
     if ((version < 1 || version > kCurrentVersion)
@@ -879,7 +880,7 @@ NativeWorkspaceSnapshot fromJson(const QJsonObject &object)
         || !object.value(QStringLiteral("groups")).isArray()
         || !object.value(QStringLiteral("activeRoomIds")).isArray()
         || (version >= 2 && !object.value(QStringLiteral("presets")).isArray())) {
-        return {};
+        return std::nullopt;
     }
 
     NativeWorkspaceSnapshot snapshot;
@@ -942,9 +943,9 @@ NativeWorkspaceSnapshot fromJson(const QJsonObject &object)
         snapshot.globalMuted = object.value(QStringLiteral("globalMuted")).toBool();
     }
     if (version >= 3) {
-        if (!object.value(QStringLiteral("danmaku")).isObject()) return {};
+        if (!object.value(QStringLiteral("danmaku")).isObject()) return std::nullopt;
         const auto danmaku = danmakuFromJson(object.value(QStringLiteral("danmaku")).toObject());
-        if (!danmaku.has_value()) return {};
+        if (!danmaku.has_value()) return std::nullopt;
         snapshot.danmaku = *danmaku;
     } else {
         snapshot.danmaku.globalEnabled = false;
@@ -959,12 +960,47 @@ NativeWorkspaceStore::NativeWorkspaceStore(QSettings *settings)
 {
 }
 
+NativeWorkspaceLoadResult NativeWorkspaceStore::loadResult() const
+{
+    NativeWorkspaceLoadResult result;
+    if (settings_ == nullptr || settings_->status() != QSettings::NoError) {
+        return result;
+    }
+    const QString key = QString::fromLatin1(kSettingsKey);
+    if (!settings_->contains(key)) {
+        result.status = NativeWorkspaceLoadStatus::Missing;
+        return result;
+    }
+    const QByteArray raw = settings_->value(key).toByteArray();
+    const QJsonDocument document = QJsonDocument::fromJson(raw);
+    if (!document.isObject()) {
+        result.status = NativeWorkspaceLoadStatus::Invalid;
+        return result;
+    }
+    const QJsonObject object = document.object();
+    const QJsonValue versionValue = object.value(QStringLiteral("version"));
+    if (!versionValue.isDouble()) {
+        result.status = NativeWorkspaceLoadStatus::Invalid;
+        return result;
+    }
+    const int version = versionValue.toInt();
+    if (version > kCurrentVersion) {
+        result.status = NativeWorkspaceLoadStatus::UnsupportedVersion;
+        return result;
+    }
+    const auto snapshot = fromJson(object);
+    if (!snapshot.has_value()) {
+        result.status = NativeWorkspaceLoadStatus::Invalid;
+        return result;
+    }
+    result.status = NativeWorkspaceLoadStatus::Loaded;
+    result.snapshot = *snapshot;
+    return result;
+}
+
 NativeWorkspaceSnapshot NativeWorkspaceStore::load() const
 {
-    if (settings_ == nullptr) return {};
-    const QJsonDocument document = QJsonDocument::fromJson(
-        settings_->value(QString::fromLatin1(kSettingsKey)).toByteArray());
-    return document.isObject() ? fromJson(document.object()) : NativeWorkspaceSnapshot{};
+    return loadResult().snapshot;
 }
 
 bool NativeWorkspaceStore::save(const NativeWorkspaceSnapshot &snapshot)

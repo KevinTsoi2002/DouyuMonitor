@@ -1,8 +1,34 @@
 #include <QtTest/QtTest>
+#include <QPointer>
 
 #include <algorithm>
+#include <memory>
 
 #include "danmaku/danmaku_session_manager.h"
+
+class TrackingScheduler final : public QObject, public DanmakuTimerScheduler {
+public:
+    explicit TrackingScheduler(QObject *parent = nullptr)
+        : QObject(parent)
+    {
+    }
+
+    TimerId once(int, Callback) override { return nextId_++; }
+    TimerId repeating(int, Callback) override { return nextId_++; }
+    void cancel(TimerId) override {}
+
+private:
+    TimerId nextId_ = 1;
+};
+
+class NullDanmakuSocket final : public DanmakuSocket {
+public:
+    using DanmakuSocket::DanmakuSocket;
+
+    void connectTo(const QUrl &, quint64) override {}
+    void sendBinary(const QByteArray &) override {}
+    void close() override {}
+};
 
 class FakeDanmakuClient final : public DanmakuClient {
     Q_OBJECT
@@ -61,6 +87,13 @@ private slots:
     void appliesGovernanceBeforeQueueing();
     void clearsQueuesAndStopsAllOnShutdown();
     void handlesReentrantClearDuringStop();
+    void promotesWaitingRoomWhenPriorityChanges();
+    void preservesTargetSessionsAcrossRepeatedSync();
+    void replacesIneligibleSessionWithWaitingRoom();
+    void deduplicatesLongIdsWithoutPrefixCollision();
+    void evictsDeduplicationKeysInFifoOrder();
+    void coalescesStatisticsNotificationsPerRoom();
+    void releasesSchedulerWhenSessionIsRemoved();
 };
 
 namespace {
@@ -196,6 +229,55 @@ void DanmakuSessionManagerTest::appliesGovernanceBeforeQueueing()
     QCOMPARE(manager.statsForRoom(QStringLiteral("63136")).filtered, 1);
 }
 
+void DanmakuSessionManagerTest::coalescesStatisticsNotificationsPerRoom()
+{
+    FakeDanmakuClient *fake = nullptr;
+    DanmakuSessionManager manager(
+        [&](const QString &roomId, QObject *) -> std::unique_ptr<DanmakuClient> {
+            auto client = std::make_unique<FakeDanmakuClient>(roomId);
+            fake = client.get();
+            return client;
+        });
+    QSignalSpy changed(&manager, &DanmakuSessionManager::statisticsChanged);
+    manager.synchronize({eligible(QStringLiteral("63136"))});
+
+    fake->emitChat(QStringLiteral("1"), QStringLiteral("one"));
+    fake->emitChat(QStringLiteral("2"), QStringLiteral("two"));
+    QCOMPARE(changed.count(), 0);
+    QTRY_COMPARE_WITH_TIMEOUT(changed.count(), 1, 1000);
+    QCOMPARE(changed.at(0).at(0).toString(), QStringLiteral("63136"));
+
+    manager.clearStats(QStringLiteral("63136"));
+    QCOMPARE(changed.count(), 2);
+    QCOMPARE(manager.statsForRoom(QStringLiteral("63136")).filtered, 0);
+}
+
+void DanmakuSessionManagerTest::releasesSchedulerWhenSessionIsRemoved()
+{
+    QPointer<DanmakuClient> client;
+    QPointer<TrackingScheduler> scheduler;
+    DanmakuSessionManager manager(
+        [&client, &scheduler](const QString &roomId, QObject *) -> std::unique_ptr<DanmakuClient> {
+            auto *createdScheduler = new TrackingScheduler;
+            scheduler = createdScheduler;
+            auto socket = std::make_unique<NullDanmakuSocket>();
+            auto createdClient = std::make_unique<DouyuDanmakuClient>(
+                roomId, std::move(socket), createdScheduler);
+            client = createdClient.get();
+            return createdClient;
+        });
+
+    manager.synchronize({eligible(QStringLiteral("63136"))});
+    QVERIFY(scheduler != nullptr);
+    QVERIFY(client != nullptr);
+    QCOMPARE(scheduler->parent(), client.data());
+
+    manager.clearRoom(QStringLiteral("63136"));
+    QTRY_VERIFY(client.isNull());
+    QTRY_VERIFY(scheduler.isNull());
+    QCOMPARE(manager.activeSessionCount(), 0);
+}
+
 void DanmakuSessionManagerTest::clearsQueuesAndStopsAllOnShutdown()
 {
     QVector<int> stopCounts(2, 0);
@@ -235,6 +317,142 @@ void DanmakuSessionManagerTest::handlesReentrantClearDuringStop()
 
     QVERIFY(reentered);
     QCOMPARE(manager.activeSessionCount(), 0);
+}
+
+void DanmakuSessionManagerTest::promotesWaitingRoomWhenPriorityChanges()
+{
+    QHash<QString, int> starts;
+    QHash<QString, std::shared_ptr<int>> stopCounters;
+    DanmakuSessionManager manager(
+        [&](const QString &roomId, QObject *) -> std::unique_ptr<DanmakuClient> {
+            ++starts[roomId];
+            auto client = std::make_unique<FakeDanmakuClient>(roomId);
+            stopCounters.insert(roomId, std::make_shared<int>(0));
+            client->externalStops = stopCounters.value(roomId).get();
+            return client;
+        });
+
+    QVector<DanmakuRoomEligibility> rooms;
+    for (int i = 0; i < 13; ++i) {
+        auto room = eligible(QString::number(i + 1));
+        room.priority = i;
+        rooms.push_back(room);
+    }
+    manager.synchronize(rooms);
+    QCOMPARE(manager.activeSessionCount(), 12);
+    QCOMPARE(manager.statusForRoom(QStringLiteral("13")).state,
+             DanmakuConnectionState::WaitingForSession);
+
+    rooms[12].priority = -1;
+    manager.synchronize(rooms);
+
+    QCOMPARE(manager.activeSessionCount(), 12);
+    QCOMPARE(starts.value(QStringLiteral("13")), 1);
+    QCOMPARE(*stopCounters.value(QStringLiteral("12")), 1);
+    QCOMPARE(manager.statusForRoom(QStringLiteral("13")).state,
+             DanmakuConnectionState::Connecting);
+}
+
+void DanmakuSessionManagerTest::preservesTargetSessionsAcrossRepeatedSync()
+{
+    QHash<QString, int> starts;
+    QHash<QString, std::shared_ptr<int>> stopCounters;
+    DanmakuSessionManager manager(
+        [&](const QString &roomId, QObject *) -> std::unique_ptr<DanmakuClient> {
+            ++starts[roomId];
+            auto client = std::make_unique<FakeDanmakuClient>(roomId);
+            stopCounters.insert(roomId, std::make_shared<int>(0));
+            client->externalStops = stopCounters.value(roomId).get();
+            return client;
+        });
+
+    QVector<DanmakuRoomEligibility> rooms;
+    for (int i = 0; i < 13; ++i) {
+        auto room = eligible(QString::number(i + 1));
+        room.priority = i;
+        rooms.push_back(room);
+    }
+    manager.synchronize(rooms);
+    const QHash<QString, int> initialStarts = starts;
+    manager.synchronize(rooms);
+
+    QCOMPARE(manager.activeSessionCount(), 12);
+    QCOMPARE(starts, initialStarts);
+    for (int i = 1; i <= 12; ++i) QCOMPARE(*stopCounters.value(QString::number(i)), 0);
+}
+
+void DanmakuSessionManagerTest::replacesIneligibleSessionWithWaitingRoom()
+{
+    QHash<QString, int> starts;
+    QHash<QString, std::shared_ptr<int>> stopCounters;
+    DanmakuSessionManager manager(
+        [&](const QString &roomId, QObject *) -> std::unique_ptr<DanmakuClient> {
+            ++starts[roomId];
+            auto client = std::make_unique<FakeDanmakuClient>(roomId);
+            stopCounters.insert(roomId, std::make_shared<int>(0));
+            client->externalStops = stopCounters.value(roomId).get();
+            return client;
+        });
+
+    QVector<DanmakuRoomEligibility> rooms;
+    for (int i = 0; i < 13; ++i) {
+        auto room = eligible(QString::number(i + 1));
+        room.priority = i;
+        rooms.push_back(room);
+    }
+    manager.synchronize(rooms);
+    rooms[0].live = false;
+    manager.synchronize(rooms);
+
+    QCOMPARE(manager.activeSessionCount(), 12);
+    QCOMPARE(*stopCounters.value(QStringLiteral("1")), 1);
+    QCOMPARE(starts.value(QStringLiteral("13")), 1);
+    QCOMPARE(manager.statusForRoom(QStringLiteral("1")).state,
+             DanmakuConnectionState::Idle);
+    QCOMPARE(manager.statusForRoom(QStringLiteral("13")).state,
+             DanmakuConnectionState::Connecting);
+}
+
+void DanmakuSessionManagerTest::deduplicatesLongIdsWithoutPrefixCollision()
+{
+    FakeDanmakuClient *fake = nullptr;
+    DanmakuSessionManager manager(
+        [&](const QString &roomId, QObject *) -> std::unique_ptr<DanmakuClient> {
+            auto client = std::make_unique<FakeDanmakuClient>(roomId);
+            fake = client.get();
+            return client;
+        });
+    auto room = eligible(QStringLiteral("63136"));
+    room.governance.peakProtectionEnabled = false;
+    manager.synchronize({room});
+
+    const QString prefix(300, QChar('x'));
+    const QString first = prefix + QStringLiteral("A");
+    const QString second = prefix + QStringLiteral("B");
+    fake->emitChat(first, QStringLiteral("first"));
+    fake->emitChat(second, QStringLiteral("second"));
+    fake->emitChat(first, QStringLiteral("first-again"));
+
+    QCOMPARE(manager.pendingCount(QStringLiteral("63136")), 2);
+}
+
+void DanmakuSessionManagerTest::evictsDeduplicationKeysInFifoOrder()
+{
+    FakeDanmakuClient *fake = nullptr;
+    DanmakuSessionManager manager(
+        [&](const QString &roomId, QObject *) -> std::unique_ptr<DanmakuClient> {
+            auto client = std::make_unique<FakeDanmakuClient>(roomId);
+            fake = client.get();
+            return client;
+        });
+    auto room = eligible(QStringLiteral("63136"));
+    room.governance.peakProtectionEnabled = false;
+    manager.synchronize({room});
+
+    for (int i = 0; i < 201; ++i) fake->emitChat(QString::number(i), QString::number(i));
+    while (manager.takeNextMessage(QStringLiteral("63136")).has_value()) {}
+    fake->emitChat(QStringLiteral("0"), QStringLiteral("reaccepted"));
+    QCOMPARE(manager.pendingCount(QStringLiteral("63136")), 1);
 }
 QTEST_GUILESS_MAIN(DanmakuSessionManagerTest)
 

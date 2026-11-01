@@ -1,0 +1,67 @@
+{
+  "revision": "r3",
+  "date": "2026-10-29T16:33:51.325Z",
+  "source": "Summary of actual Playwright check-r3-matrix.js returned results (not a raw transcript)",
+  "cases": 30,
+  "viewports": [
+    {
+      "width": 1280,
+      "height": 800
+    },
+    {
+      "width": 1366,
+      "height": 768
+    },
+    {
+      "width": 1920,
+      "height": 1080
+    }
+  ],
+  "palettes": [
+    "c1",
+    "c3"
+  ],
+  "screens": [
+    "directory",
+    "ranking",
+    "watch",
+    "settings",
+    "components"
+  ],
+  "allCases": {
+    "horizontalOverflow": false,
+    "missingImages": 0,
+    "overflowingControls": 0,
+    "obsoleteOverlays": 0,
+    "titlebarHeight": 36,
+    "toolsOutsideVideo": true,
+    "edgeHidden": true
+  },
+  "watchMeasurements": [
+    {
+      "width": 1280,
+      "height": 800,
+      "stageWidth": 1158,
+      "stageHeight": 599,
+      "sceneArea": 661465.140625,
+      "contained16x9Area": 546543.4531860352
+    },
+    {
+      "width": 1366,
+      "height": 768,
+      "stageWidth": 1244,
+      "stageHeight": 567,
+      "sceneArea": 672379.96875,
+      "contained16x9Area": 632349.2026977539
+    },
+    {
+      "width": 1920,
+      "height": 1080,
+      "stageWidth": 1782,
+      "stageHeight": 879,
+      "sceneArea": 1517566.171875,
+      "contained16x9Area": 1311066.3361816406
+    }
+  ],
+  "errors": []
+}

@@ -3,6 +3,7 @@
 #include "service/stream_service_protocol.h"
 
 #include <QHash>
+#include <QDeadlineTimer>
 #include <QObject>
 #include <QProcess>
 #include <QQueue>
@@ -18,6 +19,11 @@ class StreamgetProcessClient final : public QObject {
     Q_OBJECT
 
 public:
+    static constexpr int kMaxQueuedRequests = 16;
+    static constexpr qsizetype kMaxJsonLineBytes = kMaxServiceJsonLineBytes;
+    static constexpr qsizetype kMaxOutputBufferBytes = 2 * 1024 * 1024;
+    static constexpr qsizetype kReadChunkBytes = 64 * 1024;
+
     explicit StreamgetProcessClient(QString program,
                                     QStringList arguments = {},
                                     QObject *parent = nullptr);
@@ -47,6 +53,7 @@ signals:
 private slots:
     void onProcessStarted();
     void onProcessReadyRead();
+    void onProcessReadyReadStandardError();
     void onProcessError(QProcess::ProcessError error);
     void onProcessFinished(int exitCode, QProcess::ExitStatus status);
 
@@ -54,7 +61,7 @@ private:
     struct PendingRequest {
         ServiceRequest request;
         QTimer *deadline = nullptr;
-        int timeoutMs = 10000;
+        QDeadlineTimer deadlineAt;
     };
 
     quint64 enqueue(ServiceRequest request, int timeoutMs);
@@ -66,6 +73,9 @@ private:
     void failAll(const QString &errorCode);
     void handleProtocolViolation();
     void onRequestTimeout(quint64 requestId);
+    void expireQueuedRequests();
+    void scheduleQueuedDeadlineTimer();
+    void drainStandardError();
 #ifdef Q_OS_WIN
     void attachProcessToJob();
     void terminateJob();
@@ -76,8 +86,9 @@ private:
     QProcess *process_ = nullptr;
     QByteArray outputBuffer_;
     QQueue<ServiceRequest> queuedRequests_;
-    QHash<quint64, int> queuedTimeouts_;
+    QHash<quint64, QDeadlineTimer> queuedDeadlines_;
     QHash<quint64, PendingRequest> activeRequests_;
+    QTimer *queuedDeadlineTimer_ = nullptr;
     quint64 nextRequestId_ = 1;
     bool shuttingDown_ = false;
     bool protocolFailed_ = false;

@@ -1,4 +1,5 @@
 #include "ui/app_controller.h"
+#include "app/s1_archive.h"
 
 #include <QDateTime>
 #include <QDebug>
@@ -160,10 +161,13 @@ AppController::AppController(QString serviceProgram,
     connect(guildRosterNotifyTimer_, &QTimer::timeout, this, &AppController::guildRosterChanged);
     if (!danmakuFactory) {
         danmakuFactory = [](const QString &roomId, QObject *parent) {
-            auto *scheduler = new QtDanmakuTimerScheduler(parent);
+            // The scheduler is session-scoped: it must die with its client
+            // instead of remaining attached to the long-lived manager.
+            auto *scheduler = new QtDanmakuTimerScheduler;
             auto socket = std::make_unique<QtDanmakuSocket>(parent);
-            return std::unique_ptr<DanmakuClient>(
-                new DouyuDanmakuClient(roomId, std::move(socket), scheduler, parent));
+            auto client = std::make_unique<DouyuDanmakuClient>(
+                roomId, std::move(socket), scheduler, parent);
+            return client;
         };
     }
     service_ = std::make_unique<StreamgetProcessClient>(std::move(serviceProgram), QStringList{}, this);
@@ -187,8 +191,11 @@ AppController::AppController(QString serviceProgram,
     });
     connect(guildRoomResolver_, &GuildRoomResolver::memberChanged, this,
             [this](const QString &) { scheduleGuildRosterNotification(); });
-    notificationService_ = std::make_unique<WindowsNotificationService>(settings, notificationSink, this);
     trayService_ = std::make_unique<WindowsTrayService>(this);
+    notificationService_ = std::make_unique<WindowsNotificationService>(
+        settings,
+        notificationSink != nullptr ? notificationSink : trayService_->notificationSink(),
+        this);
     rooms_ = std::make_unique<RoomListModel>(this);
     workspace_ = std::make_unique<WorkspaceModel>(this, this);
     connect(workspace_.get(), &WorkspaceModel::workspaceDataChanged,
@@ -278,16 +285,16 @@ AppController::AppController(QString serviceProgram,
             this, [this](const QString &) { refreshPresentation(); });
     restoreWorkspace();
     if (settings_ != nullptr) {
-        const QString behavior = settings_->value(QStringLiteral("window/closeBehavior"),
-                                                  QStringLiteral("ask")).toString();
+        if (settings_->value(QStringLiteral("ui/themeModeV1")).toString() == QStringLiteral("day"))
+            themeMode_ = QStringLiteral("day");
+        const QString key = QStringLiteral("window/closeBehavior");
+        const QString behavior = settings_->value(key, QStringLiteral("ask")).toString();
+        closeBehaviorPersistRequested_ = settings_->contains(key);
         if (behavior == QStringLiteral("quit") || behavior == QStringLiteral("background")) {
             closeBehavior_ = behavior;
         }
     }
-    const auto notificationStatus = notificationService_->preferences().enabled
-        ? MonitoringModel::NotificationStatus::Enabled
-        : MonitoringModel::NotificationStatus::Disabled;
-    monitoring_->setStatus(notificationStatus, MonitoringModel::RecoveryStatus::Healthy);
+    updateNotificationStatus();
     synchronizeFavoriteMonitor();
 
     connect(trayService_.get(), &WindowsTrayService::showRequested,
@@ -299,6 +306,33 @@ AppController::AppController(QString serviceProgram,
 AppController::~AppController()
 {
     shutdown();
+}
+
+bool AppController::setThemeMode(const QString &mode)
+{
+    if (mode != QStringLiteral("night") && mode != QStringLiteral("day")) return false;
+    if (mode == themeMode_) return true;
+    if (settings_) {
+        const QString key = QStringLiteral("ui/themeModeV1");
+        QSettings writer(settings_->fileName(), settings_->format());
+        writer.setFallbacksEnabled(false);
+        const bool hadValue = writer.contains(key);
+        const QVariant previous = writer.value(key);
+        writer.setValue(key, mode);
+        writer.sync();
+        if (writer.status() != QSettings::NoError) {
+            // QSettings instances for one file share a cache. Restore it too,
+            // so a later successful sync cannot persist this failed candidate.
+            if (hadValue) writer.setValue(key, previous);
+            else writer.remove(key);
+            workspace_->setLastMessage(QStringLiteral("外观偏好保存失败，请重试"),
+                                       QStringLiteral("error"), 0);
+            return false;
+        }
+    }
+    themeMode_ = mode;
+    emit themeModeChanged();
+    return true;
 }
 
 QVariantMap AppController::maoziTeamImport() const
@@ -348,7 +382,7 @@ QString AppController::confirmMaoziTeamImport()
     const QString workspaceKey = QStringLiteral("DouyuMonitor/nativeWorkspaceV1");
     const bool hadWorkspace = settings_ && settings_->contains(workspaceKey);
     const auto previousValue = settings_ ? settings_->value(workspaceKey) : QVariant{};
-    if (!workspaceStore_.save(candidate)) {
+    if (!trySaveWorkspace(candidate)) {
         // Discard QSettings' pending candidate as well as the application copy.
         if (settings_) {
             if (hadWorkspace) settings_->setValue(workspaceKey, previousValue);
@@ -489,17 +523,29 @@ QVariantList AppController::guildRoster() const
             }
         }
         const bool rankMatched = !rankEntry.isEmpty();
+        const bool portraitIdentityVerified = resolvedRoomId == member.roomId
+            || member.portraitRoomIds.contains(resolvedRoomId);
         projection.push_back(QVariantMap{
             {QStringLiteral("id"), member.id},
-            {QStringLiteral("anchorName"), member.anchorName},
+            {QStringLiteral("anchorName"), member.directoryName.isEmpty()
+                 ? member.anchorName : member.directoryName},
+            {QStringLiteral("directoryListed"), member.directoryListed},
+            {QStringLiteral("directoryOrder"), member.directoryOrder},
+            {QStringLiteral("gender"), member.gender},
+            {QStringLiteral("portraitIdentityVerified"), portraitIdentityVerified},
+            {QStringLiteral("portraitRoomIds"), portraitIdentityVerified
+                 ? member.portraitRoomIds : QStringList{}},
             {QStringLiteral("pinyinKey"), member.pinyinKey},
             {QStringLiteral("roomId"), resolvedRoomId},
             {QStringLiteral("status"), guildRoomResolver_ != nullptr
                  ? guildRoomResolver_->statusFor(member.id)
                  : QString()},
             {QStringLiteral("avatarUrl"), guildRoomResolver_ != nullptr
+                 && !guildRoomResolver_->avatarUrlFor(member.id).isEmpty()
                  ? guildRoomResolver_->avatarUrlFor(member.id)
-                 : QString()},
+                 : (portraitIdentityVerified ? member.avatarUrl : QString())},
+            {QStringLiteral("fallbackAvatarUrl"), portraitIdentityVerified
+                 ? member.avatarUrl : QString()},
             {QStringLiteral("liveState"), guildRoomResolver_ != nullptr
                  ? guildRoomResolver_->liveStateFor(member.id)
                  : QStringLiteral("unknown")},
@@ -603,6 +649,12 @@ MaoziRankClient *AppController::maoziRank() noexcept
     return maoziRank_.get();
 }
 
+QVariantMap AppController::s1Archive() const
+{
+    static const QVariantMap archive = S1Archive::bundled();
+    return archive;
+}
+
 bool AppController::rankSyncPending() const noexcept
 {
     return maoziRank_ != nullptr && maoziRank_->syncPending();
@@ -654,8 +706,11 @@ bool AppController::quitRequested() const noexcept
     return quitRequested_;
 }
 
-QString AppController::fixedPlaybackMessage(const QString &) const
+QString AppController::fixedPlaybackMessage(const QString &errorCode) const
 {
+    if (errorCode == QStringLiteral("RENDER_CONTEXT_FAILED")) {
+        return QStringLiteral("视频渲染初始化失败");
+    }
     return QStringLiteral("播放地址不可用");
 }
 
@@ -672,6 +727,7 @@ void AppController::setMainWindow(QWindow *window)
         if (trayService_ != nullptr) trayService_->stop();
     });
     if (trayService_ != nullptr) trayService_->start(window);
+    updateNotificationStatus();
 }
 
 QString AppController::addRoom(const QString &roomId)
@@ -788,6 +844,9 @@ QString AppController::addGuildMemberRoom(const QString &memberId)
 
 QString AppController::removeRoom(const QString &roomId)
 {
+    if (shuttingDown_ || coordinator_ == nullptr) {
+        return commandMessage(RoomCommandResult::Unavailable);
+    }
     const bool wasDualPrimary = coordinator_ != nullptr
         && coordinator_->layoutMode() == QStringLiteral("primary-two");
     const RoomCommandResult result = coordinator_->removeRoomDetailed(roomId);
@@ -827,9 +886,10 @@ QString AppController::removeHistoryRoom(const QString &roomId)
 void AppController::requestRemoveRoom(const QString &roomId)
 {
     const QString requestedRoomId = roomId.trimmed();
-    if (requestedRoomId.isEmpty()) return;
+    if (requestedRoomId.isEmpty() || shuttingDown_) return;
 
     QTimer::singleShot(0, this, [this, requestedRoomId] {
+        if (shuttingDown_ || coordinator_ == nullptr) return;
         removeRoom(requestedRoomId);
     });
 }
@@ -850,6 +910,14 @@ QString AppController::setSecondaryPrimaryRoom(const QString &roomId)
 
 QString AppController::setAudioRoom(const QString &roomId)
 {
+    if (roomId.isEmpty()) {
+        if (coordinator_->audioRoomId().isEmpty()) return {};
+        if (!coordinator_->setAudioFocus(QString())) {
+            return commandMessage(RoomCommandResult::Unavailable);
+        }
+        persistWorkspace();
+        return {};
+    }
     if (coordinator_->sessionForRoom(roomId) == nullptr) {
         return commandMessage(RoomCommandResult::RoomNotFound);
     }
@@ -1363,6 +1431,7 @@ QString AppController::applyWorkspacePreset(const QString &presetId)
         coordinator_->setSecondaryPrimaryRoomDetailed(preset.secondaryPrimaryRoomId);
     }
     if (!preset.audioRoomId.isEmpty()) coordinator_->setAudioFocus(preset.audioRoomId);
+    else coordinator_->setAudioFocus(QString());
     snapshot_.activeGroupId = preset.activeGroupId;
     snapshot_.layoutId = coordinator_->layoutMode();
     snapshot_.primaryRoomRatio = coordinator_->primaryRoomRatio();
@@ -1427,9 +1496,7 @@ QString AppController::setNotificationPreferences(bool enabled,
         return QStringLiteral("通知设置保存失败");
     }
 
-    monitoring_->setStatus(enabled ? MonitoringModel::NotificationStatus::Enabled
-                                   : MonitoringModel::NotificationStatus::Disabled,
-                           MonitoringModel::RecoveryStatus::Healthy);
+    updateNotificationStatus();
     emit notificationPreferencesChanged();
     return {};
 }
@@ -1585,27 +1652,59 @@ void AppController::requestClose()
     }
 }
 
+void AppController::setCloseBehaviorSaveState(bool unsaved, const QString &error)
+{
+    if (closeBehaviorUnsaved_ == unsaved && closeBehaviorError_ == error) return;
+    closeBehaviorUnsaved_ = unsaved;
+    closeBehaviorError_ = error;
+    emit closeBehaviorSaveStateChanged();
+}
+
+bool AppController::persistCloseBehavior(bool remember)
+{
+    if (settings_ == nullptr) {
+        closeBehaviorPersistRequested_ = remember;
+        setCloseBehaviorSaveState(false, {});
+        return true;
+    }
+
+    const QString key = QStringLiteral("window/closeBehavior");
+    QSettings writer(settings_->fileName(), settings_->format());
+    if (remember) writer.setValue(key, closeBehavior_);
+    else writer.remove(key);
+    writer.sync();
+    if (writer.status() != QSettings::NoError) {
+        setCloseBehaviorSaveState(true, QStringLiteral("关闭行为保存失败，请重试"));
+        return false;
+    }
+
+    if (remember) settings_->setValue(key, closeBehavior_);
+    else settings_->remove(key);
+    closeBehaviorPersistRequested_ = remember;
+    setCloseBehaviorSaveState(false, {});
+    return true;
+}
+
 bool AppController::setCloseBehavior(const QString &behavior, bool persist)
 {
     if (behavior != QStringLiteral("ask") && behavior != QStringLiteral("quit")
         && behavior != QStringLiteral("background")) return false;
-    if (!persist && settings_ != nullptr) {
-        settings_->remove(QStringLiteral("window/closeBehavior"));
-    }
-    if (closeBehavior_ == behavior) {
-        if (persist && settings_ != nullptr) settings_->setValue(QStringLiteral("window/closeBehavior"), behavior);
-        return true;
-    }
+    const bool changed = closeBehavior_ != behavior;
     closeBehavior_ = behavior;
-    if (persist && settings_ != nullptr) settings_->setValue(QStringLiteral("window/closeBehavior"), behavior);
-    emit closeBehaviorChanged();
-    return true;
+    closeBehaviorPersistRequested_ = persist;
+    if (changed) emit closeBehaviorChanged();
+    return persistCloseBehavior(persist);
 }
 
 void AppController::clearCloseBehavior()
 {
-    setCloseBehavior(QStringLiteral("ask"));
-    if (settings_ != nullptr) settings_->remove(QStringLiteral("window/closeBehavior"));
+    setCloseBehavior(QStringLiteral("ask"), false);
+}
+
+bool AppController::retryCloseBehaviorSave()
+{
+    if (!closeBehaviorUnsaved_) return true;
+    return persistCloseBehavior(closeBehaviorPersistRequested_);
 }
 
 void AppController::requestQuit()
@@ -1642,20 +1741,25 @@ int AppController::activeDanmakuSessionCountForTest() const
 void AppController::restoreWorkspace()
 {
     restoring_ = true;
-    snapshot_ = workspaceStore_.load();
+    const NativeWorkspaceLoadResult loaded = workspaceStore_.loadResult();
+    workspaceLoadStatus_ = loaded.status;
+    workspaceUnsaved_ = workspaceLoadStatus_ != NativeWorkspaceLoadStatus::Loaded
+        && workspaceLoadStatus_ != NativeWorkspaceLoadStatus::Missing;
+    const NativeWorkspaceSnapshot restoreInput = loaded.snapshot;
+    snapshot_ = restoreInput;
     if (guildRoomResolver_ != nullptr) {
         guildRoomResolver_->setRoster(GuildRoster::bundled());
-        guildRoomResolver_->setCache(snapshot_.guildRoomCache);
-        if (snapshot_.navigationVisible) guildRoomResolver_->start();
+        guildRoomResolver_->setCache(restoreInput.guildRoomCache);
+        if (restoreInput.navigationVisible) guildRoomResolver_->start();
     }
-    danmaku_->setConfiguration(snapshot_.danmaku);
+    danmaku_->setConfiguration(restoreInput.danmaku);
     const NativeRoomGroup *activeGroup = nullptr;
-    if (!snapshot_.activeGroupId.isEmpty()) {
-        const auto groupIt = std::find_if(snapshot_.groups.cbegin(), snapshot_.groups.cend(),
-                                          [this](const NativeRoomGroup &group) {
-                                              return group.id == snapshot_.activeGroupId;
+    if (!restoreInput.activeGroupId.isEmpty()) {
+        const auto groupIt = std::find_if(restoreInput.groups.cbegin(), restoreInput.groups.cend(),
+                                          [&restoreInput](const NativeRoomGroup &group) {
+                                              return group.id == restoreInput.activeGroupId;
                                           });
-        if (groupIt != snapshot_.groups.cend()) {
+        if (groupIt != restoreInput.groups.cend()) {
             activeGroup = &*groupIt;
         } else {
             snapshot_.activeGroupId.clear();
@@ -1663,7 +1767,7 @@ void AppController::restoreWorkspace()
     }
 
     const QStringList roomsToRestore = activeGroup != nullptr ? activeGroup->roomIds
-                                                                : snapshot_.activeRoomIds;
+                                                                : restoreInput.activeRoomIds;
     QVector<CoordinatorRoomSpec> targetRooms;
     targetRooms.reserve(roomsToRestore.size());
     for (const QString &roomId : roomsToRestore) {
@@ -1678,23 +1782,30 @@ void AppController::restoreWorkspace()
                                record.favorite});
     }
     coordinator_->replaceRooms(targetRooms);
-    coordinator_->setLayout(snapshot_.layoutId);
-    coordinator_->setPrimaryRoomRatio(snapshot_.primaryRoomRatio);
-    coordinator_->setAudioMode(snapshot_.audioMode);
-    coordinator_->setGlobalMuted(snapshot_.globalMuted);
-    workspace_->setSidebarVisible(snapshot_.sidebarVisible);
-    workspace_->setNavigationVisible(snapshot_.navigationVisible);
+    coordinator_->setLayout(restoreInput.layoutId);
+    coordinator_->setPrimaryRoomRatio(restoreInput.primaryRoomRatio);
+    coordinator_->setAudioMode(restoreInput.audioMode);
+    coordinator_->setGlobalMuted(restoreInput.globalMuted);
+    workspace_->setSidebarVisible(restoreInput.sidebarVisible);
+    workspace_->setNavigationVisible(restoreInput.navigationVisible);
     if (activeGroup != nullptr) {
         snapshot_.primaryRoomId = targetRooms.isEmpty() ? QString() : targetRooms.first().roomId;
         snapshot_.audioRoomId = snapshot_.primaryRoomId;
     }
-    if (!snapshot_.primaryRoomId.isEmpty()) {
-        coordinator_->setPrimaryRoomDetailed(snapshot_.primaryRoomId);
+    if (!restoreInput.primaryRoomId.isEmpty()) {
+        coordinator_->setPrimaryRoomDetailed(restoreInput.primaryRoomId);
     }
-    if (!snapshot_.secondaryPrimaryRoomId.isEmpty()) {
-        coordinator_->setSecondaryPrimaryRoomDetailed(snapshot_.secondaryPrimaryRoomId);
+    if (!restoreInput.secondaryPrimaryRoomId.isEmpty()) {
+        coordinator_->setSecondaryPrimaryRoomDetailed(restoreInput.secondaryPrimaryRoomId);
     }
-    if (!snapshot_.audioRoomId.isEmpty()) coordinator_->setAudioFocus(snapshot_.audioRoomId);
+    if (!restoreInput.audioRoomId.isEmpty()) {
+        coordinator_->setAudioFocus(restoreInput.audioRoomId);
+    } else if (activeGroup == nullptr && !coordinator_->audioRoomId().isEmpty()) {
+        // An explicitly empty workspace value means that the user cleared the
+        // single-room audio focus; do not let replaceRooms()'s first-room
+        // default recreate it during restart.
+        coordinator_->setAudioFocus(QString());
+    }
     restoring_ = false;
     synchronizeDanmaku();
     refreshPresentation();
@@ -1797,10 +1908,24 @@ void AppController::persistWorkspace()
 {
     if (restoring_) return;
     workspaceSaveTimer_->stop();
-    const bool unsaved = !workspaceStore_.save(snapshot_);
+    const bool unsaved = !trySaveWorkspace(snapshot_);
     if (workspaceUnsaved_ == unsaved) return;
     workspaceUnsaved_ = unsaved;
     emit workspaceSaveStateChanged();
+}
+
+bool AppController::trySaveWorkspace(const NativeWorkspaceSnapshot &snapshot,
+                                      bool allowReadErrorRecovery)
+{
+    if (workspaceLoadStatus_ == NativeWorkspaceLoadStatus::Invalid
+        || workspaceLoadStatus_ == NativeWorkspaceLoadStatus::UnsupportedVersion
+        || (workspaceLoadStatus_ == NativeWorkspaceLoadStatus::ReadError
+            && !allowReadErrorRecovery)) {
+        return false;
+    }
+    if (!workspaceStore_.save(snapshot)) return false;
+    workspaceLoadStatus_ = NativeWorkspaceLoadStatus::Loaded;
+    return true;
 }
 
 void AppController::scheduleWorkspaceSave()
@@ -1818,7 +1943,12 @@ void AppController::scheduleGuildRosterNotification()
 
 void AppController::retryWorkspaceSave()
 {
-    persistWorkspace();
+    if (restoring_) return;
+    workspaceSaveTimer_->stop();
+    const bool unsaved = !trySaveWorkspace(snapshot_, true);
+    if (workspaceUnsaved_ == unsaved) return;
+    workspaceUnsaved_ = unsaved;
+    emit workspaceSaveStateChanged();
 }
 
 QString AppController::eventMappingJson() const
@@ -1828,10 +1958,45 @@ QString AppController::eventMappingJson() const
 
 QString AppController::saveEventMapping(const QString &mapping)
 {
-    const auto error = maoziRank_->setEventMapping(mapping.toUtf8());
+    auto candidateClient = std::make_unique<MaoziRankClient>(QUrl{}, QUrl{}, 15000, this);
+    const auto error = candidateClient->setEventMapping(mapping.toUtf8());
     if (!error.isEmpty()) return error;
-    if (settings_) settings_->setValue(QStringLiteral("DouyuMonitor/eventMappingV1"), maoziRank_->eventMapping());
+
+    const QByteArray candidateMapping = candidateClient->eventMapping();
+    if (settings_ == nullptr) {
+        const auto commitError = maoziRank_->setEventMapping(candidateMapping);
+        if (!commitError.isEmpty()) return commitError;
+        emit eventMappingChanged();
+        return {};
+    }
+
+    const QString key = QStringLiteral("DouyuMonitor/eventMappingV1");
+    const bool hadMapping = settings_->contains(key);
+    const QVariant previousMapping = hadMapping ? settings_->value(key) : QVariant{};
+    const auto restoreMapping = [this, &key, hadMapping, &previousMapping] {
+        if (hadMapping) settings_->setValue(key, previousMapping);
+        else settings_->remove(key);
+        settings_->sync();
+    };
+
+    settings_->setValue(key, candidateMapping);
+    settings_->sync();
+    if (settings_->status() != QSettings::NoError) {
+        restoreMapping();
+        return QStringLiteral("角色配置保存失败");
+    }
+
     persistWorkspace();
+    if (workspaceUnsaved_) {
+        restoreMapping();
+        return QStringLiteral("角色配置保存失败");
+    }
+
+    const auto commitError = maoziRank_->setEventMapping(candidateMapping);
+    if (!commitError.isEmpty()) {
+        restoreMapping();
+        return commitError;
+    }
     emit eventMappingChanged();
     return {};
 }
@@ -1896,15 +2061,23 @@ void AppController::onSnapshotsChanged(const RoomSnapshots &snapshots)
         }
     }
     monitoring_->setCounts(online, offline, errors);
-    const auto notificationStatus = notificationService_->preferences().enabled
-        ? MonitoringModel::NotificationStatus::Enabled
-        : MonitoringModel::NotificationStatus::Disabled;
-    monitoring_->setStatus(notificationStatus, MonitoringModel::RecoveryStatus::Healthy);
+    updateNotificationStatus();
     if (!restoring_) {
         for (const NotificationEvent &event : notificationPolicy_.update(snapshots)) {
             notificationService_->deliver(event);
         }
     }
+}
+
+void AppController::updateNotificationStatus()
+{
+    const NotificationPreferences preferences = notificationService_->preferences();
+    const auto status = !preferences.enabled
+        ? MonitoringModel::NotificationStatus::Disabled
+        : (notificationService_->available()
+               ? MonitoringModel::NotificationStatus::Enabled
+               : MonitoringModel::NotificationStatus::Unavailable);
+    monitoring_->setStatus(status, MonitoringModel::RecoveryStatus::Healthy);
 }
 
 void AppController::refreshPresentation()

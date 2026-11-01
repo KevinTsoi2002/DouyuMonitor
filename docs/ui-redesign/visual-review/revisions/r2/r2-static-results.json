@@ -1,0 +1,97 @@
+{
+  "revision": "r2",
+  "date": "2026-10-30T00:12:13.810835+08:00",
+  "scope": "Static source and artifact checks only; no rendering or interaction evidence",
+  "checks": [
+    {
+      "name": "index.html unique static ids",
+      "passed": true
+    },
+    {
+      "name": "index.html local resource references exist",
+      "passed": true
+    },
+    {
+      "name": "revisions/r1/index.html unique static ids",
+      "passed": true
+    },
+    {
+      "name": "revisions/r1/index.html local resource references exist",
+      "passed": true
+    },
+    {
+      "name": "index.html valid text",
+      "passed": true
+    },
+    {
+      "name": "index.html no trailing whitespace",
+      "passed": true
+    },
+    {
+      "name": "review.js valid text",
+      "passed": true
+    },
+    {
+      "name": "review.js no trailing whitespace",
+      "passed": true
+    },
+    {
+      "name": "review-r2.css valid text",
+      "passed": true
+    },
+    {
+      "name": "review-r2.css no trailing whitespace",
+      "passed": true
+    },
+    {
+      "name": "check-r2.js valid text",
+      "passed": true
+    },
+    {
+      "name": "check-r2.js no trailing whitespace",
+      "passed": true
+    },
+    {
+      "name": "CSS brace count (not parsing)",
+      "passed": true
+    },
+    {
+      "name": "R2 CSS has no external references",
+      "passed": true
+    },
+    {
+      "name": "c1 palette block",
+      "passed": true
+    },
+    {
+      "name": "c2 palette block",
+      "passed": true
+    },
+    {
+      "name": "c3 palette block",
+      "passed": true
+    },
+    {
+      "name": "icon-app.png archived original derivative matches",
+      "passed": true
+    },
+    {
+      "name": "icon-navigation.png archived original derivative matches",
+      "passed": true
+    },
+    {
+      "name": "icon-ranking.png archived original derivative matches",
+      "passed": true
+    },
+    {
+      "name": "R1 JS archive preserved",
+      "passed": true
+    },
+    {
+      "name": "R2 preference separated",
+      "passed": true
+    }
+  ],
+  "count": 22,
+  "browserStatus": "blocked: automatic approval deadline exceeded twice; script not executed"
+}

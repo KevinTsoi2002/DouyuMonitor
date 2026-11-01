@@ -45,6 +45,10 @@ class AppController final : public QObject {
     Q_PROPERTY(bool backgroundHosted READ backgroundHosted NOTIFY backgroundHostedChanged)
     Q_PROPERTY(bool windowMinimized READ windowMinimized NOTIFY windowMinimizedChanged)
     Q_PROPERTY(QString closeBehavior READ closeBehavior NOTIFY closeBehaviorChanged)
+    Q_PROPERTY(bool closeBehaviorUnsaved READ closeBehaviorUnsaved
+               NOTIFY closeBehaviorSaveStateChanged)
+    Q_PROPERTY(QString closeBehaviorError READ closeBehaviorError
+               NOTIFY closeBehaviorSaveStateChanged)
     Q_PROPERTY(bool quitRequested READ quitRequested CONSTANT)
     Q_PROPERTY(QVariantList searchResults READ searchResults NOTIFY searchResultsChanged)
     Q_PROPERTY(QString searchStatus READ searchStatus NOTIFY searchStateChanged)
@@ -57,9 +61,11 @@ class AppController final : public QObject {
     Q_PROPERTY(bool rankSyncPending READ rankSyncPending NOTIFY rankSyncStateChanged)
     Q_PROPERTY(QString rankSyncError READ rankSyncError NOTIFY rankSyncStateChanged)
     Q_PROPERTY(MaoziRankClient *maoziRank READ maoziRank CONSTANT)
+    Q_PROPERTY(QVariantMap s1Archive READ s1Archive CONSTANT)
     Q_PROPERTY(QVariantMap maoziTeamImport READ maoziTeamImport NOTIFY maoziTeamImportChanged)
     Q_PROPERTY(bool workspaceUnsaved READ workspaceUnsaved NOTIFY workspaceSaveStateChanged)
     Q_PROPERTY(QString eventMappingJson READ eventMappingJson NOTIFY eventMappingChanged)
+    Q_PROPERTY(QString themeMode READ themeMode NOTIFY themeModeChanged)
 
 public:
     explicit AppController(QString serviceProgram,
@@ -89,6 +95,7 @@ public:
     QString latestVersion() const;
     QUrl updateReleaseUrl() const;
     MaoziRankClient *maoziRank() noexcept;
+    QVariantMap s1Archive() const;
     bool rankSyncPending() const noexcept;
     QString rankSyncError() const;
     QVariantMap maoziTeamImport() const;
@@ -96,6 +103,8 @@ public:
     Q_INVOKABLE void retryWorkspaceSave();
     Q_INVOKABLE void refreshGuildLiveStatus();
     QString eventMappingJson() const;
+    QString themeMode() const { return themeMode_; }
+    Q_INVOKABLE bool setThemeMode(const QString &mode);
     Q_INVOKABLE QString saveEventMapping(const QString &mapping);
     Q_INVOKABLE void previewMaoziTeamImport();
     Q_INVOKABLE QString confirmMaoziTeamImport();
@@ -103,6 +112,8 @@ public:
     bool backgroundHosted() const noexcept;
     bool windowMinimized() const noexcept;
     QString closeBehavior() const;
+    bool closeBehaviorUnsaved() const noexcept { return closeBehaviorUnsaved_; }
+    QString closeBehaviorError() const { return closeBehaviorError_; }
     bool quitRequested() const noexcept;
     QString fixedPlaybackMessage(const QString &errorCode) const;
     void setMainWindow(QWindow *window);
@@ -175,6 +186,7 @@ public:
     Q_INVOKABLE void requestClose();
     Q_INVOKABLE bool setCloseBehavior(const QString &behavior, bool persist = true);
     Q_INVOKABLE void clearCloseBehavior();
+    Q_INVOKABLE bool retryCloseBehaviorSave();
     Q_INVOKABLE void minimizeToBackground();
     Q_INVOKABLE void closeToTray();
     Q_INVOKABLE void restoreFromBackground();
@@ -198,13 +210,19 @@ signals:
     void maoziTeamImportChanged();
     void workspaceSaveStateChanged();
     void eventMappingChanged();
+    void themeModeChanged();
     void backgroundHostedChanged();
     void windowMinimizedChanged();
     void closeBehaviorChanged();
+    void closeBehaviorSaveStateChanged();
 
 private:
     void restoreWorkspace();
     void persistWorkspace();
+    bool persistCloseBehavior(bool remember);
+    void setCloseBehaviorSaveState(bool unsaved, const QString &error);
+    bool trySaveWorkspace(const NativeWorkspaceSnapshot &snapshot,
+                          bool allowReadErrorRecovery = false);
     void scheduleWorkspaceSave();
     void scheduleGuildRosterNotification();
     void onSnapshotsChanged(const RoomSnapshots &snapshots);
@@ -217,6 +235,7 @@ private:
                                RoomLiveStatus liveStatus);
     void refreshPresentation();
     void synchronizeDanmaku();
+    void updateNotificationStatus();
     void touchHistory(const QString &roomId);
     NativeRoomRecord *libraryRecord(const QString &roomId);
     const NativeRoomRecord *libraryRecord(const QString &roomId) const;
@@ -226,6 +245,7 @@ private:
     static bool isValidName(const QString &name) noexcept;
 
     QSettings *settings_ = nullptr;
+    QString themeMode_ = QStringLiteral("night");
     std::unique_ptr<StreamgetProcessClient> service_;
     std::unique_ptr<MultiRoomCoordinator> coordinator_;
     std::unique_ptr<FavoriteMonitor> favoriteMonitor_;
@@ -239,6 +259,7 @@ private:
     std::unique_ptr<MonitoringModel> monitoring_;
     std::unique_ptr<DanmakuController> danmaku_;
     NativeWorkspaceSnapshot snapshot_;
+    NativeWorkspaceLoadStatus workspaceLoadStatus_ = NativeWorkspaceLoadStatus::ReadError;
     QPointer<QWindow> mainWindow_;
     QWindow::Visibility preFullScreenVisibility_ = QWindow::Windowed;
     bool hadPreFullScreenVisibility_ = false;
@@ -250,6 +271,9 @@ private:
     bool backgroundHosted_ = false;
     bool windowMinimized_ = false;
     QString closeBehavior_ = QStringLiteral("ask");
+    bool closeBehaviorPersistRequested_ = false;
+    bool closeBehaviorUnsaved_ = false;
+    QString closeBehaviorError_;
     bool quitRequested_ = false;
     QVariantList searchResults_;
     QHash<QString, RoomMetadata> searchCandidates_;

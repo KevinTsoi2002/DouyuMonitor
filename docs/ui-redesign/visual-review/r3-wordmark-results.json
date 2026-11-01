@@ -1,0 +1,380 @@
+{
+  "revision": "r3-wordmark",
+  "date": "2026-10-29T17:32:14.784Z",
+  "cases": 8,
+  "passed": true,
+  "drawerOpened": true,
+  "restoredDay": true,
+  "videoNodesPreserved": true,
+  "results": [
+    {
+      "size": {
+        "width": 1280,
+        "height": 800
+      },
+      "palette": "c1",
+      "barHeight": 36,
+      "titleRect": {
+        "x": 67,
+        "y": 98.5,
+        "width": 240,
+        "height": 28,
+        "right": 307,
+        "bottom": 126.5
+      },
+      "titleName": "CSTG 特勤终端",
+      "visibleImages": [
+        {
+          "src": "assets/wordmark-night.png",
+          "width": 1942,
+          "height": 220,
+          "fit": "contain"
+        }
+      ],
+      "toolRect": {
+        "x": 990.28125,
+        "y": 99.5,
+        "width": 81.078125,
+        "height": 26,
+        "right": 1071.359375,
+        "bottom": 125.5
+      },
+      "stage": {
+        "x": 101,
+        "y": 131,
+        "width": 1158,
+        "height": 599,
+        "right": 1259,
+        "bottom": 730
+      },
+      "clipped": [],
+      "overlaps": [],
+      "barOverflow": false,
+      "horizontalOverflow": false,
+      "missingImages": 0
+    },
+    {
+      "size": {
+        "width": 1280,
+        "height": 800
+      },
+      "palette": "c3",
+      "barHeight": 36,
+      "titleRect": {
+        "x": 67,
+        "y": 98.5,
+        "width": 240,
+        "height": 28,
+        "right": 307,
+        "bottom": 126.5
+      },
+      "titleName": "CSTG 特勤终端",
+      "visibleImages": [
+        {
+          "src": "assets/wordmark-day.png",
+          "width": 2024,
+          "height": 225,
+          "fit": "contain"
+        }
+      ],
+      "toolRect": {
+        "x": 990.28125,
+        "y": 99.5,
+        "width": 81.078125,
+        "height": 26,
+        "right": 1071.359375,
+        "bottom": 125.5
+      },
+      "stage": {
+        "x": 101,
+        "y": 131,
+        "width": 1158,
+        "height": 599,
+        "right": 1259,
+        "bottom": 730
+      },
+      "clipped": [],
+      "overlaps": [],
+      "barOverflow": false,
+      "horizontalOverflow": false,
+      "missingImages": 0
+    },
+    {
+      "size": {
+        "width": 1366,
+        "height": 768
+      },
+      "palette": "c1",
+      "barHeight": 36,
+      "titleRect": {
+        "x": 67,
+        "y": 98.5,
+        "width": 240,
+        "height": 28,
+        "right": 307,
+        "bottom": 126.5
+      },
+      "titleName": "CSTG 特勤终端",
+      "visibleImages": [
+        {
+          "src": "assets/wordmark-night.png",
+          "width": 1942,
+          "height": 220,
+          "fit": "contain"
+        }
+      ],
+      "toolRect": {
+        "x": 1076.28125,
+        "y": 99.5,
+        "width": 81.078125,
+        "height": 26,
+        "right": 1157.359375,
+        "bottom": 125.5
+      },
+      "stage": {
+        "x": 101,
+        "y": 131,
+        "width": 1244,
+        "height": 567,
+        "right": 1345,
+        "bottom": 698
+      },
+      "clipped": [],
+      "overlaps": [],
+      "barOverflow": false,
+      "horizontalOverflow": false,
+      "missingImages": 0
+    },
+    {
+      "size": {
+        "width": 1366,
+        "height": 768
+      },
+      "palette": "c3",
+      "barHeight": 36,
+      "titleRect": {
+        "x": 67,
+        "y": 98.5,
+        "width": 240,
+        "height": 28,
+        "right": 307,
+        "bottom": 126.5
+      },
+      "titleName": "CSTG 特勤终端",
+      "visibleImages": [
+        {
+          "src": "assets/wordmark-day.png",
+          "width": 2024,
+          "height": 225,
+          "fit": "contain"
+        }
+      ],
+      "toolRect": {
+        "x": 1076.28125,
+        "y": 99.5,
+        "width": 81.078125,
+        "height": 26,
+        "right": 1157.359375,
+        "bottom": 125.5
+      },
+      "stage": {
+        "x": 101,
+        "y": 131,
+        "width": 1244,
+        "height": 567,
+        "right": 1345,
+        "bottom": 698
+      },
+      "clipped": [],
+      "overlaps": [],
+      "barOverflow": false,
+      "horizontalOverflow": false,
+      "missingImages": 0
+    },
+    {
+      "size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "palette": "c1",
+      "barHeight": 36,
+      "titleRect": {
+        "x": 75,
+        "y": 98.5,
+        "width": 240,
+        "height": 28,
+        "right": 315,
+        "bottom": 126.5
+      },
+      "titleName": "CSTG 特勤终端",
+      "visibleImages": [
+        {
+          "src": "assets/wordmark-night.png",
+          "width": 1942,
+          "height": 220,
+          "fit": "contain"
+        }
+      ],
+      "toolRect": {
+        "x": 1616.890625,
+        "y": 99.5,
+        "width": 81.078125,
+        "height": 26,
+        "right": 1697.96875,
+        "bottom": 125.5
+      },
+      "stage": {
+        "x": 109,
+        "y": 131,
+        "width": 1782,
+        "height": 879,
+        "right": 1891,
+        "bottom": 1010
+      },
+      "clipped": [],
+      "overlaps": [],
+      "barOverflow": false,
+      "horizontalOverflow": false,
+      "missingImages": 0
+    },
+    {
+      "size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "palette": "c3",
+      "barHeight": 36,
+      "titleRect": {
+        "x": 75,
+        "y": 98.5,
+        "width": 240,
+        "height": 28,
+        "right": 315,
+        "bottom": 126.5
+      },
+      "titleName": "CSTG 特勤终端",
+      "visibleImages": [
+        {
+          "src": "assets/wordmark-day.png",
+          "width": 2024,
+          "height": 225,
+          "fit": "contain"
+        }
+      ],
+      "toolRect": {
+        "x": 1616.890625,
+        "y": 99.5,
+        "width": 81.078125,
+        "height": 26,
+        "right": 1697.96875,
+        "bottom": 125.5
+      },
+      "stage": {
+        "x": 109,
+        "y": 131,
+        "width": 1782,
+        "height": 879,
+        "right": 1891,
+        "bottom": 1010
+      },
+      "clipped": [],
+      "overlaps": [],
+      "barOverflow": false,
+      "horizontalOverflow": false,
+      "missingImages": 0
+    },
+    {
+      "size": {
+        "width": 390,
+        "height": 844
+      },
+      "palette": "c1",
+      "barHeight": 36,
+      "titleRect": {
+        "x": 49,
+        "y": 147,
+        "width": 160,
+        "height": 22,
+        "right": 209,
+        "bottom": 169
+      },
+      "titleName": "CSTG 特勤终端",
+      "visibleImages": [
+        {
+          "src": "assets/wordmark-night.png",
+          "width": 1942,
+          "height": 220,
+          "fit": "contain"
+        }
+      ],
+      "toolRect": {
+        "x": 229.1875,
+        "y": 145,
+        "width": 81.078125,
+        "height": 26,
+        "right": 310.265625,
+        "bottom": 171
+      },
+      "stage": {
+        "x": 89,
+        "y": 176.5,
+        "width": 277,
+        "height": 591,
+        "right": 366,
+        "bottom": 767.5
+      },
+      "clipped": [],
+      "overlaps": [],
+      "barOverflow": false,
+      "horizontalOverflow": false,
+      "missingImages": 0
+    },
+    {
+      "size": {
+        "width": 390,
+        "height": 844
+      },
+      "palette": "c3",
+      "barHeight": 36,
+      "titleRect": {
+        "x": 49,
+        "y": 147,
+        "width": 160,
+        "height": 22,
+        "right": 209,
+        "bottom": 169
+      },
+      "titleName": "CSTG 特勤终端",
+      "visibleImages": [
+        {
+          "src": "assets/wordmark-day.png",
+          "width": 2024,
+          "height": 225,
+          "fit": "contain"
+        }
+      ],
+      "toolRect": {
+        "x": 229.1875,
+        "y": 145,
+        "width": 81.078125,
+        "height": 26,
+        "right": 310.265625,
+        "bottom": 171
+      },
+      "stage": {
+        "x": 89,
+        "y": 176.5,
+        "width": 277,
+        "height": 591,
+        "right": 366,
+        "bottom": 767.5
+      },
+      "clipped": [],
+      "overlaps": [],
+      "barOverflow": false,
+      "horizontalOverflow": false,
+      "missingImages": 0
+    }
+  ],
+  "errors": []
+}

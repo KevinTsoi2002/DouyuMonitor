@@ -1,0 +1,188 @@
+{
+  "revision": "r3-wordmark-small",
+  "date": "2026-10-29T17:39:03.228Z",
+  "passed": true,
+  "cases": 6,
+  "results": [
+    {
+      "size": {
+        "width": 1280,
+        "height": 800
+      },
+      "palette": "c1",
+      "title": {
+        "x": 67,
+        "y": 100.5,
+        "width": 210,
+        "height": 24,
+        "right": 277,
+        "bottom": 124.5
+      },
+      "titlebar": 36,
+      "source": "assets/wordmark-night.png",
+      "loaded": true,
+      "fit": "contain",
+      "clipped": false,
+      "overlap": false,
+      "overflow": false,
+      "stage": {
+        "x": 101,
+        "y": 131,
+        "width": 1158,
+        "height": 599,
+        "right": 1259,
+        "bottom": 730
+      }
+    },
+    {
+      "size": {
+        "width": 1280,
+        "height": 800
+      },
+      "palette": "c3",
+      "title": {
+        "x": 67,
+        "y": 100.5,
+        "width": 210,
+        "height": 24,
+        "right": 277,
+        "bottom": 124.5
+      },
+      "titlebar": 36,
+      "source": "assets/wordmark-day.png",
+      "loaded": true,
+      "fit": "contain",
+      "clipped": false,
+      "overlap": false,
+      "overflow": false,
+      "stage": {
+        "x": 101,
+        "y": 131,
+        "width": 1158,
+        "height": 599,
+        "right": 1259,
+        "bottom": 730
+      }
+    },
+    {
+      "size": {
+        "width": 1366,
+        "height": 768
+      },
+      "palette": "c1",
+      "title": {
+        "x": 67,
+        "y": 100.5,
+        "width": 210,
+        "height": 24,
+        "right": 277,
+        "bottom": 124.5
+      },
+      "titlebar": 36,
+      "source": "assets/wordmark-night.png",
+      "loaded": true,
+      "fit": "contain",
+      "clipped": false,
+      "overlap": false,
+      "overflow": false,
+      "stage": {
+        "x": 101,
+        "y": 131,
+        "width": 1244,
+        "height": 567,
+        "right": 1345,
+        "bottom": 698
+      }
+    },
+    {
+      "size": {
+        "width": 1366,
+        "height": 768
+      },
+      "palette": "c3",
+      "title": {
+        "x": 67,
+        "y": 100.5,
+        "width": 210,
+        "height": 24,
+        "right": 277,
+        "bottom": 124.5
+      },
+      "titlebar": 36,
+      "source": "assets/wordmark-day.png",
+      "loaded": true,
+      "fit": "contain",
+      "clipped": false,
+      "overlap": false,
+      "overflow": false,
+      "stage": {
+        "x": 101,
+        "y": 131,
+        "width": 1244,
+        "height": 567,
+        "right": 1345,
+        "bottom": 698
+      }
+    },
+    {
+      "size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "palette": "c1",
+      "title": {
+        "x": 75,
+        "y": 100.5,
+        "width": 210,
+        "height": 24,
+        "right": 285,
+        "bottom": 124.5
+      },
+      "titlebar": 36,
+      "source": "assets/wordmark-night.png",
+      "loaded": true,
+      "fit": "contain",
+      "clipped": false,
+      "overlap": false,
+      "overflow": false,
+      "stage": {
+        "x": 109,
+        "y": 131,
+        "width": 1782,
+        "height": 879,
+        "right": 1891,
+        "bottom": 1010
+      }
+    },
+    {
+      "size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "palette": "c3",
+      "title": {
+        "x": 75,
+        "y": 100.5,
+        "width": 210,
+        "height": 24,
+        "right": 285,
+        "bottom": 124.5
+      },
+      "titlebar": 36,
+      "source": "assets/wordmark-day.png",
+      "loaded": true,
+      "fit": "contain",
+      "clipped": false,
+      "overlap": false,
+      "overflow": false,
+      "stage": {
+        "x": 109,
+        "y": 131,
+        "width": 1782,
+        "height": 879,
+        "right": 1891,
+        "bottom": 1010
+      }
+    }
+  ]
+}

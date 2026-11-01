@@ -2,6 +2,7 @@
 
 #include <QHash>
 #include <QQueue>
+#include <QSet>
 #include <QString>
 #include <QVector>
 
@@ -53,6 +54,7 @@ private:
 
     std::function<qint64()> nowMs_;
     QHash<QString, State> states_;
+    QSet<QString> playbackFailuresActive_;
     QHash<QString, qint64> lastEmittedMs_;
     QQueue<qint64> emittedAtMs_;
 };

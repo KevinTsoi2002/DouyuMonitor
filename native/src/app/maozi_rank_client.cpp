@@ -27,6 +27,7 @@ const QString kCloudBaseHost =
     QStringLiteral("https://dy656750-d6g192t6k4a51aa36.api.tcloudbasegateway.com");
 const QString kPosterCdn =
     QStringLiteral("https://6479-dy656750-d6g192t6k4a51aa36-1309340272.tcb.qcloud.la");
+constexpr qint64 kMaxRankResponseBytes = 4 * 1024 * 1024;
 const QSet<QString> kLeaderRoomIds{
     QStringLiteral("320155"),
 };
@@ -266,6 +267,7 @@ void MaoziRankClient::refresh()
         emit snapshotRefreshFinished(false);
     }
     snapshotRefreshActive_ = true;
+    versionCheckReauthAttempted_ = false;
     accessToken_.clear();
     errorMessage_.clear();
     lastSyncError_.clear();
@@ -279,6 +281,7 @@ void MaoziRankClient::refresh()
 void MaoziRankClient::checkForChanges()
 {
     if (reply_ != nullptr || syncPending_) return;
+    versionCheckReauthAttempted_ = false;
     setSyncPending(true);
     if (!accessToken_.isEmpty()) {
         pendingAuthAction_ = PendingAuthAction::VersionCheck;
@@ -328,11 +331,21 @@ void MaoziRankClient::requestAnonymousSession(PendingAuthAction action)
     request.setRawHeader("X-SDK-Version", "@cloudbase/js-sdk/3.10.1");
     reply_ = manager_->post(request, QByteArrayLiteral("{}"));
     QNetworkReply *requestReply = reply_;
+    monitorReply(requestReply);
     connect(requestReply, &QNetworkReply::finished, this, [this, requestReply] {
         if (reply_ != requestReply) return;
+        collectReplyData(requestReply);
+        const bool tooLarge = responseTooLarge_;
+        const QByteArray payload = std::exchange(responseBody_, QByteArray{});
+        responseTooLarge_ = false;
         reply_ = nullptr;
         timeoutTimer_->stop();
-        handleAuthReply(requestReply);
+        if (tooLarge) {
+            finishError(QStringLiteral("野榜响应超出允许大小"),
+                        pendingAuthAction_ == PendingAuthAction::VersionCheck);
+        } else {
+            handleAuthReply(requestReply, payload);
+        }
         requestReply->deleteLater();
     });
     timeoutTimer_->start(timeoutMs_);
@@ -351,11 +364,20 @@ void MaoziRankClient::requestSnapshot(const QString &accessToken)
     };
     reply_ = manager_->post(request, QJsonDocument(body).toJson(QJsonDocument::Compact));
     QNetworkReply *requestReply = reply_;
+    monitorReply(requestReply);
     connect(requestReply, &QNetworkReply::finished, this, [this, requestReply] {
         if (reply_ != requestReply) return;
+        collectReplyData(requestReply);
+        const bool tooLarge = responseTooLarge_;
+        const QByteArray payload = std::exchange(responseBody_, QByteArray{});
+        responseTooLarge_ = false;
         reply_ = nullptr;
         timeoutTimer_->stop();
-        handleSnapshotReply(requestReply);
+        if (tooLarge) {
+            finishError(QStringLiteral("野榜响应超出允许大小"), true);
+        } else {
+            handleSnapshotReply(requestReply, payload);
+        }
         requestReply->deleteLater();
     });
     timeoutTimer_->start(timeoutMs_);
@@ -369,17 +391,68 @@ void MaoziRankClient::requestVersionCheck(const QString &accessToken)
     request.setRawHeader("X-SDK-Version", "@cloudbase/js-sdk/3.10.1");
     reply_ = manager_->post(request, QByteArrayLiteral("{\"p_dev\":false}"));
     QNetworkReply *requestReply = reply_;
+    monitorReply(requestReply);
     connect(requestReply, &QNetworkReply::finished, this, [this, requestReply] {
         if (reply_ != requestReply) return;
+        collectReplyData(requestReply);
+        const bool tooLarge = responseTooLarge_;
+        const QByteArray payload = std::exchange(responseBody_, QByteArray{});
+        responseTooLarge_ = false;
         reply_ = nullptr;
         timeoutTimer_->stop();
-        handleVersionReply(requestReply);
+        if (tooLarge) {
+            finishError(QStringLiteral("野榜响应超出允许大小"), true);
+        } else {
+            handleVersionReply(requestReply, payload);
+        }
         requestReply->deleteLater();
     });
     timeoutTimer_->start(timeoutMs_);
 }
 
-void MaoziRankClient::handleAuthReply(QNetworkReply *reply)
+void MaoziRankClient::monitorReply(QNetworkReply *requestReply)
+{
+    responseBody_.clear();
+    responseTooLarge_ = false;
+    requestReply->setReadBufferSize(kMaxRankResponseBytes + 1);
+    connect(requestReply, &QNetworkReply::metaDataChanged, this, [this, requestReply] {
+        if (reply_ != requestReply || responseTooLarge_) return;
+        bool ok = false;
+        const qint64 contentLength =
+            requestReply->header(QNetworkRequest::ContentLengthHeader).toLongLong(&ok);
+        if (ok && contentLength > kMaxRankResponseBytes) {
+            responseTooLarge_ = true;
+            requestReply->abort();
+            return;
+        }
+        collectReplyData(requestReply);
+    });
+    connect(requestReply, &QNetworkReply::downloadProgress, this,
+            [this, requestReply](qint64 receivedBytes, qint64) {
+                if (reply_ != requestReply || receivedBytes <= kMaxRankResponseBytes) return;
+                responseTooLarge_ = true;
+                requestReply->abort();
+            });
+    connect(requestReply, &QIODevice::readyRead, this, [this, requestReply] {
+        collectReplyData(requestReply);
+    });
+}
+
+void MaoziRankClient::collectReplyData(QNetworkReply *requestReply)
+{
+    if (reply_ != requestReply || responseTooLarge_) return;
+    while (requestReply->bytesAvailable() > 0) {
+        const qint64 remaining = kMaxRankResponseBytes - responseBody_.size();
+        responseBody_.append(requestReply->read(remaining + 1));
+        if (responseBody_.size() > kMaxRankResponseBytes) {
+            responseTooLarge_ = true;
+            requestReply->abort();
+            return;
+        }
+    }
+}
+
+void MaoziRankClient::handleAuthReply(QNetworkReply *reply, const QByteArray &payload)
 {
     if (reply->error() != QNetworkReply::NoError) {
         finishError(statusMessage(reply), pendingAuthAction_ == PendingAuthAction::VersionCheck);
@@ -392,7 +465,7 @@ void MaoziRankClient::handleAuthReply(QNetworkReply *reply)
         return;
     }
     QJsonParseError parseError;
-    const QJsonDocument document = QJsonDocument::fromJson(reply->readAll(), &parseError);
+    const QJsonDocument document = QJsonDocument::fromJson(payload, &parseError);
     if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
         finishError(QStringLiteral("野榜会话数据无效"),
                     pendingAuthAction_ == PendingAuthAction::VersionCheck);
@@ -412,7 +485,7 @@ void MaoziRankClient::handleAuthReply(QNetworkReply *reply)
     }
 }
 
-void MaoziRankClient::handleSnapshotReply(QNetworkReply *reply)
+void MaoziRankClient::handleSnapshotReply(QNetworkReply *reply, const QByteArray &payload)
 {
     if (reply->error() != QNetworkReply::NoError) {
         finishError(statusMessage(reply), true);
@@ -423,22 +496,28 @@ void MaoziRankClient::handleSnapshotReply(QNetworkReply *reply)
         finishError(QStringLiteral("野榜数据加载失败"), true);
         return;
     }
-    parseSnapshot(reply->readAll());
+    parseSnapshot(payload);
 }
 
-void MaoziRankClient::handleVersionReply(QNetworkReply *reply)
+void MaoziRankClient::handleVersionReply(QNetworkReply *reply, const QByteArray &payload)
 {
+    const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    if ((status == 401 || status == 403) && !versionCheckReauthAttempted_) {
+        versionCheckReauthAttempted_ = true;
+        accessToken_.clear();
+        requestAnonymousSession(PendingAuthAction::VersionCheck);
+        return;
+    }
     if (reply->error() != QNetworkReply::NoError) {
         finishError(QStringLiteral("数据可能已过期"), true);
         return;
     }
-    const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
     if (status < 200 || status >= 300) {
         finishError(QStringLiteral("数据可能已过期"), true);
         return;
     }
     QJsonParseError parseError;
-    const QJsonDocument document = QJsonDocument::fromJson(reply->readAll(), &parseError);
+    const QJsonDocument document = QJsonDocument::fromJson(payload, &parseError);
     if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
         finishError(QStringLiteral("数据可能已过期"), true);
         return;
@@ -945,14 +1024,22 @@ QString MaoziRankClient::posterUrl(const QString &cloudPath)
     if (cloudPath.startsWith(QStringLiteral("cloud://"))) {
         const int slash = cloudPath.indexOf(QLatin1Char('/'), 8);
         directUrl = slash >= 0 ? kPosterCdn + cloudPath.mid(slash) : QString();
-    } else if (cloudPath.startsWith(QStringLiteral("http"))) {
+    } else if (cloudPath.startsWith(QStringLiteral("http"), Qt::CaseInsensitive)) {
         directUrl = cloudPath;
     } else if (cloudPath.startsWith(QStringLiteral("posters/"))) {
         directUrl = kPosterCdn + QLatin1Char('/') + cloudPath;
     } else {
+        if (cloudPath.contains(QStringLiteral("://"))) return {};
         directUrl = kPosterCdn + QStringLiteral("/posters/") + cloudPath;
     }
-    if (directUrl.endsWith(QStringLiteral(".webp"), Qt::CaseInsensitive)) {
+    const QUrl poster(directUrl, QUrl::StrictMode);
+    const QUrl allowedCdn(kPosterCdn);
+    if (!poster.isValid() || poster.scheme() != QStringLiteral("https")
+        || poster.host().compare(allowedCdn.host(), Qt::CaseInsensitive) != 0
+        || !poster.userInfo().isEmpty() || (poster.port(-1) != -1 && poster.port() != 443)) {
+        return {};
+    }
+    if (poster.path().endsWith(QStringLiteral(".webp"), Qt::CaseInsensitive)) {
         return directUrl
             + QStringLiteral("?imageMogr2/thumbnail/64x64/format/jpg");
     }

@@ -1,0 +1,327 @@
+{
+  "fileKey": "TapNteUGshX8y4xf7pQOAB",
+  "fileUrl": "https://www.figma.com/design/TapNteUGshX8y4xf7pQOAB",
+  "sessionId": "753edf7e-4d27-4bb5-ad9b-120a305cb8ef",
+  "phase": "blocked-tool-quota",
+  "pages": {
+    "Foundations": "0:1",
+    "Components": "4:7",
+    "Screens": "4:8"
+  },
+  "collections": {
+    "Primitives": "VariableCollectionId:2:2",
+    "C1": "VariableCollectionId:2:43",
+    "C3": "VariableCollectionId:2:64",
+    "Geometry": "VariableCollectionId:2:85"
+  },
+  "foundations": {
+    "C1": "5:2",
+    "C3": "5:67"
+  },
+  "components": {
+    "ButtonPrimary": {
+      "mutatedNodeIds": [
+        "8:2",
+        "8:3",
+        "8:4",
+        "8:5",
+        "8:6",
+        "8:7",
+        "8:8",
+        "8:9",
+        "8:10",
+        "8:11",
+        "8:12",
+        "8:13",
+        "7:10",
+        "7:2",
+        "7:4",
+        "7:6",
+        "7:8",
+        "8:2",
+        "8:4",
+        "8:6",
+        "8:8",
+        "8:10",
+        "8:12"
+      ],
+      "componentId": "7:10",
+      "variants": [
+        {
+          "id": "7:2",
+          "name": "Theme=C1, State=Default"
+        },
+        {
+          "id": "7:4",
+          "name": "Theme=C1, State=Focus"
+        },
+        {
+          "id": "7:6",
+          "name": "Theme=C3, State=Default"
+        },
+        {
+          "id": "7:8",
+          "name": "Theme=C3, State=Focus"
+        },
+        {
+          "id": "8:2",
+          "name": "Theme=C1, State=Hover"
+        },
+        {
+          "id": "8:4",
+          "name": "Theme=C1, State=Pressed"
+        },
+        {
+          "id": "8:6",
+          "name": "Theme=C1, State=Disabled"
+        },
+        {
+          "id": "8:8",
+          "name": "Theme=C3, State=Hover"
+        },
+        {
+          "id": "8:10",
+          "name": "Theme=C3, State=Pressed"
+        },
+        {
+          "id": "8:12",
+          "name": "Theme=C3, State=Disabled"
+        }
+      ]
+    },
+    "ButtonSecondary": {
+      "createdNodeIds": [
+        "9:2",
+        "9:3",
+        "9:4",
+        "9:5",
+        "9:6",
+        "9:7",
+        "9:8",
+        "9:9",
+        "9:10",
+        "9:11",
+        "9:12",
+        "9:13",
+        "9:14",
+        "9:15",
+        "9:16",
+        "9:17",
+        "9:18",
+        "9:19",
+        "9:20",
+        "9:21",
+        "9:22"
+      ],
+      "mutatedNodeIds": [
+        "7:10",
+        "7:2",
+        "7:4",
+        "7:6",
+        "7:8",
+        "8:2",
+        "8:4",
+        "8:6",
+        "8:8",
+        "8:10",
+        "8:12"
+      ],
+      "componentId": "9:2",
+      "variants": [
+        {
+          "id": "9:3",
+          "name": "Theme=C1, State=Default"
+        },
+        {
+          "id": "9:5",
+          "name": "Theme=C1, State=Focus"
+        },
+        {
+          "id": "9:7",
+          "name": "Theme=C3, State=Default"
+        },
+        {
+          "id": "9:9",
+          "name": "Theme=C3, State=Focus"
+        },
+        {
+          "id": "9:11",
+          "name": "Theme=C1, State=Hover"
+        },
+        {
+          "id": "9:13",
+          "name": "Theme=C1, State=Pressed"
+        },
+        {
+          "id": "9:15",
+          "name": "Theme=C1, State=Disabled"
+        },
+        {
+          "id": "9:17",
+          "name": "Theme=C3, State=Hover"
+        },
+        {
+          "id": "9:19",
+          "name": "Theme=C3, State=Pressed"
+        },
+        {
+          "id": "9:21",
+          "name": "Theme=C3, State=Disabled"
+        }
+      ]
+    },
+    "TextField": {
+      "createdNodeIds": [
+        "10:2",
+        "10:3",
+        "10:4",
+        "10:5",
+        "10:6",
+        "10:7",
+        "10:8",
+        "10:9"
+      ],
+      "mutatedNodeIds": [
+        "9:31",
+        "9:23",
+        "9:25",
+        "9:27",
+        "9:29",
+        "10:2",
+        "10:4",
+        "10:6",
+        "10:8"
+      ],
+      "componentId": "9:31",
+      "variants": [
+        {
+          "id": "9:23",
+          "name": "Theme=C1, State=Default"
+        },
+        {
+          "id": "9:25",
+          "name": "Theme=C1, State=Focus"
+        },
+        {
+          "id": "9:27",
+          "name": "Theme=C3, State=Default"
+        },
+        {
+          "id": "9:29",
+          "name": "Theme=C3, State=Focus"
+        },
+        {
+          "id": "10:2",
+          "name": "Theme=C1, State=Error"
+        },
+        {
+          "id": "10:4",
+          "name": "Theme=C1, State=Disabled"
+        },
+        {
+          "id": "10:6",
+          "name": "Theme=C3, State=Error"
+        },
+        {
+          "id": "10:8",
+          "name": "Theme=C3, State=Disabled"
+        }
+      ]
+    }
+  },
+  "screens": {},
+  "verified": [
+    "live-inventory-92-variables-5-text-styles",
+    "CSTG-component-search-empty"
+  ],
+  "pending": [
+    "Secondary-Disabled-visibility",
+    "StatusBadge",
+    "IconButton",
+    "Button/Ghost",
+    "Button/Danger",
+    "ComboBox/Filter",
+    "Toggle",
+    "Tabs",
+    "NavigationItem",
+    "MemberRow",
+    "RankRow",
+    "MetricCell",
+    "Drawer",
+    "Dialog",
+    "Tooltip",
+    "Toast",
+    "Empty/Error/Loading",
+    "VideoOverlayControls",
+    "source-assets-import",
+    "screens-all",
+    "screen-visual-check"
+  ],
+  "updatedAt": "2026-10-30",
+  "blockers": [
+    {
+      "type": "figma-starter-mcp-quota",
+      "operation": "create CSTG/StatusBadge",
+      "message": "You've reached the Figma MCP tool call limit on the Starter plan. Upgrade your plan for more tool calls.",
+      "effect": "No further read, write, metadata or screenshot calls attempted."
+    },
+    {
+      "type": "capture-access",
+      "operation": "Open local R3 capture URL",
+      "message": "Automatic permission approval review timed out; browser origin authority not acquired.",
+      "effect": "Capture not completed."
+    },
+    {
+      "type": "asset-http-upload",
+      "operation": "Upload approved image assets",
+      "message": "Sandbox proxy connection failed; escalated attempt automatic review timed out.",
+      "effect": "No HTTP assets uploaded."
+    },
+    {
+      "type": "native-image-payload",
+      "operation": "createImage with full-resolution original PNGs",
+      "message": "HTTP 413 Payload Too Large.",
+      "effect": "No source images placed; smaller assets prepared locally."
+    }
+  ],
+  "capture": {
+    "captureId": "a9a6d925-4056-454d-aedf-72e87f33173b",
+    "submitted": false,
+    "status": "not-completed"
+  },
+  "localAssetsPath": "docs/ui-redesign/figma-assets",
+  "verification": {
+    "readInventory": {
+      "pages": 3,
+      "collections": 4,
+      "variables": 92,
+      "textStyles": 5,
+      "componentsBefore": 0,
+      "screensBefore": 0
+    },
+    "componentScreenshots": [
+      {
+        "nodeId": "7:10",
+        "status": "visually-inspected",
+        "coverage": "10 variants shown"
+      },
+      {
+        "nodeId": "9:2",
+        "status": "needs-followup",
+        "coverage": "10 variant nodes read back; disabled columns appeared blank in screenshot"
+      },
+      {
+        "nodeId": "9:31",
+        "status": "visually-inspected",
+        "coverage": "8 variants shown"
+      }
+    ],
+    "notes": [
+      "Component screenshot visual inspection completed in tool outputs.",
+      "ButtonPrimary metadata captured at 4 variants; later 10 variants returned from successful write.",
+      "ButtonSecondary metadata confirms 10 variants.",
+      "TextField metadata captured at 4 variants; later 8 variants returned from successful write.",
+      "All successful component writes returned editable node IDs. No full-screen screenshot exists."
+    ]
+  }
+}

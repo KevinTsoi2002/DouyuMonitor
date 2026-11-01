@@ -12,7 +12,9 @@
 
 namespace {
 
-QByteArray snapshotBody()
+constexpr qsizetype kMaxRankResponseBytes = 4 * 1024 * 1024;
+
+QByteArray snapshotBody(const QString &firstPoster = QStringLiteral("cloud://env-bucket/posters/host-1.webp"))
 {
     QJsonObject highGrade{
         {QStringLiteral("letter"), QStringLiteral("S")},
@@ -38,7 +40,7 @@ QByteArray snapshotBody()
         {QStringLiteral("guild"), QStringLiteral("仓鼠特工")},
         {QStringLiteral("douyu_id"), QStringLiteral("71415")},
         {QStringLiteral("note"), QStringLiteral("猴王")},
-        {QStringLiteral("poster"), QStringLiteral("cloud://env-bucket/posters/host-1.webp")},
+        {QStringLiteral("poster"), firstPoster},
         {QStringLiteral("team"), 0},
     };
     QJsonObject secondHost{
@@ -194,13 +196,17 @@ public:
     }
 
     int statusCode = 200;
+    int authStatusCode = 200;
     QByteArray authBody = QByteArrayLiteral(
         R"({"token_type":"Bearer","access_token":"test-access-token","refresh_token":"test-refresh-token","expires_in":7200,"scope":"anonymous","sub":"anonymous-user"})");
     QByteArray snapshot = snapshotBody();
     QByteArray versionBody = QByteArrayLiteral(R"({"v":"snapshot-1"})");
     int delayMs = 0;
+    bool omitContentLength = false;
+    int authRequests = 0;
     int snapshotRequests = 0;
     int versionRequests = 0;
+    QList<int> versionStatusCodes;
     QList<QByteArray> authorizationHeaders;
 
 private:
@@ -216,15 +222,26 @@ private:
 
         const bool loginRequest = request.startsWith(QByteArrayLiteral("POST /auth/v1/signin/anonymously"));
         const bool versionRequest = request.startsWith(QByteArrayLiteral("POST /v1/rdb/rest/rpc/fn_rank_check"));
-        if (!loginRequest && versionRequest) ++versionRequests;
+        int responseStatusCode = statusCode;
+        if (loginRequest) {
+            ++authRequests;
+            responseStatusCode = authStatusCode;
+        }
+        if (versionRequest) {
+            ++versionRequests;
+            responseStatusCode = versionStatusCodes.value(versionRequests - 1, statusCode);
+        }
         if (!loginRequest && !versionRequest) ++snapshotRequests;
         const QByteArray body = loginRequest ? authBody : (versionRequest ? versionBody : snapshot);
-        const QByteArray reason = statusCode == 200 ? QByteArrayLiteral("OK")
-                                                    : QByteArrayLiteral("Error");
-        const QByteArray response = QByteArrayLiteral("HTTP/1.1 ") + QByteArray::number(statusCode)
-            + ' ' + reason + QByteArrayLiteral("\r\nContent-Type: application/json\r\nContent-Length: ")
-            + QByteArray::number(body.size()) + QByteArrayLiteral("\r\nConnection: close\r\n\r\n")
-            + body;
+        const QByteArray reason = responseStatusCode == 200 ? QByteArrayLiteral("OK")
+                                                            : QByteArrayLiteral("Error");
+        QByteArray response = QByteArrayLiteral("HTTP/1.1 ") + QByteArray::number(responseStatusCode)
+            + ' ' + reason + QByteArrayLiteral("\r\nContent-Type: application/json\r\n");
+        if (!omitContentLength) {
+            response += QByteArrayLiteral("Content-Length: ") + QByteArray::number(body.size())
+                + QByteArrayLiteral("\r\n");
+        }
+        response += QByteArrayLiteral("Connection: close\r\n\r\n") + body;
         socket->write(response);
         socket->disconnectFromHost();
     }
@@ -244,6 +261,10 @@ private slots:
     void exposesRolesPlacementPlayValueAndLookupIndexes();
     void exposesPlacementScoreFormula();
     void skipsSnapshotWhenVersionIsUnchanged();
+    void reauthenticatesAfterExpiredVersionCheck();
+    void boundsVersionCheckReauthenticationAndPreservesSnapshot();
+    void rejectsOversizedSnapshotWithoutContentLength();
+    void rejectsUntrustedPosterUrls();
     void reportsHttpErrors();
     void validatesCurrentTeamIdentifiers();
     void completesTimeoutOnceAndRejectsMalformedTeams();
@@ -498,6 +519,96 @@ void MaoziRankClientTest::skipsSnapshotWhenVersionIsUnchanged()
     QTRY_COMPARE_WITH_TIMEOUT(client.syncPending(), false, 3000);
     QCOMPARE(fixture.versionRequests, 1);
     QCOMPARE(fixture.snapshotRequests, 1);
+}
+
+void MaoziRankClientTest::reauthenticatesAfterExpiredVersionCheck()
+{
+    CloudBaseFixture fixture;
+    QVERIFY(fixture.listen());
+    MaoziRankClient client(fixture.authUrl(), fixture.snapshotUrl(), 1000);
+
+    client.refresh();
+    QTRY_COMPARE_WITH_TIMEOUT(client.loading(), false, 3000);
+    QCOMPARE(client.entries().size(), 4);
+    QCOMPARE(fixture.authRequests, 1);
+
+    fixture.authBody = QByteArrayLiteral(
+        R"({"token_type":"Bearer","access_token":"renewed-access-token","refresh_token":"renewed-refresh-token","expires_in":7200,"scope":"anonymous","sub":"anonymous-user"})");
+    fixture.versionStatusCodes = {401, 200};
+    client.checkForChanges();
+    QTRY_COMPARE_WITH_TIMEOUT(client.syncPending(), false, 3000);
+
+    QCOMPARE(fixture.authRequests, 2);
+    QCOMPARE(fixture.versionRequests, 2);
+    QCOMPARE(fixture.snapshotRequests, 1);
+    QCOMPARE(fixture.authorizationHeaders.constLast(),
+             QByteArrayLiteral("Bearer renewed-access-token"));
+    QCOMPARE(client.entries().size(), 4);
+    QVERIFY(client.lastSyncError().isEmpty());
+}
+
+void MaoziRankClientTest::boundsVersionCheckReauthenticationAndPreservesSnapshot()
+{
+    CloudBaseFixture fixture;
+    QVERIFY(fixture.listen());
+    MaoziRankClient client(fixture.authUrl(), fixture.snapshotUrl(), 1000);
+
+    client.refresh();
+    QTRY_COMPARE_WITH_TIMEOUT(client.loading(), false, 3000);
+    const QVariantList cachedEntries = client.entries();
+    QVERIFY(!cachedEntries.isEmpty());
+
+    fixture.versionStatusCodes = {403, 401};
+    client.checkForChanges();
+    QTRY_COMPARE_WITH_TIMEOUT(client.syncPending(), false, 3000);
+
+    QCOMPARE(fixture.authRequests, 2);
+    QCOMPARE(fixture.versionRequests, 2);
+    QCOMPARE(fixture.snapshotRequests, 1);
+    QCOMPARE(client.entries(), cachedEntries);
+    QCOMPARE(client.lastSyncError(), QStringLiteral("数据可能已过期"));
+}
+
+void MaoziRankClientTest::rejectsOversizedSnapshotWithoutContentLength()
+{
+    CloudBaseFixture fixture;
+    QVERIFY(fixture.listen());
+    fixture.snapshot = QByteArray(kMaxRankResponseBytes + 1, ' ');
+    fixture.omitContentLength = true;
+    MaoziRankClient client(fixture.authUrl(), fixture.snapshotUrl(), 3000);
+
+    client.refresh();
+
+    QTRY_COMPARE_WITH_TIMEOUT(client.loading(), false, 5000);
+    QCOMPARE(client.entries().size(), 0);
+    QCOMPARE(client.errorMessage(), QStringLiteral("野榜响应超出允许大小"));
+}
+
+void MaoziRankClientTest::rejectsUntrustedPosterUrls()
+{
+    CloudBaseFixture fixture;
+    QVERIFY(fixture.listen());
+    MaoziRankClient client(fixture.authUrl(), fixture.snapshotUrl(), 1000);
+
+    for (const QString &poster : {
+             QStringLiteral("http://127.0.0.1/avatar.jpg"),
+             QStringLiteral("https://example.org/avatar.jpg"),
+             QStringLiteral("file:///C:/private/avatar.jpg"),
+             QStringLiteral("https://user@6479-dy656750-d6g192t6k4a51aa36-1309340272.tcb.qcloud.la/avatar.jpg"),
+         }) {
+        fixture.snapshot = snapshotBody(poster);
+        client.refresh();
+        QTRY_COMPARE_WITH_TIMEOUT(client.loading(), false, 3000);
+        QVERIFY(!client.entries().isEmpty());
+        QCOMPARE(client.entries().first().toMap().value(QStringLiteral("posterUrl")).toString(), QString());
+    }
+
+    fixture.snapshot = snapshotBody(QStringLiteral(
+        "https://6479-dy656750-d6g192t6k4a51aa36-1309340272.tcb.qcloud.la/posters/host-1.jpg"));
+    client.refresh();
+    QTRY_COMPARE_WITH_TIMEOUT(client.loading(), false, 3000);
+    QCOMPARE(client.entries().first().toMap().value(QStringLiteral("posterUrl")).toString(),
+             QStringLiteral("https://6479-dy656750-d6g192t6k4a51aa36-1309340272.tcb.qcloud.la/posters/host-1.jpg"));
 }
 
 void MaoziRankClientTest::reportsHttpErrors()

@@ -1,9 +1,12 @@
 #include <QColor>
 #include <QDir>
+#include <QFont>
 #include <QQmlApplicationEngine>
 #include <QQmlComponent>
+#include <QQmlProperty>
 #include <QQuickItem>
 #include <QQuickWindow>
+#include <QSignalSpy>
 #include <QSize>
 #include <QVariantList>
 #include <QVariantMap>
@@ -13,6 +16,7 @@
 
 #include "ui/mpv_quick_item.h"
 #include "visual_test_support.h"
+#include "test_font_support.h"
 
 namespace {
 
@@ -49,6 +53,8 @@ std::unique_ptr<QObject> createQmlObject(QQmlApplicationEngine &engine,
 QQuickWindow *createHostWindow(const QSize &size)
 {
     auto *window = new QQuickWindow;
+    window->setFlags(Qt::Window | Qt::FramelessWindowHint);
+    window->setColor(QColor(QStringLiteral("#0e1312")));
     window->resize(size);
     window->show();
     if (!QTest::qWaitForWindowExposed(window)) {
@@ -56,6 +62,23 @@ QQuickWindow *createHostWindow(const QSize &size)
         return nullptr;
     }
     return window;
+}
+
+QQuickItem *visualItemByObjectNameAndText(QQuickItem *root,
+                                          const QString &objectName,
+                                          const QString &text)
+{
+    if (root == nullptr) return nullptr;
+    if (root->objectName() == objectName
+        && root->property("text").toString() == text) {
+        return root;
+    }
+    for (QQuickItem *child : root->childItems()) {
+        if (QQuickItem *match = visualItemByObjectNameAndText(child, objectName, text)) {
+            return match;
+        }
+    }
+    return nullptr;
 }
 
 QQuickItem *layoutSurface(QObject *grid)
@@ -208,6 +231,11 @@ class FakeGuildController final : public QObject {
     Q_PROPERTY(QVariantList guildRoster READ guildRoster CONSTANT)
     Q_PROPERTY(QVariantList teams READ teams CONSTANT)
     Q_PROPERTY(QObject *maoziRank READ maoziRank CONSTANT)
+    Q_PROPERTY(QObject *rooms READ emptyObject CONSTANT)
+    Q_PROPERTY(QObject *workspace READ emptyObject CONSTANT)
+    Q_PROPERTY(QObject *monitoring READ emptyObject CONSTANT)
+    Q_PROPERTY(QObject *danmaku READ emptyObject CONSTANT)
+    Q_PROPERTY(QVariantList libraryRooms READ emptyList CONSTANT)
 
 public:
     FakeGuildController()
@@ -218,6 +246,8 @@ public:
     QVariantList guildRoster() const { return roster_; }
     QVariantList teams() const { return teams_; }
     QObject *maoziRank() const { return nullptr; }
+    QObject *emptyObject() const { return nullptr; }
+    QVariantList emptyList() const { return {}; }
 
     Q_INVOKABLE QString setGuildMemberRoomId(const QString &, const QString &) { return {}; }
     Q_INVOKABLE QString addGuildMemberRoom(const QString &) { return {}; }
@@ -256,8 +286,8 @@ public:
                 {QStringLiteral("score"), 16.3},
                 {QStringLiteral("voters"), 483},
                 {QStringLiteral("live"), false},
-                {QStringLiteral("posterUrl"),
-                 QStringLiteral("https://6479-dy656750-d6g192t6k4a51aa36-1309340272.tcb.qcloud.la/posters/webp/6632.webp?imageMogr2/thumbnail/64x64/format/jpg")},
+                // Deterministic image fixture; public avatar decoding is checked separately.
+                {QStringLiteral("posterUrl"), qmlSource(QStringLiteral("assets/brand/icon-app.png")).toString()},
             },
             QVariantMap{
                 {QStringLiteral("id"), QStringLiteral("host-2")},
@@ -375,12 +405,19 @@ class QmlVisualRegressionTest final : public QObject {
     Q_OBJECT
 
 private slots:
+    void initTestCase();
     void keepsLayoutMatrixContainedAndNonOverlapping();
     void capturesHeaderDualPrimaryStates();
     void capturesRoomControlStates();
     void capturesNavigationAndTeamStates();
     void keepsMaoziToolbarVisibleAndColumnsAligned();
 };
+
+void QmlVisualRegressionTest::initTestCase()
+{
+    QVERIFY2(DouyuTestSupport::prepareTestFonts(),
+             "No Simplified Chinese font is available for QML tests (check QT_QPA_FONTDIR)");
+}
 
 void QmlVisualRegressionTest::keepsLayoutMatrixContainedAndNonOverlapping()
 {
@@ -408,6 +445,8 @@ void QmlVisualRegressionTest::keepsLayoutMatrixContainedAndNonOverlapping()
         {24, QStringLiteral("primary-two"), QSize(1920, 1080), QStringLiteral("layout-primary-two-24-1920x1080")},
     };
 
+    QList<QImage> images;
+    QStringList imageNames;
     for (const Fixture &fixture : fixtures) {
         std::unique_ptr<QQuickWindow> window(createHostWindow(fixture.size));
         QVERIFY(window != nullptr);
@@ -458,7 +497,12 @@ void QmlVisualRegressionTest::keepsLayoutMatrixContainedAndNonOverlapping()
 
         const QImage image = visualCapture(window.get(), fixture.name);
         QVERIFY(!image.isNull());
-        verifyBaseline(image, fixture.name);
+        images.push_back(image);
+        imageNames.push_back(fixture.name);
+    }
+
+    for (qsizetype index = 0; index < images.size(); ++index) {
+        verifyBaseline(images.at(index), imageNames.at(index));
     }
 }
 
@@ -467,21 +511,23 @@ void QmlVisualRegressionTest::capturesHeaderDualPrimaryStates()
     registerQmlTypes();
     FakeHeaderController controller;
 
-    std::unique_ptr<QQuickWindow> window(createHostWindow(QSize(960, 260)));
+    std::unique_ptr<QQuickWindow> window(createHostWindow(QSize(960, 600)));
     QVERIFY(window != nullptr);
+    QCOMPARE(window->color(), QColor(QStringLiteral("#0e1312")));
     QQmlApplicationEngine engine;
     QString error;
     std::unique_ptr<QObject> header(createQmlObject(
         engine,
         *window,
-        QStringLiteral("components/AppHeader.qml"),
+        QStringLiteral("components/WatchToolsPanel.qml"),
         {
-            {QStringLiteral("width"), window->width()},
-            {QStringLiteral("height"), 52},
+            {QStringLiteral("width"), 360},
             {QStringLiteral("controller"), QVariant::fromValue(static_cast<QObject *>(&controller))},
         },
         &error));
     QVERIFY2(header != nullptr, qPrintable(error));
+    QVERIFY(QMetaObject::invokeMethod(header.get(), "open"));
+    QTRY_VERIFY(header->property("visible").toBool());
 
     QObject *layoutButton = header->findChild<QObject *>(QStringLiteral("layoutMenuButton"));
     QObject *layoutMenu = header->findChild<QObject *>(QStringLiteral("layoutMenu"));
@@ -492,20 +538,30 @@ void QmlVisualRegressionTest::capturesHeaderDualPrimaryStates()
 
     QVERIFY(QMetaObject::invokeMethod(layoutButton, "clicked"));
     QTRY_VERIFY(layoutMenu->property("visible").toBool());
+    QCOMPARE(header->property("currentSection").toString(), QStringLiteral("layout"));
+    auto *layoutSection = qobject_cast<QQuickItem *>(layoutMenu);
+    QVERIFY(layoutSection != nullptr);
+    QTRY_VERIFY(QRectF(QPointF(), window->size()).contains(
+        QRectF(layoutSection->mapToScene(QPointF()), layoutSection->size())));
+    QTest::qWait(100);
+    QVERIFY(!header->findChild<QObject *>(QStringLiteral("watchToolsOverview"))
+                 ->property("visible").toBool());
     QVERIFY(!dualOption->property("enabled").toBool());
-    const QImage disabled = visualCapture(window.get(), QStringLiteral("header-dual-disabled-960x260"));
+    const QImage disabled = visualCapture(window.get(), QStringLiteral("watch-tools-dual-disabled-960x600"));
     QVERIFY(!disabled.isNull());
-    verifyBaseline(disabled, QStringLiteral("header-dual-disabled-960x260"));
     QVERIFY(QMetaObject::invokeMethod(layoutMenu, "close"));
     QTRY_VERIFY(!layoutMenu->property("visible").toBool());
+    QCOMPARE(header->property("currentSection").toString(), QStringLiteral("overview"));
 
     controller.rooms_.setRoomCount(4);
     QVERIFY(QMetaObject::invokeMethod(layoutButton, "clicked"));
     QTRY_VERIFY(layoutMenu->property("visible").toBool());
     QVERIFY(dualOption->property("enabled").toBool());
-    const QImage enabled = visualCapture(window.get(), QStringLiteral("header-dual-enabled-960x260"));
+    QTest::qWait(100);
+    const QImage enabled = visualCapture(window.get(), QStringLiteral("watch-tools-dual-enabled-960x600"));
     QVERIFY(!enabled.isNull());
-    verifyBaseline(enabled, QStringLiteral("header-dual-enabled-960x260"));
+    verifyBaseline(disabled, QStringLiteral("watch-tools-dual-disabled-960x600"));
+    verifyBaseline(enabled, QStringLiteral("watch-tools-dual-enabled-960x600"));
 }
 
 void QmlVisualRegressionTest::capturesRoomControlStates()
@@ -513,6 +569,7 @@ void QmlVisualRegressionTest::capturesRoomControlStates()
     registerQmlTypes();
     std::unique_ptr<QQuickWindow> window(createHostWindow(QSize(640, 420)));
     QVERIFY(window != nullptr);
+    QCOMPARE(window->color(), QColor(QStringLiteral("#0e1312")));
 
     QQmlApplicationEngine engine;
     QString error;
@@ -537,9 +594,9 @@ void QmlVisualRegressionTest::capturesRoomControlStates()
     tile->setProperty("controlsVisible", true);
     QVERIFY(QMetaObject::invokeMethod(qualityPopup, "open"));
     QTRY_VERIFY(qualityPopup->property("visible").toBool());
+    QTRY_COMPARE(qualityPopup->property("opacity").toDouble(), 1.0);
     const QImage qualityImage = visualCapture(window.get(), QStringLiteral("room-quality-popup-640x420"));
     QVERIFY(!qualityImage.isNull());
-    verifyBaseline(qualityImage, QStringLiteral("room-quality-popup-640x420"));
     QVERIFY(QMetaObject::invokeMethod(qualityPopup, "close"));
     QTRY_VERIFY(!qualityPopup->property("visible").toBool());
 
@@ -547,6 +604,7 @@ void QmlVisualRegressionTest::capturesRoomControlStates()
     QTRY_VERIFY(tile->property("menuOpen").toBool());
     const QImage menuImage = visualCapture(window.get(), QStringLiteral("room-menu-640x420"));
     QVERIFY(!menuImage.isNull());
+    verifyBaseline(qualityImage, QStringLiteral("room-quality-popup-640x420"));
     verifyBaseline(menuImage, QStringLiteral("room-menu-640x420"));
 }
 
@@ -555,27 +613,57 @@ void QmlVisualRegressionTest::capturesNavigationAndTeamStates()
     registerQmlTypes();
     FakeGuildController controller;
 
-    std::unique_ptr<QQuickWindow> navigationWindow(createHostWindow(QSize(284, 720)));
-    QVERIFY(navigationWindow != nullptr);
     QQmlApplicationEngine navigationEngine;
+    navigationEngine.load(qmlSource(QStringLiteral("Main.qml")));
+    QVERIFY(!navigationEngine.rootObjects().isEmpty());
+    auto *navigationWindow = qobject_cast<QQuickWindow *>(navigationEngine.rootObjects().constFirst());
+    QVERIFY(navigationWindow != nullptr);
+    QVERIFY(navigationWindow->setProperty("reducedMotion", true));
+    navigationWindow->resize(QSize(1280, 800));
+    navigationWindow->setProperty("appController", QVariant::fromValue(static_cast<QObject *>(&controller)));
+    QVERIFY(QTest::qWaitForWindowExposed(navigationWindow));
+    auto *navigationButton = navigationWindow->findChild<QObject *>(QStringLiteral("hamsterNavigationButton"));
+    QVERIFY(navigationButton != nullptr);
+    QVERIFY(QMetaObject::invokeMethod(navigationButton, "clicked"));
+    auto *navigation = navigationWindow->findChild<QQuickItem *>(QStringLiteral("guildNavigationPanel"));
+    QVERIFY(navigation != nullptr);
+    QTRY_VERIFY(navigation->isVisible());
     QString error;
-    std::unique_ptr<QObject> navigation(createQmlObject(
-        navigationEngine,
-        *navigationWindow,
-        QStringLiteral("components/GuildNavigationPanel.qml"),
-        {
-            {QStringLiteral("width"), 284},
-            {QStringLiteral("height"), 720},
-            {QStringLiteral("controller"), QVariant::fromValue(static_cast<QObject *>(&controller))},
-        },
-        &error));
-    QVERIFY2(navigation != nullptr, qPrintable(error));
+    QTRY_COMPARE(navigation->size(), QSizeF(1200, 764));
     QTRY_COMPARE(navigation->property("visibleMemberCount").toInt(), 3);
-
+    const QRectF navigationViewport(QPointF(), QSizeF(navigationWindow->size()));
+    for (const char *name : {"guildNavigationTitle", "guildRefreshStatusButton", "guildAddRoomButton",
+                             "guildNavigationSearch", "guildStatusFilter", "guildGenderFilter_all",
+                             "guildGenderFilter_m", "guildGenderFilter_f"}) {
+        QQuickItem *control = nullptr;
+        QTRY_VERIFY2((control = visualItemByObjectName(navigation, QString::fromLatin1(name))) != nullptr, name);
+        QTRY_VERIFY(navigationViewport.contains(visualSceneRect(control)));
+    }
+    QQuickItem *rankedMemberName = nullptr;
+    QTRY_VERIFY((rankedMemberName = visualItemByObjectNameAndText(
+                     navigation, QStringLiteral("guildMemberName"), QStringLiteral("寅子"))) != nullptr);
+    QQuickItem *rankedMemberRow = rankedMemberName;
+    while (rankedMemberRow != nullptr
+           && rankedMemberRow->objectName() != QStringLiteral("guildMemberRow")) {
+        rankedMemberRow = rankedMemberRow->parentItem();
+    }
+    QVERIFY(rankedMemberRow != nullptr);
+    auto *avatarImage = visualItemByObjectName(rankedMemberRow, QStringLiteral("guildMemberAvatarImage"));
+    QVERIFY(avatarImage != nullptr);
+    QTRY_COMPARE_WITH_TIMEOUT(avatarImage->property("status").toInt(), 1, 3000);
     const QImage navigationImage =
-        visualCapture(navigationWindow.get(), QStringLiteral("guild-navigation-284x720"));
+        visualCapture(navigationWindow, QStringLiteral("guild-navigation-shell-1280x800"));
     QVERIFY(!navigationImage.isNull());
-    verifyBaseline(navigationImage, QStringLiteral("guild-navigation-284x720"));
+
+    const QPoint hoverPoint = rankedMemberName->mapToScene(
+        QPointF(rankedMemberName->width() / 2, rankedMemberName->height() / 2)).toPoint();
+    QTest::mouseMove(navigationWindow, hoverPoint, 50);
+    QTRY_VERIFY(rankedMemberRow->property("hovered").toBool());
+    QTest::qWait(650);
+    QVERIFY(!navigationWindow->findChild<QObject *>("guildRankHoverCard"));
+    QVERIFY(rankedMemberRow->property("hovered").toBool());
+    const QImage hoverImage = visualCapture(navigationWindow, QStringLiteral("guild-member-hover-shell-1280x800"));
+    QVERIFY(!hoverImage.isNull());
 
     std::unique_ptr<QQuickWindow> dialogWindow(createHostWindow(QSize(720, 760)));
     QVERIFY(dialogWindow != nullptr);
@@ -605,6 +693,8 @@ void QmlVisualRegressionTest::capturesNavigationAndTeamStates()
     const QImage dialogImage =
         visualCapture(dialogWindow.get(), QStringLiteral("team-manager-720x760"));
     QVERIFY(!dialogImage.isNull());
+    verifyBaseline(navigationImage, QStringLiteral("guild-navigation-shell-1280x800"));
+    verifyBaseline(hoverImage, QStringLiteral("guild-member-hover-shell-1280x800"));
     verifyBaseline(dialogImage, QStringLiteral("team-manager-720x760"));
 }
 
@@ -637,7 +727,9 @@ void QmlVisualRegressionTest::keepsMaoziToolbarVisibleAndColumnsAligned()
         QStringLiteral("maoziRefreshButton"),
         QStringLiteral("maoziRankingTab"),
         QStringLiteral("maoziPlacementTab"),
-        QStringLiteral("maoziPlayValueTab"),
+        QStringLiteral("maoziRegularSeasonTab"),
+        QStringLiteral("maoziFinalsTab"),
+        QStringLiteral("maoziFootballTab"),
         QStringLiteral("maoziTitle"),
         QStringLiteral("maoziSubtitle"),
     };
@@ -663,6 +755,7 @@ void QmlVisualRegressionTest::keepsMaoziToolbarVisibleAndColumnsAligned()
     QVERIFY(backButton != nullptr);
     QVERIFY(title != nullptr);
     QVERIFY(subtitle != nullptr);
+    QCOMPARE(title->property("font").value<QFont>().pixelSize(), 24);
     QVERIFY(visualSceneRect(toolbar).contains(visualSceneRect(title)));
     QVERIFY(visualSceneRect(toolbar).contains(visualSceneRect(subtitle)));
     QVERIFY(title->height() > 0);
@@ -678,16 +771,23 @@ void QmlVisualRegressionTest::keepsMaoziToolbarVisibleAndColumnsAligned()
 
     QQuickItem *rankHeader = visualItemByObjectName(window->contentItem(), QStringLiteral("maoziHeaderRank"));
     QQuickItem *rankList = visualItemByObjectName(window->contentItem(), QStringLiteral("maoziRankList"));
+    QQuickItem *headerBar =
+        visualItemByObjectName(window->contentItem(), QStringLiteral("maoziRankingHeaderBar"));
     QVERIFY(rankHeader != nullptr);
     QVERIFY(rankList != nullptr);
-    QVERIFY(!visualRectsOverlap(visualSceneRect(rankHeader),
-                                visualSceneRect(rankList)));
-
-    QQuickItem *headerBar = visualItemByObjectName(window->contentItem(), QStringLiteral("maoziHeaderRank"));
     QVERIFY(headerBar != nullptr);
-    QCOMPARE(qRound(headerBar->height()), 32);
-    QVERIFY(qAbs(visualSceneRect(headerBar).center().y()
-                 - visualSceneRect(headerBar->parentItem()).center().y()) <= 1.0);
+    QTRY_VERIFY(rankList->isVisible() && rankList->width() > 0 && rankList->height() > 0);
+    QTRY_VERIFY(headerBar->isVisible() && headerBar->width() > 0 && headerBar->height() > 0);
+    QTRY_VERIFY(!visualRectsOverlap(visualSceneRect(headerBar),
+                                    visualSceneRect(rankList)));
+
+    QVERIFY(headerBar != nullptr);
+    QCOMPARE(qRound(headerBar->height()), 36);
+    const QRectF tableRect = visualSceneRect(headerBar->parentItem());
+    const QRectF headerRect = visualSceneRect(headerBar);
+    const QRectF rankListRect = visualSceneRect(rankList);
+    QVERIFY(qAbs(headerRect.top() - tableRect.top()) <= 1.0);
+    QVERIFY(qAbs(rankListRect.top() - headerRect.bottom()) <= 1.0);
     QQuickItem *widthProbe =
         visualItemByObjectName(window->contentItem(), QStringLiteral("maoziListWidthProbe"));
     QVERIFY(widthProbe != nullptr);
@@ -730,9 +830,23 @@ void QmlVisualRegressionTest::keepsMaoziToolbarVisibleAndColumnsAligned()
                                 .arg(cellCenter)));
     }
 
+    QQuickItem *statusCell =
+        visualItemByObjectName(window->contentItem(), QStringLiteral("maoziCellStatus"));
+    QQuickItem *statusDot =
+        visualItemByObjectName(window->contentItem(), QStringLiteral("maoziLiveStatusDot"));
+    QVERIFY(statusCell != nullptr);
+    QVERIFY(statusDot != nullptr);
+    QQuickItem *rankRow = statusCell->parentItem() ? statusCell->parentItem()->parentItem() : nullptr;
+    QVERIFY(rankRow != nullptr);
+    QCOMPARE(QQmlProperty::read(rankRow, QStringLiteral("border.width")).toInt(), 0);
+    QVERIFY(statusDot->width() > 0);
+    QVERIFY(statusDot->height() > 0);
+
+    // Earlier visual cases move the desktop pointer over a row; reset it so a
+    // stale hover state cannot contaminate this page's pixel baseline.
+    QTest::mouseMove(window.get(), QPoint(window->width() - 1, window->height() - 1));
     const QImage image = visualCapture(window.get(), QStringLiteral("maozi-rank-1920x1080"));
     QVERIFY(!image.isNull());
-    verifyBaseline(image, QStringLiteral("maozi-rank-1920x1080"));
 
     QObject *placementTab =
         page->findChild<QObject *>(QStringLiteral("maoziPlacementTab"));
@@ -744,26 +858,22 @@ void QmlVisualRegressionTest::keepsMaoziToolbarVisibleAndColumnsAligned()
     const QImage placementImage =
         visualCapture(window.get(), QStringLiteral("maozi-placement-1920x1080"));
     QVERIFY(!placementImage.isNull());
-    verifyBaseline(placementImage, QStringLiteral("maozi-placement-1920x1080"));
 
-    QObject *playValueTab =
-        page->findChild<QObject *>(QStringLiteral("maoziPlayValueTab"));
-    QObject *playValueList =
-        page->findChild<QObject *>(QStringLiteral("maoziPlayValueList"));
-    QVERIFY(QMetaObject::invokeMethod(playValueTab, "clicked"));
-    QTRY_VERIFY(playValueList->property("visible").toBool());
-    QTRY_COMPARE(playValueList->property("count").toInt(), 1);
-    const QImage playValueImage =
-        visualCapture(window.get(), QStringLiteral("maozi-play-value-1920x1080"));
-    QVERIFY(!playValueImage.isNull());
-    verifyBaseline(playValueImage, QStringLiteral("maozi-play-value-1920x1080"));
+    for (const auto &[buttonName, tabName] : {
+             qMakePair("maoziRegularSeasonTab", "regularSeason"),
+             qMakePair("maoziFinalsTab", "finals"),
+             qMakePair("maoziFootballTab", "football")}) {
+        QObject *tab = page->findChild<QObject *>(QString::fromLatin1(buttonName));
+        QVERIFY(tab != nullptr);
+        QVERIFY(QMetaObject::invokeMethod(tab, "clicked"));
+        QTRY_COMPARE(page->property("activeTab").toString(), QString::fromLatin1(tabName));
+    }
+    QVERIFY(page->findChild<QObject *>(QStringLiteral("maoziPlayValueTab")) == nullptr);
+    verifyBaseline(image, QStringLiteral("maozi-rank-1920x1080"));
+    verifyBaseline(placementImage, QStringLiteral("maozi-placement-1920x1080"));
 }
 
 QTEST_MAIN(QmlVisualRegressionTest)
 
 #include "qml_visual_regression_test.moc"
-
-
-
-
 

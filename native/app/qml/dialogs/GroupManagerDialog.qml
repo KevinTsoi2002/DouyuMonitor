@@ -1,5 +1,6 @@
 import QtQuick
-import QtQuick.Controls
+import QtQuick.Controls.Basic
+import "../controls"
 import ".."
 
 Dialog {
@@ -17,8 +18,8 @@ Dialog {
     readonly property int activeMemberCount: activeGroup ? activeGroup.roomIds.length : 0
     modal: true
     title: "管理分组"
-    width: 440
-    height: 500
+    width: Math.min(480, parent ? parent.width - 32 : 480)
+    height: Math.min(500, parent ? parent.height - 32 : 500)
     anchors.centerIn: parent
     palette.window: Theme.controlSurface
     palette.base: Theme.well
@@ -29,10 +30,24 @@ Dialog {
     palette.highlight: Theme.accent
     palette.highlightedText: Theme.text
 
+    header: Item {
+        implicitHeight: 56
+        Text {
+            anchors.left: parent.left
+            anchors.leftMargin: 16
+            anchors.verticalCenter: parent.verticalCenter
+            text: root.title
+            color: Theme.text
+            font.bold: true
+            font.pixelSize: Theme.fontHeading
+        }
+        Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: Theme.border }
+    }
+
     background: Rectangle {
-        color: Theme.controlSurface
+        color: Theme.managementSurface
         border.color: Theme.border
-        radius: Theme.radiusLarge
+        radius: Theme.radiusSmall
     }
 
     function selectedGroup() {
@@ -64,7 +79,7 @@ Dialog {
             width: parent.width
             spacing: 6
 
-            TextField {
+            ConsoleTextField {
                 id: groupNameInput
                 objectName: "groupNameInput"
                 width: parent.width - createGroupButton.width - renameGroupButton.width - 12
@@ -73,7 +88,7 @@ Dialog {
                 placeholderTextColor: Theme.mutedText
                 selectByMouse: true
             }
-            Button {
+            ConsoleButton {
                 id: createGroupButton
                 text: "新建"
                 enabled: root.validName && root.controller !== null
@@ -82,7 +97,7 @@ Dialog {
                     groupNameInput.clear()
                 }
             }
-            Button {
+            ConsoleButton {
                 id: renameGroupButton
                 text: "重命名"
                 enabled: root.validName && root.selectedGroupId.length > 0 && root.controller !== null
@@ -117,14 +132,14 @@ Dialog {
                     anchors.margins: 7
                     spacing: 6
                     Text { width: parent.width - activateButton.width - deleteButton.width - 12; anchors.verticalCenter: parent.verticalCenter; text: modelData.name; color: "#f4f6f8"; elide: Text.ElideRight }
-                    Button {
+                    ConsoleButton {
                         id: activateButton
                         objectName: "activateButton"
                         text: modelData.active ? "当前" : "启用"
                         enabled: root.controller !== null && !modelData.active
                         onClicked: root.controller.setActiveGroup(modelData.id)
                     }
-                    Button {
+                    ConsoleButton {
                         id: deleteButton
                         objectName: "deleteButton"
                         text: "删除"
@@ -207,7 +222,7 @@ Dialog {
                         height: 22
                         enabled: index > 0 && root.controller !== null
                         Accessible.name: "上移成员"
-                        ToolTip.visible: hovered
+                        ToolTip.visible: false
                         ToolTip.text: Accessible.name
                         onClicked: root.controller.moveRoomInGroup(root.selectedGroupId,
                                                                     memberRow.memberRoomId,
@@ -229,7 +244,7 @@ Dialog {
                         height: 22
                         enabled: index < memberList.count - 1 && root.controller !== null
                         Accessible.name: "下移成员"
-                        ToolTip.visible: hovered
+                        ToolTip.visible: false
                         ToolTip.text: Accessible.name
                         onClicked: root.controller.moveRoomInGroup(root.selectedGroupId,
                                                                     memberRow.memberRoomId,
@@ -251,7 +266,7 @@ Dialog {
                         height: 22
                         enabled: root.controller !== null
                         Accessible.name: "移除成员"
-                        ToolTip.visible: hovered
+                        ToolTip.visible: false
                         ToolTip.text: Accessible.name
                         onClicked: root.controller.removeRoomFromGroup(root.selectedGroupId,
                                                                         memberRow.memberRoomId)
@@ -271,7 +286,7 @@ Dialog {
         Row {
             width: parent.width
             spacing: 6
-            TextField {
+            ConsoleTextField {
                 id: roomIdInput
                 objectName: "groupRoomIdInput"
                 width: parent.width - assignButton.width - 6
@@ -281,7 +296,7 @@ Dialog {
                 inputMethodHints: Qt.ImhDigitsOnly
                 selectByMouse: true
             }
-            Button {
+            ConsoleButton {
                 id: assignButton
                 text: "分配"
                 enabled: /^[0-9]{1,20}$/.test(roomIdInput.text.trim())
@@ -343,7 +358,7 @@ Dialog {
                                  && !root.roomInSelectedGroup(modelData.roomId)
                                  && root.activeMemberCount < 9
                         Accessible.name: "添加到分组"
-                        ToolTip.visible: hovered
+                        ToolTip.visible: false
                         ToolTip.text: enabled ? Accessible.name : "已在分组中或分组已满"
                         onClicked: {
                             const message = root.controller.assignRoomToGroup(modelData.roomId,
@@ -369,9 +384,9 @@ Dialog {
     footer: Rectangle {
         objectName: "groupManagerDialogFooter"
         implicitHeight: 56
-        color: Theme.controlSurface
+        color: Theme.managementSurface
         border.color: Theme.border
-        Button {
+        ConsoleButton {
             anchors.right: parent.right
             anchors.rightMargin: 0
             anchors.verticalCenter: parent.verticalCenter

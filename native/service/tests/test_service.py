@@ -1,15 +1,21 @@
 import asyncio
+import io
 import json
 import subprocess
 import sys
 import textwrap
 import time
 import threading
+import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from native.service.protocol import ErrorCode
+from native.service.douyu_backend import DouyuBackend
 from native.service.streamget_service import run_service
+from native.service import protocol
+from native.service import streamget_service
 
 
 class FakeBackend:
@@ -61,6 +67,51 @@ async def collect(lines, backend):
 
 
 class ServiceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_nan_viewer_count_does_not_fail_search_or_next_request(self):
+        def fetch_json(url, _timeout):
+            return {"error": 0, "data": {
+                "room_id": "63136", "room_name": "Test Live",
+                "owner_name": "Anchor", "room_status": "1",
+                "online": float("nan") if url.endswith("/63136") else 42,
+            }}
+
+        backend = DouyuBackend(fetch_json=fetch_json)
+        first_response = asyncio.Event()
+        output = []
+
+        async def source():
+            yield '{"requestId":1,"op":"search","query":"63136"}\n'
+            await asyncio.wait_for(first_response.wait(), 2)
+            yield '{"requestId":2,"op":"search","query":"63137"}\n'
+
+        async def emit(value):
+            output.append(value)
+            if value["requestId"] == 1:
+                first_response.set()
+
+        self.assertFalse(await run_service(source(), emit, backend))
+        self.assertEqual([(value["requestId"], value["ok"]) for value in output],
+                         [(1, True), (2, True)])
+        self.assertEqual(output[0]["results"][0]["viewerLabel"], "")
+        self.assertEqual(output[1]["results"][0]["viewerLabel"], "42")
+
+    async def test_stdout_emit_replaces_oversized_response_with_bounded_error(self):
+        stdout = io.StringIO()
+        value = {
+            "requestId": 9,
+            "ok": True,
+            "results": [{"roomId": "1", "anchorName": "x" * 1_100_000,
+                          "online": False}],
+        }
+        with mock.patch.object(streamget_service.sys, "stdout", stdout):
+            await streamget_service._stdout_emit(value)
+        line = stdout.getvalue().encode("utf-8").strip()
+        self.assertLessEqual(len(line), protocol.MAX_JSONL_RESPONSE_BYTES)
+        response = json.loads(line)
+        self.assertEqual(response["requestId"], 9)
+        self.assertFalse(response["ok"])
+        self.assertEqual(response["error"]["code"], ErrorCode.INVALID_RESPONSE.value)
+
     async def test_cancelled_sync_workers_keep_concurrency_slots(self):
         class BlockingBackend:
             active = 0
@@ -167,59 +218,181 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ShutdownExitTests(unittest.TestCase):
-    def test_shutdown_does_not_wait_for_blocked_worker_threads(self):
+    def test_invalid_operation_does_not_stop_offline_child(self):
         repo_root = Path(__file__).resolve().parents[3]
         script = textwrap.dedent(
             f"""
             import asyncio
             import sys
-            import threading
-
             sys.path.insert(0, {str(repo_root)!r})
-            import native.service.streamget_service as service
+            from native.service import streamget_service as service
 
-            class BlockingBackend:
-                def search(self, _query):
-                    threading.Event().wait(20)
-                    return []
+            async def run():
+                await service.run_service(service._stdin_lines(), service._stdout_emit,
+                                          object())
 
-                def room_status(self, _room_id):
-                    return False
-
-                async def resolve(self, _room_id, _quality, _quality_rate=None):
-                    return True, [], []
-
-            service.DouyuBackend = BlockingBackend
-            asyncio.run(service.main())
+            asyncio.run(run())
             """
         )
         process = subprocess.Popen(
-            [sys.executable, "-c", script],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
+            [sys.executable, "-c", script], stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
         )
         try:
-            process.stdin.write('{"requestId":1,"op":"search","query":"busy"}\n')
-            process.stdin.flush()
-            time.sleep(0.5)
-
-            started = time.monotonic()
-            process.stdin.write('{"requestId":2,"op":"shutdown"}\n')
-            process.stdin.flush()
-            process.stdin.close()
-            try:
-                process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                self.fail("shutdown waited for a blocked worker thread")
-            elapsed = time.monotonic() - started
+            output, errors = process.communicate(
+                '{"requestId":7,"op":[]}\n'
+                '{"requestId":10,"op":{}}\n'
+                '{"requestId":11}\n'
+                '{"requestId":12,"op":"unknown"}\n'
+                '{"requestId":false,"op":[]}\n'
+                'null\n'
+                '{"requestId":8,"op":"ping"}\n'
+                '{"requestId":9,"op":"shutdown"}\n', timeout=5,
+            )
         finally:
             if process.poll() is None:
                 process.kill()
-                process.wait()
-            process.stdout.close()
-            process.stderr.close()
+                process.communicate()
+
+        self.assertEqual(process.returncode, 0, errors)
+        self.assertEqual(errors, "")
+        responses = [json.loads(line) for line in output.splitlines()]
+        invalid = lambda request_id: {
+            "requestId": request_id, "ok": False,
+            "error": {"code": ErrorCode.INVALID_INPUT.value, "retryable": False},
+        }
+        self.assertEqual(responses, [
+            invalid(7), invalid(10), invalid(11), invalid(12), invalid(0), invalid(0),
+            {"requestId": 8, "ok": True, "pong": True},
+            {"requestId": 9, "ok": True, "shutdown": True},
+        ])
+
+    def test_eof_does_not_wait_for_blocked_worker_threads(self):
+        repo_root = Path(__file__).resolve().parents[3]
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            marker = Path(temporary_directory) / "worker-started"
+            script = textwrap.dedent(
+                f"""
+                import asyncio
+                import sys
+                import threading
+                from pathlib import Path
+
+                sys.path.insert(0, {str(repo_root)!r})
+                import native.service.streamget_service as service
+
+                class BlockingBackend:
+                    def search(self, _query):
+                        Path({str(marker)!r}).write_text("started", encoding="ascii")
+                        threading.Event().wait(20)
+                        return []
+
+                    def room_status(self, _room_id):
+                        return False
+
+                    async def resolve(self, _room_id, _quality, _quality_rate=None):
+                        return True, [], []
+
+                service.DouyuBackend = BlockingBackend
+                asyncio.run(service.main())
+                """
+            )
+            process = subprocess.Popen(
+                [sys.executable, "-c", script],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            try:
+                process.stdin.write('{"requestId":1,"op":"search","query":"busy"}\n')
+                process.stdin.flush()
+                deadline = time.monotonic() + 2
+                while not marker.exists() and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                self.assertTrue(marker.exists(), "blocking worker did not start")
+
+                started = time.monotonic()
+                process.stdin.close()
+                try:
+                    process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    self.fail("EOF waited for a blocked worker thread")
+                elapsed = time.monotonic() - started
+                self.assertEqual(process.stdout.read(), "")
+            finally:
+                if process.poll() is None:
+                    process.kill()
+                    process.wait()
+                process.stdout.close()
+                process.stderr.close()
+
+        self.assertEqual(process.returncode, 0)
+        self.assertLess(elapsed, 1.5)
+
+    def test_shutdown_does_not_wait_for_blocked_worker_threads(self):
+        repo_root = Path(__file__).resolve().parents[3]
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            marker = Path(temporary_directory) / "worker-started"
+            script = textwrap.dedent(
+                f"""
+                import asyncio
+                import sys
+                import threading
+                from pathlib import Path
+
+                sys.path.insert(0, {str(repo_root)!r})
+                import native.service.streamget_service as service
+
+                class BlockingBackend:
+                    def search(self, _query):
+                        Path({str(marker)!r}).write_text("started", encoding="ascii")
+                        threading.Event().wait(20)
+                        return []
+
+                    def room_status(self, _room_id):
+                        return False
+
+                    async def resolve(self, _room_id, _quality, _quality_rate=None):
+                        return True, [], []
+
+                service.DouyuBackend = BlockingBackend
+                asyncio.run(service.main())
+                """
+            )
+            process = subprocess.Popen(
+                [sys.executable, "-c", script],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            try:
+                process.stdin.write('{"requestId":1,"op":"search","query":"busy"}\n')
+                process.stdin.flush()
+                deadline = time.monotonic() + 2
+                while not marker.exists() and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                self.assertTrue(marker.exists(), "blocking worker did not start")
+
+                started = time.monotonic()
+                process.stdin.write('{"requestId":2,"op":"shutdown"}\n')
+                process.stdin.flush()
+                process.stdin.close()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    self.fail("shutdown waited for a blocked worker thread")
+                elapsed = time.monotonic() - started
+                output = process.stdout.read()
+                self.assertEqual(output.count('"shutdown":true'), 1)
+                self.assertNotIn('"requestId":1', output)
+            finally:
+                if process.poll() is None:
+                    process.kill()
+                    process.wait()
+                process.stdout.close()
+                process.stderr.close()
 
         self.assertEqual(process.returncode, 0)
         self.assertLess(elapsed, 2.0)

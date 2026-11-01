@@ -1,6 +1,7 @@
 import QtQuick
-import QtQuick.Controls
+import QtQuick.Controls.Basic
 import ".."
+import "../controls"
 
 Item {
     id: root
@@ -9,24 +10,35 @@ Item {
     property string roomStatus: ""
     property bool active: false
     property bool canAdd: false
+    property bool selected: false
+    property var confirmRoomId: null
+    signal selectedRequested(string memberId)
     signal addRequested(string memberId)
     signal roomIdSubmitted(string memberId, string roomId)
-    signal hoverEntered(string memberId)
-    signal hoverExited(string memberId)
     readonly property string memberId: member ? String(member.id || "") : ""
     readonly property string anchorName: member ? String(member.anchorName || memberId) : ""
     readonly property string roomId: member ? String(member.roomId || "") : ""
+    readonly property var avatarCandidates: {
+        const primary = member ? String(member.avatarUrl || "") : ""
+        const fallback = member && member.portraitIdentityVerified === true
+                          ? String(member.fallbackAvatarUrl || "") : ""
+        return [primary, fallback].filter(function(source, index, sources) {
+            return source.length > 0 && sources.indexOf(source) === index
+        })
+    }
+    readonly property string avatarCandidateKey: JSON.stringify(root.avatarCandidates)
+    property int avatarCandidateIndex: 0
     readonly property bool resolved: roomId.length > 0
     readonly property bool confirming: roomEdit.visible
+    readonly property bool hovered: memberHover.hovered
+    onAvatarCandidateKeyChanged: avatarCandidateIndex = 0
+    onResolvedChanged: if (resolved) roomEdit.visible = false
 
-    height: confirming ? 84 : 46
+    height: confirming ? 104 : 64
 
     HoverHandler {
         id: memberHover
-        onHoveredChanged: {
-            if (hovered) root.hoverEntered(root.memberId)
-            else root.hoverExited(root.memberId)
-        }
+
     }
 
     function beginConfirmation()
@@ -39,8 +51,10 @@ Item {
 
     function submitConfirmation()
     {
+        if (root.resolved) return
         const value = roomEdit.text.trim()
         if (value.length === 0) return
+        if (root.confirmRoomId && !root.confirmRoomId(root.memberId, value)) return
         root.roomIdSubmitted(root.memberId, value)
         roomEdit.visible = false
     }
@@ -50,16 +64,16 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
-        height: 46
-        spacing: 6
+        height: 64
+        spacing: 12
 
         Rectangle {
             id: avatar
             objectName: "guildMemberAvatar"
             anchors.verticalCenter: parent.verticalCenter
-            width: 30
-            height: 30
-            radius: 15
+            width: 40
+            height: 40
+            radius: Theme.radiusSmall
             color: Theme.well
 
             Image {
@@ -67,13 +81,17 @@ Item {
                 objectName: "guildMemberAvatarImage"
                 anchors.fill: parent
                 anchors.margins: 1
-                source: root.member ? String(root.member.avatarUrl || "") : ""
+                source: root.avatarCandidates[root.avatarCandidateIndex] || ""
                 visible: source.toString().length > 0 && status !== Image.Error
                 fillMode: Image.PreserveAspectCrop
                 asynchronous: true
                 sourceSize: Qt.size(64, 64)
                 smooth: true
                 clip: true
+                onStatusChanged: {
+                    if (status === Image.Error && root.avatarCandidateIndex + 1 < root.avatarCandidates.length)
+                        root.avatarCandidateIndex += 1
+                }
             }
 
             Text {
@@ -91,34 +109,47 @@ Item {
         Column {
             anchors.verticalCenter: parent.verticalCenter
             width: Math.max(80, parent.width - avatar.width - liveState.width - statusLabel.width
-                           - addButton.width - 30)
-            spacing: 1
-
-            Text {
-                objectName: "guildMemberName"
-                width: parent.width
-                color: Theme.text
-                elide: Text.ElideRight
-                font.pixelSize: 11
-                text: root.anchorName
-            }
+                           - addButton.width - 48)
+            spacing: 4
 
             ToolButton {
+                id: memberNameButton
+                objectName: "guildMemberName"
+                width: parent.width
+                height: 24
+                padding: 0
+                flat: true
+                hoverEnabled: true
+                Accessible.name: qsTr("查看 %1 的资料").arg(root.anchorName)
+                onClicked: root.selectedRequested(root.memberId)
+                text: root.anchorName
+                contentItem: Text { text: memberNameButton.text; color: Theme.text; elide: Text.ElideRight; font.pixelSize: Theme.fontBody; font.bold: true; verticalAlignment: Text.AlignVCenter }
+                background: Rectangle {
+                    objectName: "guildMemberNameBackground"
+                    color: "transparent"
+                    radius: Theme.radiusSmall
+                    border.width: memberNameButton.visualFocus ? Theme.focusBorderWidth : 0
+                    border.color: Theme.accent
+                }
+            }
+
+            ConsoleToolButton {
+                id: roomIdentityButton
                 objectName: "guildMemberRoomLabel"
                 width: parent.width
-                height: 16
+                height: 20
                 enabled: !root.resolved
                 text: root.resolved ? root.roomId : "待确认"
                 padding: 0
+                flat: true
                 onClicked: root.beginConfirmation()
                 contentItem: Text {
-                    text: parent.text
+                    text: roomIdentityButton.text
                     color: root.resolved ? Theme.mutedText : Theme.warning
                     elide: Text.ElideRight
-                    font.pixelSize: 9
+                    font.pixelSize: Theme.fontControl
                     verticalAlignment: Text.AlignVCenter
                 }
-                background: Item {}
             }
         }
 
@@ -126,7 +157,7 @@ Item {
             id: liveState
             objectName: "guildMemberLiveState"
             anchors.verticalCenter: parent.verticalCenter
-            width: 46
+            width: 70
             spacing: 4
 
             Rectangle {
@@ -149,7 +180,7 @@ Item {
                        : (root.member && root.member.liveState === "offline"
                           ? Theme.mutedText : Theme.warning)
                 elide: Text.ElideRight
-                font.pixelSize: 9
+                font.pixelSize: Theme.fontControl
                 text: root.member && root.member.liveState === "online"
                       ? "直播中"
                       : (root.member && root.member.liveState === "offline"
@@ -161,64 +192,55 @@ Item {
             id: statusLabel
             objectName: "guildMemberStatus"
             anchors.verticalCenter: parent.verticalCenter
-            width: root.active ? 36 : 0
+            width: root.active ? 56 : 0
             visible: root.active
             color: Theme.online
             horizontalAlignment: Text.AlignRight
             elide: Text.ElideRight
-            font.pixelSize: 9
+            font.pixelSize: Theme.fontControl
             text: "已添加"
         }
 
-        ToolButton {
+        ConsoleToolButton {
             id: addButton
             objectName: "guildQuickAddButton"
             anchors.verticalCenter: parent.verticalCenter
-            width: 26
-            height: 26
+            width: 40
+            height: 32
             enabled: root.canAdd
+            flat: true
             Accessible.name: root.active ? "已加入房间列表" : (root.resolved ? "加入房间列表" : "请先确认房间号")
-            ToolTip.visible: hovered
+            ToolTip.visible: false
             ToolTip.text: Accessible.name
             onClicked: root.addRequested(root.memberId)
-            contentItem: Image {
+            contentItem: ThemeIcon {
                 anchors.centerIn: parent
                 width: 16
                 height: 16
                 source: Qt.resolvedUrl("../assets/icons/plus.svg")
                 opacity: parent.enabled ? 1 : 0.28
             }
-            background: Rectangle {
-                radius: 4
-                color: parent.hovered && parent.enabled ? Theme.controlSurface : "transparent"
-                border.color: parent.enabled ? Theme.border : "transparent"
-            }
         }
     }
-    TextField {
+    ConsoleTextField {
         id: roomEdit
         objectName: "guildMemberRoomInput"
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
-        anchors.topMargin: 48
+        anchors.topMargin: 66
         height: 0
         visible: false
         placeholderText: "输入房间号"
-        color: Theme.text
-        placeholderTextColor: Theme.mutedText
         selectByMouse: true
-        font.pixelSize: 10
+        maximumLength: 20
+        validator: RegularExpressionValidator { regularExpression: /[0-9]{1,20}/ }
+        font.pixelSize: Theme.fontControl
         onAccepted: root.submitConfirmation()
-        background: Rectangle {
-            radius: 4
-            color: Theme.well
-            border.color: roomEdit.activeFocus ? Theme.accent : Theme.border
-        }
         states: State {
             name: "visible"
             when: roomEdit.visible
-            PropertyChanges { target: roomEdit; height: 30 }
+            PropertyChanges { roomEdit.height: 30 }
         }
     }
 }

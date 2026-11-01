@@ -1,0 +1,133 @@
+{
+  "created": "2026-10-29",
+  "masterSize": [
+    160,
+    160
+  ],
+  "intendedCssSize": "48-80px; 2x raster density at 80px",
+  "transforms": {
+    "app": "Exterior four-connected light neutral flood: min(RGB)>=215 and max(RGB)-min(RGB)<=24. Only alpha changed before Lanczos downsampling.",
+    "navigation": "Existing alpha retained, Lanczos downsampling, lossless PNG compression.",
+    "ranking": "Existing alpha including gray halo retained, Lanczos downsampling, lossless PNG compression."
+  },
+  "appMask": {
+    "removedPixels": 418482,
+    "removedPercent": 39.9096,
+    "darkOrSaturatedCorePixelsRemoved": 0,
+    "centerFaceRoiRemoved": 0,
+    "sourceRgbChangedBeforeResampling": 0,
+    "retainedAlphaBBox": [
+      68,
+      56,
+      956,
+      965
+    ]
+  },
+  "sources": {
+    "app": {
+      "path": "icons/软件图标.png",
+      "mode": "RGB",
+      "size": [
+        1024,
+        1024
+      ],
+      "bytes": 960557,
+      "sha256Before": "66baa55af1b4ed9c50905ba020d812d4ca89c1f3f6f75b157a0eca34840d6c11",
+      "sha256After": "66baa55af1b4ed9c50905ba020d812d4ca89c1f3f6f75b157a0eca34840d6c11",
+      "attachmentFile": "codex-clipboard-c3b5a954-5f6d-49df-a524-5d0c9d1ab845.png",
+      "attachmentSha256": "66baa55af1b4ed9c50905ba020d812d4ca89c1f3f6f75b157a0eca34840d6c11",
+      "attachmentMatches": true,
+      "alpha": {
+        "zero": 0,
+        "partial": 0,
+        "opaque": 1048576,
+        "range": [
+          255,
+          255
+        ]
+      },
+      "derivative": "icon-app.png",
+      "derivativeBytes": 36628,
+      "derivativeSha256": "c62dbe870383821e4233f04edd9642c3503e39884ec9de5ebe93bcc52b7c63f7",
+      "derivativeAlpha": {
+        "zero": 9308,
+        "partial": 1807,
+        "opaque": 14485,
+        "range": [
+          0,
+          255
+        ]
+      }
+    },
+    "navigation": {
+      "path": "icons/导航页图标.png",
+      "mode": "RGBA",
+      "size": [
+        1024,
+        1024
+      ],
+      "bytes": 853016,
+      "sha256Before": "e459e701f2b7d207b98ebb79ce898399fa5c530b8791dbb6462077e15490fdb0",
+      "sha256After": "e459e701f2b7d207b98ebb79ce898399fa5c530b8791dbb6462077e15490fdb0",
+      "attachmentFile": "codex-clipboard-026d552c-a252-4bc5-aa1c-9f7dfa8598aa.png",
+      "attachmentSha256": "e459e701f2b7d207b98ebb79ce898399fa5c530b8791dbb6462077e15490fdb0",
+      "attachmentMatches": true,
+      "alpha": {
+        "zero": 432853,
+        "partial": 615355,
+        "opaque": 368,
+        "range": [
+          0,
+          255
+        ]
+      },
+      "derivative": "icon-navigation.png",
+      "derivativeBytes": 38660,
+      "derivativeSha256": "3672e1e6ed8174670ab1963658c5a7ff252b1bfac992c2e4ec693d1fa9d6d4da",
+      "derivativeAlpha": {
+        "zero": 10051,
+        "partial": 15235,
+        "opaque": 314,
+        "range": [
+          0,
+          255
+        ]
+      }
+    },
+    "ranking": {
+      "path": "icons/榜单图标.png",
+      "mode": "RGBA",
+      "size": [
+        1024,
+        1024
+      ],
+      "bytes": 1223734,
+      "sha256Before": "237178e1fcf71cf14929e4d9da60ea91b6b7409aa8d1fd1f4cb0be817af55922",
+      "sha256After": "237178e1fcf71cf14929e4d9da60ea91b6b7409aa8d1fd1f4cb0be817af55922",
+      "attachmentFile": "codex-clipboard-33938a91-d62f-4a59-b857-3806fd0c2e5c.png",
+      "attachmentSha256": "237178e1fcf71cf14929e4d9da60ea91b6b7409aa8d1fd1f4cb0be817af55922",
+      "attachmentMatches": true,
+      "alpha": {
+        "zero": 86373,
+        "partial": 962203,
+        "opaque": 0,
+        "range": [
+          0,
+          254
+        ]
+      },
+      "derivative": "icon-ranking.png",
+      "derivativeBytes": 51980,
+      "derivativeSha256": "59f42d36d3064ff84db755fc8527b84efdebe54d377a965558f3406b8664b691",
+      "derivativeAlpha": {
+        "zero": 2104,
+        "partial": 23268,
+        "opaque": 228,
+        "range": [
+          0,
+          255
+        ]
+      }
+    }
+  }
+}

@@ -1,6 +1,8 @@
 import asyncio
+import functools
 import inspect
 import json
+import math
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -16,6 +18,8 @@ SEARCH_API_URL = "https://www.douyu.com/wgapi/livenc/search/overallSearchV8"
 LEGACY_SEARCH_API_URL = "https://www.douyu.com/japi/search/api/searchShow"
 ALLOWED_HOST_SUFFIXES = (".douyucdn.cn", ".douyucdn2.cn", ".edgesrv.com")
 GUILD_ROSTER_PATH = Path(__file__).resolve().parent.parent / "app" / "resources" / "hamster_agent_roster.json"
+MAX_HTTP_RESPONSE_BYTES = 1024 * 1024
+HTTP_READ_CHUNK_BYTES = 64 * 1024
 
 
 class BackendError(RuntimeError):
@@ -60,6 +64,8 @@ def _viewer_label(value: Any) -> str:
         viewers = float(value)
     except (TypeError, ValueError):
         return "0"
+    if not math.isfinite(viewers):
+        return ""
     if viewers <= 0:
         return "0"
     if viewers >= 10_000:
@@ -174,11 +180,49 @@ def _quality_options(payload: Any) -> list[dict[str, Any]]:
     return options
 
 
+def _create_douyu_stream() -> Any:
+    from streamget import DouyuLiveStream
+    from streamget.platforms.douyu import live_stream
+
+    request = live_stream.async_req
+    if not getattr(request, "_douyu_tls_verified", False):
+        @functools.wraps(request)
+        async def verified_request(*args: Any, **kwargs: Any) -> Any:
+            kwargs["verify"] = True
+            return await request(*args, **kwargs)
+
+        verified_request._douyu_tls_verified = True
+        live_stream.async_req = verified_request
+
+    return DouyuLiveStream()
+
+
 def _default_fetch_json(url: str, timeout: float) -> Any:
     request = Request(url, headers={"Accept": "application/json"})
     try:
         with urlopen(request, timeout=timeout) as response:
-            return json.loads(response.read().decode("utf-8"))
+            declared_length = response.headers.get("Content-Length")
+            if declared_length is not None:
+                try:
+                    if int(declared_length) > MAX_HTTP_RESPONSE_BYTES:
+                        raise BackendError(ErrorCode.SERVICE_FAILED)
+                except ValueError:
+                    pass
+
+            chunks: list[bytes] = []
+            total = 0
+            while True:
+                chunk = response.read(min(HTTP_READ_CHUNK_BYTES,
+                                          MAX_HTTP_RESPONSE_BYTES - total + 1))
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > MAX_HTTP_RESPONSE_BYTES:
+                    raise BackendError(ErrorCode.SERVICE_FAILED)
+                chunks.append(chunk)
+            return json.loads(b"".join(chunks).decode("utf-8"))
+    except BackendError:
+        raise
     except (HTTPError, URLError, TimeoutError, OSError, json.JSONDecodeError) as error:
         raise BackendError(ErrorCode.SERVICE_FAILED) from error
 
@@ -350,9 +394,7 @@ class DouyuBackend:
 
         try:
             if self._stream_factory is None:
-                from streamget import DouyuLiveStream
-
-                stream = DouyuLiveStream()
+                stream = _create_douyu_stream()
             else:
                 stream = self._stream_factory()
 

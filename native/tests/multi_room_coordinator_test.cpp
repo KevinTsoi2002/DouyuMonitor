@@ -46,9 +46,12 @@ private slots:
     void appliesRateAtFourRoomsAndPolicyRateAtFiveRooms();
     void togglesFavoriteAndPublishesIt();
     void appliesSingleAudioFocusAndPublishesIt();
+    void clearsSingleAudioFocusAndMutesAllPlayers();
     void appliesAudioModesAndGlobalMute();
+    void appliesGlobalMuteToNewlyAttachedPlayer();
     void marksEveryRoomFocusedInMultiAudioMode();
     void mutesOnlyTheSelectedRoomInMultiAudioMode();
+    void reappliesAudioPolicyWhenPriorityChanges();
     void defaultsSingleAudioFocusToFirstRoom();
     void releasesSessionsWithoutDanglingSnapshotAccess();
     void queuesReplayWhenMetadataChangesOfflineToOnline();
@@ -61,7 +64,9 @@ private slots:
     void supportsTwoPrimaryRoomsAndQualityPriority();
     void publishesStableDecodedRoomsAcrossLayoutSwitches();
     void rejectsDualPrimaryLayoutBelowFourRooms();
+    void selectsSecondaryPrimaryWhenEnteringDualLayout();
     void replacesRemovedSecondaryPrimaryRoom();
+    void normalizesDualPrimaryLayoutWhenReplacingRoomSet();
 };
 
 void MultiRoomCoordinatorTest::acceptsConfiguredRoomLimitAndRejectsOverflow()
@@ -197,11 +202,12 @@ void MultiRoomCoordinatorTest::supportsTwoPrimaryRoomsAndQualityPriority()
     }
 
     QVERIFY(coordinator.setLayout(QStringLiteral("primary-two")));
-    QVERIFY(coordinator.setSecondaryPrimaryRoom(roomId(1)));
     QCOMPARE(coordinator.secondaryPrimaryRoomId(), roomId(1));
+    QVERIFY(coordinator.setSecondaryPrimaryRoom(roomId(2)));
+    QCOMPARE(coordinator.secondaryPrimaryRoomId(), roomId(2));
     QCOMPARE(coordinator.effectiveQuality(roomId(0)), StreamQuality::Original);
-    QCOMPARE(coordinator.effectiveQuality(roomId(1)), StreamQuality::Original);
-    QCOMPARE(coordinator.effectiveQuality(roomId(2)), StreamQuality::Standard);
+    QCOMPARE(coordinator.effectiveQuality(roomId(1)), StreamQuality::Standard);
+    QCOMPARE(coordinator.effectiveQuality(roomId(2)), StreamQuality::Original);
     client.shutdown();
 }
 
@@ -253,15 +259,77 @@ void MultiRoomCoordinatorTest::rejectsDualPrimaryLayoutBelowFourRooms()
     client.shutdown();
 }
 
+void MultiRoomCoordinatorTest::selectsSecondaryPrimaryWhenEnteringDualLayout()
+{
+    StreamgetProcessClient client(fakeServicePath());
+    MultiRoomCoordinator coordinator(&client);
+    for (int index = 0; index < 5; ++index) {
+        QVERIFY(coordinator.addRoom(roomId(index), StreamQuality::High));
+    }
+
+    QVERIFY(coordinator.secondaryPrimaryRoomId().isEmpty());
+    QVERIFY(coordinator.setLayout(QStringLiteral("primary-two")));
+    QCOMPARE(coordinator.primaryRoomId(), roomId(0));
+    QCOMPARE(coordinator.secondaryPrimaryRoomId(), roomId(1));
+    QCOMPARE(coordinator.effectiveQuality(roomId(0)), StreamQuality::Original);
+    QCOMPARE(coordinator.effectiveQuality(roomId(1)), StreamQuality::Original);
+    client.shutdown();
+}
+
 void MultiRoomCoordinatorTest::replacesRemovedSecondaryPrimaryRoom()
 {
     StreamgetProcessClient client(fakeServicePath());
     MultiRoomCoordinator coordinator(&client);
     for (int index = 0; index < 4; ++index) QVERIFY(coordinator.addRoom(roomId(index)));
     QVERIFY(coordinator.setLayout(QStringLiteral("primary-two")));
-    QVERIFY(coordinator.setSecondaryPrimaryRoom(roomId(1)));
-    QVERIFY(coordinator.removeRoom(roomId(1)));
-    QCOMPARE(coordinator.secondaryPrimaryRoomId(), roomId(2));
+    QCOMPARE(coordinator.secondaryPrimaryRoomId(), roomId(1));
+    QVERIFY(coordinator.setSecondaryPrimaryRoom(roomId(2)));
+    QVERIFY(coordinator.removeRoom(roomId(2)));
+    QCOMPARE(coordinator.secondaryPrimaryRoomId(), roomId(1));
+    client.shutdown();
+}
+
+void MultiRoomCoordinatorTest::normalizesDualPrimaryLayoutWhenReplacingRoomSet()
+{
+    StreamgetProcessClient client(fakeServicePath());
+    MultiRoomCoordinator coordinator(&client);
+
+    const auto replace = [&coordinator](int count) {
+        QVector<CoordinatorRoomSpec> rooms;
+        rooms.reserve(count);
+        for (int index = 0; index < count; ++index) {
+            rooms.push_back({roomId(index), StreamQuality::High, -1, {}, 100, false});
+        }
+        return coordinator.replaceRooms(rooms);
+    };
+    const auto assertPrimaryIdsAreValid = [&coordinator] {
+        const QStringList activeIds = coordinator.roomIds();
+        const QString primary = coordinator.primaryRoomId();
+        const QString secondary = coordinator.secondaryPrimaryRoomId();
+        QVERIFY(primary.isEmpty() || activeIds.contains(primary));
+        QVERIFY(secondary.isEmpty() || activeIds.contains(secondary));
+        QVERIFY(primary.isEmpty() || secondary.isEmpty() || primary != secondary);
+    };
+
+    QCOMPARE(replace(4), RoomCommandResult::Accepted);
+    QVERIFY(coordinator.setLayout(QStringLiteral("primary-two")));
+    QCOMPARE(coordinator.layoutMode(), QStringLiteral("primary-two"));
+    QCOMPARE(coordinator.layoutId(), QStringLiteral("primary-two"));
+
+    for (const int count : {0, 1, 3}) {
+        QCOMPARE(replace(count), RoomCommandResult::Accepted);
+        QCOMPARE(coordinator.layoutMode(), QStringLiteral("auto"));
+        QCOMPARE(coordinator.layoutId(), QStringLiteral("auto"));
+        assertPrimaryIdsAreValid();
+    }
+
+    QCOMPARE(replace(4), RoomCommandResult::Accepted);
+    QCOMPARE(coordinator.layoutMode(), QStringLiteral("auto"));
+    QVERIFY(coordinator.setLayout(QStringLiteral("primary-two")));
+    QCOMPARE(replace(5), RoomCommandResult::Accepted);
+    QCOMPARE(coordinator.layoutMode(), QStringLiteral("primary-two"));
+    QCOMPARE(coordinator.layoutId(), QStringLiteral("primary-two"));
+    assertPrimaryIdsAreValid();
     client.shutdown();
 }
 
@@ -443,6 +511,35 @@ void MultiRoomCoordinatorTest::appliesSingleAudioFocusAndPublishesIt()
     client.shutdown();
 }
 
+void MultiRoomCoordinatorTest::clearsSingleAudioFocusAndMutesAllPlayers()
+{
+    StreamgetProcessClient client(fakeServicePath());
+    MultiRoomCoordinator coordinator(&client);
+
+    QVERIFY(coordinator.addRoom(QStringLiteral("63136")));
+    QVERIFY(coordinator.addRoom(QStringLiteral("63137")));
+    MpvQuickItem firstPlayer;
+    MpvQuickItem secondPlayer;
+    QVERIFY(firstPlayer.isMpvInitialized());
+    QVERIFY(secondPlayer.isMpvInitialized());
+    QVERIFY(coordinator.attachPlayer(QStringLiteral("63136"), &firstPlayer));
+    QVERIFY(coordinator.attachPlayer(QStringLiteral("63137"), &secondPlayer));
+    QVERIFY(coordinator.setAudioFocus(QStringLiteral("63137")));
+    QVERIFY(!secondPlayer.isMuted());
+    QVERIFY(firstPlayer.isMuted());
+
+    QVERIFY(coordinator.setAudioFocus(QString()));
+    QVERIFY(coordinator.audioRoomId().isEmpty());
+    QVERIFY(firstPlayer.isMuted());
+    QVERIFY(secondPlayer.isMuted());
+    const RoomSnapshots snapshots = coordinator.roomSnapshots();
+    QVERIFY(!snapshots.at(0).audioFocused);
+    QVERIFY(!snapshots.at(1).audioFocused);
+    QVERIFY(snapshots.at(0).muted);
+    QVERIFY(snapshots.at(1).muted);
+    client.shutdown();
+}
+
 void MultiRoomCoordinatorTest::appliesAudioModesAndGlobalMute()
 {
     StreamgetProcessClient client(fakeServicePath());
@@ -461,6 +558,25 @@ void MultiRoomCoordinatorTest::appliesAudioModesAndGlobalMute()
     QVERIFY(coordinator.roomSnapshots().at(0).muted);
     QVERIFY(coordinator.roomSnapshots().at(1).muted);
     QCOMPARE(coordinator.audioRoomId(), QStringLiteral("63136"));
+    client.shutdown();
+}
+
+void MultiRoomCoordinatorTest::appliesGlobalMuteToNewlyAttachedPlayer()
+{
+    StreamgetProcessClient client(fakeServicePath());
+    MultiRoomCoordinator coordinator(&client);
+
+    QVERIFY(coordinator.addRoom(QStringLiteral("63136")));
+    QVERIFY(coordinator.addRoom(QStringLiteral("63137")));
+    QVERIFY(coordinator.setGlobalMuted(true));
+
+    MpvQuickItem player;
+    QVERIFY(player.isMpvInitialized());
+    QVERIFY(coordinator.attachPlayer(QStringLiteral("63136"), &player));
+    QVERIFY(coordinator.globalMuted());
+    QVERIFY(player.isMuted());
+    QVERIFY(coordinator.roomSnapshots().at(0).muted);
+
     client.shutdown();
 }
 
@@ -538,6 +654,45 @@ void MultiRoomCoordinatorTest::mutesOnlyTheSelectedRoomInMultiAudioMode()
     QVERIFY(!snapshots.at(3).muted);
     QVERIFY(!snapshots.at(4).audioFocused);
     QVERIFY(snapshots.at(4).muted);
+    client.shutdown();
+}
+
+void MultiRoomCoordinatorTest::reappliesAudioPolicyWhenPriorityChanges()
+{
+    StreamgetProcessClient client(fakeServicePath());
+    MultiRoomCoordinator coordinator(&client);
+
+    for (int index = 0; index < 6; ++index) QVERIFY(coordinator.addRoom(roomId(index)));
+    QVERIFY(coordinator.setAudioFocus(roomId(4)));
+    QVERIFY(coordinator.setSecondaryPrimaryRoom(roomId(3)));
+    QVERIFY(coordinator.setAudioMode(QStringLiteral("multi")));
+
+    MpvQuickItem secondaryPlayer;
+    QVERIFY(secondaryPlayer.isMpvInitialized());
+    QVERIFY(coordinator.attachPlayer(roomId(3), &secondaryPlayer));
+    QVERIFY(!secondaryPlayer.isMuted());
+
+    MpvQuickItem orderPlayer;
+    QVERIFY(orderPlayer.isMpvInitialized());
+    QVERIFY(coordinator.attachPlayer(roomId(1), &orderPlayer));
+    QVERIFY(!orderPlayer.isMuted());
+
+    QCOMPARE(coordinator.setPrimaryRoomDetailed(roomId(2)), RoomCommandResult::Accepted);
+    QVERIFY(orderPlayer.isMuted());
+
+    QVERIFY(coordinator.setSecondaryPrimaryRoom(roomId(5)));
+    QVERIFY(secondaryPlayer.isMuted());
+    const RoomSnapshot snapshot = coordinator.roomSnapshots().at(3);
+    QVERIFY(!snapshot.audioFocused);
+    QVERIFY(snapshot.muted);
+
+    MpvQuickItem movedPlayer;
+    QVERIFY(movedPlayer.isMpvInitialized());
+    QVERIFY(coordinator.attachPlayer(roomId(0), &movedPlayer));
+    QVERIFY(!movedPlayer.isMuted());
+    QVERIFY(coordinator.moveRoomDetailed(roomId(0), 5) == RoomCommandResult::Accepted);
+    QVERIFY(movedPlayer.isMuted());
+
     client.shutdown();
 }
 

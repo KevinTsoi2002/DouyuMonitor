@@ -5,8 +5,6 @@
 #include <QQueue>
 #include <QString>
 
-#include <memory>
-
 #include "workspace/notification_policy.h"
 
 class QSettings;
@@ -24,7 +22,7 @@ class SystemNotificationSink {
 public:
     virtual ~SystemNotificationSink() = default;
     virtual bool available() const = 0;
-    virtual void show(const QString &title, const QString &body) = 0;
+    virtual bool show(const QString &title, const QString &body) = 0;
 };
 
 class WindowsNotificationService final : public QObject {
@@ -37,6 +35,7 @@ public:
     ~WindowsNotificationService() override;
 
     NotificationPreferences preferences() const noexcept;
+    bool available() const noexcept;
     bool setPreferences(NotificationPreferences preferences);
     bool deliver(const NotificationEvent &event);
     QString statusText() const;
@@ -48,7 +47,6 @@ private:
 
     QSettings *settings_ = nullptr;
     SystemNotificationSink *sink_ = nullptr;
-    std::unique_ptr<SystemNotificationSink> ownedSink_;
     NotificationPreferences preferences_;
     QHash<QString, qint64> deliveredEventsMs_;
     QQueue<qint64> deliveredAtMs_;

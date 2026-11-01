@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>CSTG 特勤终端 · 视觉方向评审</title>
+  <link rel="icon" href="assets/icon-navigation.png">
+  <link rel="stylesheet" href="review.css">
+  <script src="review.js" defer></script>
+</head>
+<body data-scheme="a">
+  <header class="review-bar" aria-label="视觉评审工具">
+    <div class="review-brand"><span class="review-kicker">CSTG / VISUAL REVIEW</span><strong>选择你想使用的终端</strong><small>三套候选均使用占位数据与示意画面。</small></div>
+    <div class="scheme-picker" role="group" aria-label="候选视觉方案">
+      <button class="scheme-choice" data-scheme="a" aria-pressed="true"><span class="scheme-letter">A</span><span><b>侧栏 · 聚合</b><small>紧凑名单 / 对齐表格</small></span><i class="swatches swatches-a" aria-hidden="true"></i></button>
+      <button class="scheme-choice" data-scheme="b" aria-pressed="false"><span class="scheme-letter">B</span><span><b>顶栏 · 分组</b><small>分组卡片 / 等分观看</small></span><i class="swatches swatches-b" aria-hidden="true"></i></button>
+      <button class="scheme-choice" data-scheme="c" aria-pressed="false"><span class="scheme-letter">C</span><span><b>窄轨 · 焦点</b><small>名单详情 / 密集浏览</small></span><i class="swatches swatches-c" aria-hidden="true"></i></button>
+    </div>
+    <button class="record-choice" id="record-choice">记录偏好 A <span aria-hidden="true">↗</span></button>
+  </header>
+
+  <div class="app-window">
+    <div class="titlebar"><div><img src="assets/icon-app.png" alt="" width="24" height="24"><b>CSTG 特勤终端</b><span class="prototype-label">视觉评审原型</span></div><span class="window-size" id="window-size"></span><div class="window-glyphs" aria-hidden="true"><span>−</span><span>□</span><span>×</span></div></div>
+    <div class="app-body">
+      <nav class="app-nav" aria-label="应用导航">
+        <div class="nav-caption">CSTG <span>WORKSPACE</span></div>
+        <div class="nav-main">
+          <button class="nav-item active" data-page="directory" aria-current="page"><img src="assets/icon-navigation.png" alt=""><span>主播导航</span></button>
+          <button class="nav-item" data-page="ranking"><img src="assets/icon-ranking.png" alt=""><span>团播榜单</span></button>
+          <button class="nav-item" data-page="watch"><span class="nav-vector" data-icon="screens"></span><span>直播工作区</span><em id="nav-room-count">4</em></button>
+        </div>
+        <div class="nav-context"><span class="nav-caption">当前工作区</span><button class="workspace-shortcut" data-page="watch"><span class="workspace-dot"></span><span>晚间一起看<small>4 个演示房间</small></span><span>↗</span></button><p>声音焦点 · 北屿<br>主画面布局</p></div>
+        <div class="nav-bottom"><button class="nav-item" data-page="settings" aria-label="设置"><span class="nav-vector" data-icon="settings"></span><span>设置</span></button><button class="nav-item" data-page="components" aria-label="组件与状态"><span class="nav-vector" data-icon="grid"></span><span>组件与状态</span></button><small>仅供评审 · 未连接业务服务</small></div>
+      </nav>
+      <main id="page-content" tabindex="-1"><header class="page-header"><div class="page-heading"><div class="eyebrow">CSTG / DIRECTORY</div><h1>找到同伴，一起看直播</h1><p>这是不启用脚本时的静态概览。启用 JavaScript 后可比较三套方案。</p></div></header><div class="content-wrap"><div class="archive-banner">所有姓名、房间和数值均为评审占位。</div><section class="member-list"><article class="member-row"><div class="member-info"><h2>北屿</h2><p>一队 · 队长 · 示例 10001</p></div><span class="status online">直播中（示例）</span></article><article class="member-row"><div class="member-info"><h2>小满</h2><p>一队 · 队员 · 示例 10002</p></div><span class="status online">直播中（示例）</span></article></section></div></main>
+    </div>
+    <footer class="app-status"><span><i class="dot muted-dot"></i>占位示例 · 非当前直播数据</span><span id="status-context">主播导航 / 候选 A</span><span>原生 Qt Quick 实施待确认</span></footer>
+  </div>
+
+  <footer class="review-footer"><span id="scheme-description">A：完整侧栏、紧凑名单、对齐表格，常用入口固定在视线左侧。</span><button id="review-notes">查看方案说明</button><span id="saved-preference" role="status">尚未记录偏好</span></footer>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <dialog id="review-dialog" aria-labelledby="dialog-title"><div id="dialog-content"></div></dialog>
+  <noscript><div class="noscript">此评审需要 JavaScript 才能切换方案与页面。请启用脚本后重新打开；没有脚本时不记录选择。</div></noscript>
+</body>
+</html>

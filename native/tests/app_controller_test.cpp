@@ -1,4 +1,6 @@
 #include <QSettings>
+#include <QDir>
+#include <QFile>
 #include <QTemporaryDir>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -15,6 +17,7 @@
 #include "ui/workspace_model.h"
 #include "workspace/room_capacity.h"
 #include "workspace/guild_room_resolver.h"
+#include "workspace/native_workspace_store.h"
 
 #ifndef FAKE_STREAMGET_SERVICE_PATH
 #define FAKE_STREAMGET_SERVICE_PATH "fake_streamget_service"
@@ -67,9 +70,15 @@ public:
 
 class FakeNotificationSink final : public SystemNotificationSink {
 public:
-    bool available() const override { return true; }
-    void show(const QString &, const QString &) override { ++shownCount; }
+    bool available() const override { return available_; }
+    bool show(const QString &, const QString &) override
+    {
+        ++shownCount;
+        return showResult_;
+    }
 
+    bool available_ = true;
+    bool showResult_ = true;
     int shownCount = 0;
 };
 
@@ -123,20 +132,30 @@ class AppControllerTest final : public QObject {
 
 private slots:
     void defersGuildChecksUntilNavigationOpens();
+    void preservesCorruptWorkspaceOnShutdown();
+    void preservesFutureWorkspaceOnShutdown();
+    void preservesStructurallyInvalidWorkspaceOnShutdown();
+    void restoresLegalEmptyWorkspace();
+    void restoresSingleRoomWorkspace();
+    void restoresNonDefaultCoordinatorStateWithoutSnapshotOverwrite();
     void preservesFailedSaveAndRetriesLatestWorkspace();
     void coalescesVolumeSavesAndFlushesOnShutdown();
     void coalescesGuildCacheAndMemberNotifications();
     void persistsEditableEventMapping();
+    void rejectsEventMappingWhenPersistenceFails();
+    void rejectsEventMappingWhenWorkspacePersistenceFails();
     void addsRoomsThroughModelAndRejectsOverflow();
     void recordsOpenedRoomsForTheLibraryHistory();
     void doesNotExposeSensitivePlaybackMaterial();
     void restoresSavedMetadataIntoRoomModel();
     void persistsGroupPresetAndRoomPresentationSettings();
     void persistsNotificationPreferenceAndUpdatesMonitoringState();
+    void reportsUnavailableNotificationBackendSeparatelyFromPreference();
     void persistsNotificationEventPreferences();
     void synchronizesDanmakuFromGlobalRoomLiveAndActiveState();
     void stopsDanmakuBeforeServiceShutdown();
     void activatesGroupAndReplacesActiveRoomSet();
+    void normalizesDualPrimaryLayoutWhenSwitchingToSmallGroup();
     void managesGroupMembersAndOrder();
     void allowsRoomMembershipInMultipleGroupsAndEnforcesCapacity();
     void assignsLibraryRoomToActiveGroupAfterSwitch();
@@ -147,16 +166,24 @@ private slots:
     void publishesCommandFailureToToast();
     void restoresLayoutAndRatioFromWorkspacePreset();
     void persistsGlobalAudioPolicy();
+    void clearsAudioFocusAndRejectsUnknownRoom();
+    void preservesClearedAudioFocusAcrossControllerRestart();
     void preservesFavoriteWhenReaddingLibraryRoom();
     void ordersFavoritesByManualOrderAndMovesThem();
     void removesInactiveHistoryWithoutRemovingFavoriteEntry();
     void appliesWorkspacePresetToAllRoomsRepeatedly();
+    void preservesEmptyAudioFocusWhenApplyingWorkspacePreset();
+    void refreshesRoomModelAfterLayoutChangeAndPreset();
     void restoresPresetRoomsMissingFromLibrary();
     void deletesWorkspacePresetAndPersistsRemoval();
     void defersRequestedRoomRemovalUntilEventLoop();
+    void ignoresDeferredRoomRemovalDuringShutdown();
     void preservesPlaybackAndDanmakuStateWhenHostedInBackground();
     void minimizesWithoutEnteringBackground();
     void persistsCloseBehaviorPreference();
+    void rejectsCloseBehaviorPersistenceFailure();
+    void retriesCloseBehaviorPersistence();
+    void retriesLatestCloseBehaviorPersistenceIntent();
     void clearsUnrememberedCloseBehaviorPreference();
     void exposesUpdateCheckerState();
     void createsEmptyTeamsAndAssignsRosterMembers();
@@ -167,6 +194,7 @@ private slots:
     void enforcesTeamLimitsAndRosterMembership();
     void persistsIndependentTeamsAndNavigationVisibility();
     void mapsNewGuildMembersToLiveRankIdentities();
+    void restrictsHistoricalPortraitAliasesToVerifiedRooms();
     void addsResolvedGuildMemberWithoutUsingOrdinarySearchState();
     void rejectsGuildQuickAddWithoutRoomOrCapacity();
     void enforcesGuildQuickAddLayoutCapacity();
@@ -180,7 +208,61 @@ private slots:
     void keepsImportPreviewAfterRankDisplayUpdates();
     void rejectsImportAfterVerifiedRoomIdentityChanges();
     void keepsImportPreviewWhenBundledRoomIsFirstCached();
+    void persistsIndependentThemePreference();
+    void rejectsInvalidThemePreference();
+    void preservesThemeWhenPreferenceCannotBeSaved();
 };
+
+void AppControllerTest::persistsIndependentThemePreference()
+{
+    QTemporaryDir dir;
+    const auto path = dir.filePath("theme.ini");
+    QSettings settings(path, QSettings::IniFormat);
+    settings.setValue("unrelated/value", 42);
+    AppController controller(fakeServicePath(), &settings);
+    QCOMPARE(controller.property("themeMode").toString(), QStringLiteral("night"));
+    const auto workspaceBefore = settings.value("DouyuMonitor/nativeWorkspaceV1");
+    bool applied = false;
+    QVERIFY(QMetaObject::invokeMethod(&controller, "setThemeMode", Q_RETURN_ARG(bool, applied),
+                                     Q_ARG(QString, QStringLiteral("day"))));
+    QVERIFY(applied);
+    QCOMPARE(controller.property("themeMode").toString(), QStringLiteral("day"));
+    QSettings restored(path, QSettings::IniFormat);
+    QCOMPARE(restored.value("ui/themeModeV1").toString(), QStringLiteral("day"));
+    QCOMPARE(restored.value("unrelated/value").toInt(), 42);
+    QCOMPARE(settings.value("DouyuMonitor/nativeWorkspaceV1"), workspaceBefore);
+    AppController restarted(fakeServicePath(), &restored);
+    QCOMPARE(restarted.property("themeMode").toString(), QStringLiteral("day"));
+}
+
+void AppControllerTest::rejectsInvalidThemePreference()
+{
+    QTemporaryDir dir;
+    QSettings settings(dir.filePath("theme.ini"), QSettings::IniFormat);
+    settings.setValue("ui/themeModeV1", "invalid");
+    AppController controller(fakeServicePath(), &settings);
+    QCOMPARE(controller.property("themeMode").toString(), QStringLiteral("night"));
+    bool applied = true;
+    QVERIFY(QMetaObject::invokeMethod(&controller, "setThemeMode", Q_RETURN_ARG(bool, applied),
+                                     Q_ARG(QString, QStringLiteral("unrecognized"))));
+    QVERIFY(!applied);
+    QCOMPARE(controller.property("themeMode").toString(), QStringLiteral("night"));
+    QCOMPARE(settings.value("ui/themeModeV1").toString(), QStringLiteral("invalid"));
+}
+
+void AppControllerTest::preservesThemeWhenPreferenceCannotBeSaved()
+{
+    QTemporaryDir dir;
+    QSettings settings(dir.path(), QSettings::IniFormat);
+    AppController controller(fakeServicePath(), &settings);
+    bool applied = true;
+    QVERIFY(QMetaObject::invokeMethod(&controller, "setThemeMode", Q_RETURN_ARG(bool, applied),
+                                     Q_ARG(QString, QStringLiteral("day"))));
+    QVERIFY(!applied);
+    QCOMPARE(controller.property("themeMode").toString(), QStringLiteral("night"));
+    QVERIFY(!settings.contains("ui/themeModeV1"));
+    QVERIFY(!controller.workspace()->lastMessage().isEmpty());
+}
 
 void AppControllerTest::keepsImportPreviewWhenBundledRoomIsFirstCached()
 {
@@ -584,6 +666,277 @@ void AppControllerTest::persistsCloseBehaviorPreference()
     QCOMPARE(restored.closeBehavior(), QStringLiteral("background"));
 }
 
+void AppControllerTest::rejectsCloseBehaviorPersistenceFailure()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString settingsPath = directory.filePath(QStringLiteral("close.ini"));
+    const QString backupPath = directory.filePath(QStringLiteral("close.saved"));
+    const QString key = QStringLiteral("window/closeBehavior");
+    QSettings initial(settingsPath, QSettings::IniFormat);
+    initial.setValue(key, QStringLiteral("background"));
+    initial.sync();
+    QCOMPARE(initial.status(), QSettings::NoError);
+
+    QSettings settings(settingsPath, QSettings::IniFormat);
+    FakeNotificationSink sink;
+    AppController controller(fakeServicePath(), &settings, &sink);
+    QVERIFY(QFile::rename(settingsPath, backupPath));
+    QVERIFY(QDir().mkdir(settingsPath));
+    QVERIFY(!controller.setCloseBehavior(QStringLiteral("quit"), true));
+    QCOMPARE(controller.closeBehavior(), QStringLiteral("quit"));
+    QSettings persisted(backupPath, QSettings::IniFormat);
+    QCOMPARE(persisted.value(key).toString(), QStringLiteral("background"));
+}
+
+void AppControllerTest::retriesCloseBehaviorPersistence()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString settingsPath = directory.filePath(QStringLiteral("close.ini"));
+    const QString backupPath = directory.filePath(QStringLiteral("close.saved"));
+    const QString key = QStringLiteral("window/closeBehavior");
+    QSettings initial(settingsPath, QSettings::IniFormat);
+    initial.setValue(key, QStringLiteral("background"));
+    initial.sync();
+    QCOMPARE(initial.status(), QSettings::NoError);
+
+    QSettings settings(settingsPath, QSettings::IniFormat);
+    FakeNotificationSink sink;
+    AppController controller(fakeServicePath(), &settings, &sink);
+    QVERIFY(QFile::rename(settingsPath, backupPath));
+    QVERIFY(QDir().mkdir(settingsPath));
+    QVERIFY(!controller.setCloseBehavior(QStringLiteral("quit"), true));
+    QVERIFY(controller.closeBehaviorUnsaved());
+
+    QVERIFY(QDir(settingsPath).removeRecursively());
+    QVERIFY(QFile::rename(backupPath, settingsPath));
+    QVERIFY(controller.retryCloseBehaviorSave());
+    QCOMPARE(controller.closeBehavior(), QStringLiteral("quit"));
+    QVERIFY(!controller.closeBehaviorUnsaved());
+    QVERIFY(controller.closeBehaviorError().isEmpty());
+
+    QSettings restored(settingsPath, QSettings::IniFormat);
+    QCOMPARE(restored.value(key).toString(), QStringLiteral("quit"));
+}
+
+void AppControllerTest::retriesLatestCloseBehaviorPersistenceIntent()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString settingsPath = directory.filePath(QStringLiteral("close.ini"));
+    const QString backupPath = directory.filePath(QStringLiteral("close.saved"));
+    const QString key = QStringLiteral("window/closeBehavior");
+    QSettings initial(settingsPath, QSettings::IniFormat);
+    initial.setValue(key, QStringLiteral("background"));
+    initial.sync();
+    QCOMPARE(initial.status(), QSettings::NoError);
+
+    QSettings settings(settingsPath, QSettings::IniFormat);
+    FakeNotificationSink sink;
+    AppController controller(fakeServicePath(), &settings, &sink);
+    QVERIFY(QFile::rename(settingsPath, backupPath));
+    QVERIFY(QDir().mkdir(settingsPath));
+    QVERIFY(!controller.setCloseBehavior(QStringLiteral("quit"), true));
+    controller.clearCloseBehavior();
+    QVERIFY(controller.closeBehaviorUnsaved());
+    QCOMPARE(controller.closeBehavior(), QStringLiteral("ask"));
+
+    QVERIFY(QDir(settingsPath).removeRecursively());
+    QVERIFY(QFile::rename(backupPath, settingsPath));
+    QVERIFY(controller.retryCloseBehaviorSave());
+    QVERIFY(!controller.closeBehaviorUnsaved());
+    QSettings restored(settingsPath, QSettings::IniFormat);
+    QVERIFY(!restored.contains(key));
+}
+
+void AppControllerTest::preservesCorruptWorkspaceOnShutdown()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString path = directory.filePath(QStringLiteral("corrupt.ini"));
+    const QByteArray original = QByteArrayLiteral("{not-json");
+    const QString key = QStringLiteral("DouyuMonitor/nativeWorkspaceV1");
+    {
+        QSettings settings(path, QSettings::IniFormat);
+        settings.setValue(key, original);
+        settings.sync();
+        QVERIFY(settings.status() == QSettings::NoError);
+        FakeNotificationSink sink;
+        AppController controller(fakeServicePath(), &settings, &sink);
+        QVERIFY(QMetaObject::invokeMethod(&controller, "retryWorkspaceSave"));
+        QVERIFY(controller.workspaceUnsaved());
+        controller.shutdown();
+    }
+    QSettings restored(path, QSettings::IniFormat);
+    QCOMPARE(restored.value(key).toByteArray(), original);
+}
+
+void AppControllerTest::preservesFutureWorkspaceOnShutdown()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString path = directory.filePath(QStringLiteral("future.ini"));
+    const QByteArray original = QByteArrayLiteral(
+        R"JSON({"version":999,"library":[],"groups":[],"activeRoomIds":[]})JSON");
+    const QString key = QStringLiteral("DouyuMonitor/nativeWorkspaceV1");
+    {
+        QSettings settings(path, QSettings::IniFormat);
+        settings.setValue(key, original);
+        settings.sync();
+        QVERIFY(settings.status() == QSettings::NoError);
+        FakeNotificationSink sink;
+        AppController controller(fakeServicePath(), &settings, &sink);
+        QVERIFY(QMetaObject::invokeMethod(&controller, "retryWorkspaceSave"));
+        QVERIFY(controller.workspaceUnsaved());
+        controller.shutdown();
+    }
+    QSettings restored(path, QSettings::IniFormat);
+    QCOMPARE(restored.value(key).toByteArray(), original);
+}
+
+void AppControllerTest::preservesStructurallyInvalidWorkspaceOnShutdown()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString path = directory.filePath(QStringLiteral("invalid.ini"));
+    const QByteArray original = QByteArrayLiteral(
+        R"JSON({"version":8,"library":[],"groups":[],"activeRoomIds":[]})JSON");
+    const QString key = QStringLiteral("DouyuMonitor/nativeWorkspaceV1");
+    {
+        QSettings settings(path, QSettings::IniFormat);
+        settings.setValue(key, original);
+        settings.sync();
+        QVERIFY(settings.status() == QSettings::NoError);
+        FakeNotificationSink sink;
+        AppController controller(fakeServicePath(), &settings, &sink);
+        QVERIFY(QMetaObject::invokeMethod(&controller, "retryWorkspaceSave"));
+        QVERIFY(controller.workspaceUnsaved());
+        controller.shutdown();
+    }
+    QSettings restored(path, QSettings::IniFormat);
+    QCOMPARE(restored.value(key).toByteArray(), original);
+}
+
+void AppControllerTest::restoresNonDefaultCoordinatorStateWithoutSnapshotOverwrite()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString settingsPath = directory.filePath(QStringLiteral("restore.ini"));
+    const QStringList roomIds = {QStringLiteral("63136"), QStringLiteral("63137"),
+                                 QStringLiteral("63138"), QStringLiteral("63139")};
+    NativeWorkspaceSnapshot expected;
+    expected.activeRoomIds = roomIds;
+    expected.primaryRoomId = QStringLiteral("63139");
+    expected.secondaryPrimaryRoomId = QStringLiteral("63137");
+    expected.audioRoomId = QStringLiteral("63137");
+    expected.layoutId = QStringLiteral("primary-two");
+    expected.audioMode = QStringLiteral("multi");
+    expected.globalMuted = true;
+    for (const QString &roomId : roomIds) {
+        NativeRoomRecord record;
+        record.roomId = roomId;
+        record.metadata.roomId = roomId;
+        expected.library.push_back(record);
+    }
+
+    {
+        QSettings settings(settingsPath, QSettings::IniFormat);
+        NativeWorkspaceStore store(&settings);
+        QVERIFY(store.save(expected));
+        QCOMPARE(store.loadResult().status, NativeWorkspaceLoadStatus::Loaded);
+        QCOMPARE(store.loadResult().snapshot.layoutId, expected.layoutId);
+        QCOMPARE(store.loadResult().snapshot.primaryRoomId, expected.primaryRoomId);
+        QCOMPARE(store.loadResult().snapshot.audioRoomId, expected.audioRoomId);
+        QCOMPARE(store.loadResult().snapshot.audioMode, expected.audioMode);
+        QCOMPARE(store.loadResult().snapshot.globalMuted, expected.globalMuted);
+
+        FakeNotificationSink sink;
+        AppController controller(fakeServicePath(), &settings, &sink);
+        QCOMPARE(controller.rooms()->rowCount(), roomIds.size());
+        QCOMPARE(controller.workspace()->layoutId(), expected.layoutId);
+        QCOMPARE(controller.workspace()->primaryRoomId(), expected.primaryRoomId);
+        QCOMPARE(controller.workspace()->secondaryPrimaryRoomId(), expected.secondaryPrimaryRoomId);
+        QCOMPARE(controller.workspace()->audioRoomId(), expected.audioRoomId);
+        QCOMPARE(controller.workspace()->audioMode(), expected.audioMode);
+        QCOMPARE(controller.workspace()->globalMuted(), expected.globalMuted);
+    }
+
+    QSettings restoredSettings(settingsPath, QSettings::IniFormat);
+    NativeWorkspaceStore restoredStore(&restoredSettings);
+    const NativeWorkspaceSnapshot persisted = restoredStore.loadResult().snapshot;
+    QCOMPARE(persisted.layoutId, expected.layoutId);
+    QCOMPARE(persisted.primaryRoomId, expected.primaryRoomId);
+    QCOMPARE(persisted.secondaryPrimaryRoomId, expected.secondaryPrimaryRoomId);
+    QCOMPARE(persisted.audioRoomId, expected.audioRoomId);
+    QCOMPARE(persisted.audioMode, expected.audioMode);
+    QCOMPARE(persisted.globalMuted, expected.globalMuted);
+
+    FakeNotificationSink sink;
+    AppController restoredController(fakeServicePath(), &restoredSettings, &sink);
+    QCOMPARE(restoredController.rooms()->rowCount(), roomIds.size());
+    QCOMPARE(restoredController.workspace()->layoutId(), expected.layoutId);
+    QCOMPARE(restoredController.workspace()->primaryRoomId(), expected.primaryRoomId);
+    QCOMPARE(restoredController.workspace()->secondaryPrimaryRoomId(), expected.secondaryPrimaryRoomId);
+    QCOMPARE(restoredController.workspace()->audioRoomId(), expected.audioRoomId);
+    QCOMPARE(restoredController.workspace()->audioMode(), expected.audioMode);
+    QCOMPARE(restoredController.workspace()->globalMuted(), expected.globalMuted);
+}
+
+void AppControllerTest::restoresLegalEmptyWorkspace()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString path = directory.filePath(QStringLiteral("empty.ini"));
+    FakeNotificationSink sink;
+    {
+        QSettings settings(path, QSettings::IniFormat);
+        NativeWorkspaceStore store(&settings);
+        QVERIFY(store.save(NativeWorkspaceSnapshot{}));
+        AppController controller(fakeServicePath(), &settings, &sink);
+        QCOMPARE(controller.rooms()->rowCount(), 0);
+        QCOMPARE(controller.workspace()->layoutId(), QStringLiteral("auto"));
+        QCOMPARE(controller.workspace()->audioMode(), QStringLiteral("single"));
+        QVERIFY(!controller.workspace()->globalMuted());
+    }
+    QSettings restoredSettings(path, QSettings::IniFormat);
+    QCOMPARE(NativeWorkspaceStore(&restoredSettings).loadResult().status,
+             NativeWorkspaceLoadStatus::Loaded);
+}
+
+void AppControllerTest::restoresSingleRoomWorkspace()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString path = directory.filePath(QStringLiteral("single.ini"));
+    NativeWorkspaceSnapshot expected;
+    expected.activeRoomIds = {QStringLiteral("63136")};
+    expected.primaryRoomId = QStringLiteral("63136");
+    expected.audioRoomId = QStringLiteral("63136");
+    expected.globalMuted = true;
+    NativeRoomRecord record;
+    record.roomId = QStringLiteral("63136");
+    record.metadata.roomId = record.roomId;
+    expected.library = {record};
+
+    FakeNotificationSink sink;
+    {
+        QSettings settings(path, QSettings::IniFormat);
+        QVERIFY(NativeWorkspaceStore(&settings).save(expected));
+        AppController controller(fakeServicePath(), &settings, &sink);
+        QCOMPARE(controller.rooms()->rowCount(), 1);
+        QCOMPARE(controller.workspace()->primaryRoomId(), expected.primaryRoomId);
+        QCOMPARE(controller.workspace()->audioRoomId(), expected.audioRoomId);
+        QVERIFY(controller.workspace()->globalMuted());
+    }
+    QSettings restoredSettings(path, QSettings::IniFormat);
+    const NativeWorkspaceSnapshot persisted = NativeWorkspaceStore(&restoredSettings).loadResult().snapshot;
+    QCOMPARE(persisted.activeRoomIds, expected.activeRoomIds);
+    QCOMPARE(persisted.primaryRoomId, expected.primaryRoomId);
+    QCOMPARE(persisted.audioRoomId, expected.audioRoomId);
+    QVERIFY(persisted.globalMuted);
+}
+
 void AppControllerTest::clearsUnrememberedCloseBehaviorPreference()
 {
     QTemporaryDir directory;
@@ -672,6 +1025,85 @@ void AppControllerTest::persistsEditableEventMapping()
              QJsonDocument::fromJson(mapping.toUtf8()));
 }
 
+void AppControllerTest::rejectsEventMappingWhenPersistenceFails()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString settingsPath = directory.filePath(QStringLiteral("mapping.ini"));
+    const QString backupPath = directory.filePath(QStringLiteral("mapping.saved"));
+    const QString key = QStringLiteral("DouyuMonitor/eventMappingV1");
+    const QString previousMapping = QStringLiteral(
+        R"({"version":1,"event":"old","members":[{"roomId":"217331","name":"尐表哥","role":"captain","team":null}]})");
+    const QString nextMapping = QStringLiteral(
+        R"({"version":1,"event":"new","members":[{"roomId":"217331","name":"尐表哥","role":"member","team":2}]})");
+    {
+        QSettings initial(settingsPath, QSettings::IniFormat);
+        initial.setValue(key, previousMapping.toUtf8());
+        initial.sync();
+        QCOMPARE(initial.status(), QSettings::NoError);
+    }
+
+    QSettings settings(settingsPath, QSettings::IniFormat);
+    FakeNotificationSink sink;
+    AppController controller(fakeServicePath(), &settings, &sink);
+    const auto previousDocument = QJsonDocument::fromJson(previousMapping.toUtf8());
+    QCOMPARE(QJsonDocument::fromJson(controller.eventMappingJson().toUtf8()), previousDocument);
+    QSignalSpy mappingChanged(&controller, &AppController::eventMappingChanged);
+
+    QVERIFY(QFile::rename(settingsPath, backupPath));
+    QVERIFY(QDir().mkdir(settingsPath));
+
+    const QString error = controller.saveEventMapping(nextMapping);
+    QVERIFY(!error.isEmpty());
+    QCOMPARE(QJsonDocument::fromJson(controller.eventMappingJson().toUtf8()), previousDocument);
+    QCOMPARE(mappingChanged.count(), 0);
+
+    QSettings restored(backupPath, QSettings::IniFormat);
+    QCOMPARE(QJsonDocument::fromJson(restored.value(key).toByteArray()), previousDocument);
+
+    QVERIFY(QDir(settingsPath).removeRecursively());
+    QVERIFY(QFile::rename(backupPath, settingsPath));
+    settings.sync();
+    QSettings afterRecovery(settingsPath, QSettings::IniFormat);
+    QCOMPARE(QJsonDocument::fromJson(afterRecovery.value(key).toByteArray()), previousDocument);
+
+    AppController retryController(fakeServicePath(), &afterRecovery, &sink);
+    QVERIFY(retryController.saveEventMapping(nextMapping).isEmpty());
+    QCOMPARE(QJsonDocument::fromJson(retryController.eventMappingJson().toUtf8()),
+             QJsonDocument::fromJson(nextMapping.toUtf8()));
+    QSettings reloaded(settingsPath, QSettings::IniFormat);
+    QCOMPARE(QJsonDocument::fromJson(reloaded.value(key).toByteArray()),
+             QJsonDocument::fromJson(nextMapping.toUtf8()));
+}
+
+void AppControllerTest::rejectsEventMappingWhenWorkspacePersistenceFails()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString settingsPath = directory.filePath(QStringLiteral("mapping.ini"));
+    const QString key = QStringLiteral("DouyuMonitor/eventMappingV1");
+    const QString previousMapping = QStringLiteral(
+        R"({"version":1,"event":"old","members":[{"roomId":"217331","name":"尐表哥","role":"captain","team":null}]})");
+    const QString nextMapping = QStringLiteral(
+        R"({"version":1,"event":"new","members":[{"roomId":"217331","name":"尐表哥","role":"member","team":2}]})");
+    QSettings settings(settingsPath, QSettings::IniFormat);
+    settings.setValue(key, previousMapping.toUtf8());
+    settings.setValue(QStringLiteral("DouyuMonitor/nativeWorkspaceV1"), QByteArrayLiteral("{not-json"));
+    settings.sync();
+    QCOMPARE(settings.status(), QSettings::NoError);
+
+    FakeNotificationSink sink;
+    AppController controller(fakeServicePath(), &settings, &sink);
+    const auto previousDocument = QJsonDocument::fromJson(previousMapping.toUtf8());
+    QCOMPARE(QJsonDocument::fromJson(controller.eventMappingJson().toUtf8()), previousDocument);
+
+    const QString error = controller.saveEventMapping(nextMapping);
+    QVERIFY(!error.isEmpty());
+    QCOMPARE(QJsonDocument::fromJson(controller.eventMappingJson().toUtf8()), previousDocument);
+    QSettings restored(settingsPath, QSettings::IniFormat);
+    QCOMPARE(QJsonDocument::fromJson(restored.value(key).toByteArray()), previousDocument);
+}
+
 void AppControllerTest::addsRoomsThroughModelAndRejectsOverflow()
 {
     QTemporaryDir directory;
@@ -704,6 +1136,25 @@ void AppControllerTest::defersRequestedRoomRemovalUntilEventLoop()
                                       Q_ARG(QString, QStringLiteral("63136"))));
     QCOMPARE(controller.rooms()->rowCount(), 1);
     QTRY_COMPARE(controller.rooms()->rowCount(), 0);
+}
+
+void AppControllerTest::ignoresDeferredRoomRemovalDuringShutdown()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSettings settings(directory.filePath(QStringLiteral("workspace.ini")), QSettings::IniFormat);
+    FakeNotificationSink sink;
+    AppController controller(fakeServicePath(), &settings, &sink);
+
+    QCOMPARE(controller.addRoom(QStringLiteral("63136")), QString());
+    QVERIFY(QMetaObject::invokeMethod(&controller, "requestRemoveRoom",
+                                      Q_ARG(QString, QStringLiteral("63136"))));
+    QCOMPARE(controller.rooms()->rowCount(), 1);
+
+    controller.shutdown();
+    QCOMPARE(controller.rooms()->rowCount(), 1);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    QCOMPARE(controller.rooms()->rowCount(), 1);
 }
 
 void AppControllerTest::recordsOpenedRoomsForTheLibraryHistory()
@@ -755,6 +1206,8 @@ void AppControllerTest::doesNotExposeSensitivePlaybackMaterial()
     QCOMPARE(message, QStringLiteral("播放地址不可用"));
     QVERIFY(!message.contains(QStringLiteral("://")));
     QVERIFY(!message.contains(QStringLiteral("token"), Qt::CaseInsensitive));
+    QCOMPARE(controller.fixedPlaybackMessage(QStringLiteral("RENDER_CONTEXT_FAILED")),
+             QStringLiteral("视频渲染初始化失败"));
 }
 
 void AppControllerTest::restoresSavedMetadataIntoRoomModel()
@@ -861,6 +1314,57 @@ void AppControllerTest::persistsGlobalAudioPolicy()
     QCOMPARE(controller.workspace()->audioMode(), QStringLiteral("multi"));
 }
 
+void AppControllerTest::clearsAudioFocusAndRejectsUnknownRoom()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString settingsPath = directory.filePath(QStringLiteral("workspace.ini"));
+    FakeNotificationSink sink;
+    {
+        QSettings settings(settingsPath, QSettings::IniFormat);
+        AppController controller(fakeServicePath(), &settings, &sink);
+        QCOMPARE(controller.addRoom(QStringLiteral("63136")), QString());
+        QCOMPARE(controller.addRoom(QStringLiteral("63137")), QString());
+        QCOMPARE(controller.setAudioRoom(QStringLiteral("63137")), QString());
+        QCOMPARE(controller.workspace()->audioRoomId(), QStringLiteral("63137"));
+
+        QCOMPARE(controller.setAudioRoom(QString()), QString());
+        QVERIFY(controller.workspace()->audioRoomId().isEmpty());
+
+        QCOMPARE(controller.setAudioRoom(QStringLiteral("missing-room")),
+                 QStringLiteral("未找到该房间"));
+        QVERIFY(controller.workspace()->audioRoomId().isEmpty());
+    }
+
+    QSettings restoredSettings(settingsPath, QSettings::IniFormat);
+    QCOMPARE(NativeWorkspaceStore(&restoredSettings).loadResult().snapshot.audioRoomId,
+             QString());
+}
+
+void AppControllerTest::preservesClearedAudioFocusAcrossControllerRestart()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString settingsPath = directory.filePath(QStringLiteral("workspace.ini"));
+    FakeNotificationSink sink;
+    {
+        QSettings settings(settingsPath, QSettings::IniFormat);
+        AppController controller(fakeServicePath(), &settings, &sink);
+        QCOMPARE(controller.addRoom(QStringLiteral("63136")), QString());
+        QCOMPARE(controller.addRoom(QStringLiteral("63137")), QString());
+        QCOMPARE(controller.setAudioRoom(QStringLiteral("63137")), QString());
+        QCOMPARE(controller.setAudioRoom(QString()), QString());
+        QVERIFY(controller.workspace()->audioRoomId().isEmpty());
+        controller.shutdown();
+    }
+
+    QSettings restoredSettings(settingsPath, QSettings::IniFormat);
+    QCOMPARE(NativeWorkspaceStore(&restoredSettings).loadResult().snapshot.audioRoomId,
+             QString());
+    AppController restoredController(fakeServicePath(), &restoredSettings, &sink);
+    QVERIFY(restoredController.workspace()->audioRoomId().isEmpty());
+}
+
 void AppControllerTest::preservesFavoriteWhenReaddingLibraryRoom()
 {
     QTemporaryDir directory;
@@ -942,6 +1446,69 @@ void AppControllerTest::appliesWorkspacePresetToAllRoomsRepeatedly()
              QStringLiteral("63137"));
 }
 
+void AppControllerTest::preservesEmptyAudioFocusWhenApplyingWorkspacePreset()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSettings settings(directory.filePath(QStringLiteral("workspace.ini")), QSettings::IniFormat);
+    FakeNotificationSink sink;
+    AppController controller(fakeServicePath(), &settings, &sink);
+
+    QCOMPARE(controller.addRoom(QStringLiteral("63136")), QString());
+    QCOMPARE(controller.addRoom(QStringLiteral("63137")), QString());
+    QCOMPARE(controller.setAudioRoom(QString()), QString());
+    const QString presetId = controller.saveWorkspacePreset(QStringLiteral("静音布局"));
+    QVERIFY(!presetId.isEmpty());
+
+    QCOMPARE(controller.setAudioRoom(QStringLiteral("63137")), QString());
+    QCOMPARE(controller.applyWorkspacePreset(presetId), QString());
+
+    QVERIFY(controller.workspace()->audioRoomId().isEmpty());
+    QCOMPARE(controller.rooms()->rowCount(), 2);
+    for (int row = 0; row < controller.rooms()->rowCount(); ++row) {
+        const QModelIndex index = controller.rooms()->index(row, 0);
+        QVERIFY(controller.rooms()->data(index, RoomListModel::MutedRole).toBool());
+        QVERIFY(!controller.rooms()->data(index, RoomListModel::AudioFocusedRole).toBool());
+    }
+}
+
+void AppControllerTest::refreshesRoomModelAfterLayoutChangeAndPreset()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSettings settings(directory.filePath(QStringLiteral("workspace.ini")), QSettings::IniFormat);
+    FakeNotificationSink sink;
+    AppController controller(fakeServicePath(), &settings, &sink);
+
+    const QStringList presetRooms{QStringLiteral("63136"), QStringLiteral("63137"),
+                                  QStringLiteral("63138"), QStringLiteral("63139")};
+    for (const QString &roomId : presetRooms) QCOMPARE(controller.addRoom(roomId), QString());
+    QVERIFY(controller.setLayout(QStringLiteral("primary-two")));
+    const QString presetId = controller.saveWorkspacePreset(QStringLiteral("四路双主"));
+    QVERIFY(!presetId.isEmpty());
+
+    QVERIFY(controller.setLayout(QStringLiteral("auto")));
+    QCOMPARE(controller.removeRoom(QStringLiteral("63136")), QString());
+    QCOMPARE(controller.removeRoom(QStringLiteral("63137")), QString());
+    QCOMPARE(controller.addRoom(QStringLiteral("63140")), QString());
+
+    QSignalSpy inserted(controller.rooms(), &QAbstractItemModel::rowsInserted);
+    QSignalSpy changed(controller.rooms(), &QAbstractItemModel::dataChanged);
+    QCOMPARE(controller.applyWorkspacePreset(presetId), QString());
+    QCOMPARE(controller.workspace()->layoutMode(), QStringLiteral("primary-two"));
+    QCOMPARE(controller.rooms()->rowCount(), presetRooms.size());
+    for (int row = 0; row < presetRooms.size(); ++row) {
+        QCOMPARE(controller.rooms()->data(controller.rooms()->index(row, 0),
+                                           RoomListModel::RoomIdRole).toString(), presetRooms[row]);
+    }
+    QVERIFY(!inserted.isEmpty() || !changed.isEmpty());
+
+    QVERIFY(controller.setLayout(QStringLiteral("primary")));
+    QCOMPARE(controller.applyWorkspacePreset(presetId), QString());
+    QCOMPARE(controller.workspace()->layoutMode(), QStringLiteral("primary-two"));
+    QCOMPARE(controller.rooms()->rowCount(), presetRooms.size());
+}
+
 void AppControllerTest::restoresPresetRoomsMissingFromLibrary()
 {
     QTemporaryDir directory;
@@ -1012,6 +1579,20 @@ void AppControllerTest::persistsNotificationPreferenceAndUpdatesMonitoringState(
     QSettings restoredSettings(settingsPath, QSettings::IniFormat);
     AppController restored(fakeServicePath(), &restoredSettings, &sink);
     QCOMPARE(restored.monitoring()->notificationStatus(), QStringLiteral("disabled"));
+}
+
+void AppControllerTest::reportsUnavailableNotificationBackendSeparatelyFromPreference()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSettings settings(directory.filePath(QStringLiteral("workspace.ini")), QSettings::IniFormat);
+    FakeNotificationSink sink;
+    sink.available_ = false;
+
+    AppController controller(fakeServicePath(), &settings, &sink);
+
+    QCOMPARE(controller.notificationPreferences().value(QStringLiteral("enabled")).toBool(), true);
+    QCOMPARE(controller.monitoring()->notificationStatus(), QStringLiteral("unavailable"));
 }
 
 void AppControllerTest::persistsNotificationEventPreferences()
@@ -1114,6 +1695,42 @@ void AppControllerTest::activatesGroupAndReplacesActiveRoomSet()
              QStringLiteral("63136"));
     QCOMPARE(controller.workspace()->groupItems().first().toMap().value(QStringLiteral("active")).toBool(),
              true);
+}
+
+void AppControllerTest::normalizesDualPrimaryLayoutWhenSwitchingToSmallGroup()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSettings settings(directory.filePath(QStringLiteral("workspace.ini")), QSettings::IniFormat);
+    FakeNotificationSink sink;
+    AppController controller(fakeServicePath(), &settings, &sink);
+
+    for (int index = 0; index < 5; ++index) {
+        QCOMPARE(controller.addRoom(QString::number(63136 + index)), QString());
+    }
+    QVERIFY(controller.setLayout(QStringLiteral("primary-two")));
+
+    const QString groupId = controller.createGroup(QStringLiteral("三路"));
+    QVERIFY(!groupId.isEmpty());
+    for (int index = 0; index < 3; ++index) {
+        QCOMPARE(controller.assignRoomToGroup(QString::number(63136 + index), groupId), QString());
+    }
+
+    controller.setActiveGroup(groupId);
+    QCOMPARE(controller.rooms()->rowCount(), 3);
+    QCOMPARE(controller.workspace()->layoutMode(), QStringLiteral("auto"));
+    QCOMPARE(controller.workspace()->layoutId(), QStringLiteral("auto"));
+    QStringList activeIds;
+    for (int row = 0; row < controller.rooms()->rowCount(); ++row) {
+        activeIds.push_back(controller.rooms()
+                                ->data(controller.rooms()->index(row, 0), RoomListModel::RoomIdRole)
+                                .toString());
+    }
+    const QString primary = controller.workspace()->primaryRoomId();
+    const QString secondary = controller.workspace()->secondaryPrimaryRoomId();
+    QVERIFY(primary.isEmpty() || activeIds.contains(primary));
+    QVERIFY(secondary.isEmpty() || activeIds.contains(secondary));
+    QVERIFY(primary.isEmpty() || secondary.isEmpty() || primary != secondary);
 }
 
 void AppControllerTest::managesGroupMembersAndOrder()
@@ -1518,7 +2135,7 @@ void AppControllerTest::persistsIndependentTeamsAndNavigationVisibility()
     {
         QSettings settings(settingsPath, QSettings::IniFormat);
         AppController controller(fakeServicePath(), &settings, &sink);
-        QCOMPARE(controller.guildRoster().size(), 59);
+        QCOMPARE(controller.guildRoster().size(), 75);
         const QVariantMap firstMember = controller.guildRoster().first().toMap();
         QCOMPARE(firstMember.value(QStringLiteral("id")).toString(),
                  QStringLiteral("hamster-001"));
@@ -1528,6 +2145,10 @@ void AppControllerTest::persistsIndependentTeamsAndNavigationVisibility()
                  QStringLiteral("71415"));
         QCOMPARE(firstMember.value(QStringLiteral("role")).toString(),
                  QStringLiteral("other"));
+        QCOMPARE(firstMember.value(QStringLiteral("gender")).toString(), QStringLiteral("m"));
+        QVERIFY(firstMember.value(QStringLiteral("directoryListed")).toBool());
+        QCOMPARE(firstMember.value(QStringLiteral("directoryOrder")).toInt(), 0);
+        QVERIFY(!firstMember.value(QStringLiteral("avatarUrl")).toString().isEmpty());
 
         teamId = controller.createTeam(QStringLiteral("持久化队伍"));
         QCOMPARE(controller.assignGuildMemberToTeam(QStringLiteral("hamster-001"), teamId),
@@ -1627,6 +2248,33 @@ void AppControllerTest::addsResolvedGuildMemberWithoutUsingOrdinarySearchState()
         }
     }
     QVERIFY(active);
+}
+
+void AppControllerTest::restrictsHistoricalPortraitAliasesToVerifiedRooms()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSettings settings(directory.filePath(QStringLiteral("workspace.ini")), QSettings::IniFormat);
+    FakeNotificationSink sink;
+    AppController controller(fakeServicePath(), &settings, &sink);
+    const auto member = [&controller] {
+        for (const auto &item : controller.guildRoster()) {
+            if (item.toMap().value("id").toString() == QStringLiteral("hamster-017"))
+                return item.toMap();
+        }
+        return QVariantMap{};
+    };
+    QVERIFY(member().value("portraitIdentityVerified").toBool());
+    QCOMPARE(member().value("portraitRoomIds").toStringList(), QStringList{QStringLiteral("55588")});
+    QVERIFY(!member().value("fallbackAvatarUrl").toString().isEmpty());
+    QCOMPARE(controller.setGuildMemberRoomId("hamster-017", "55588"), QString());
+    QVERIFY(member().value("portraitIdentityVerified").toBool());
+    QVERIFY(!member().value("avatarUrl").toString().isEmpty());
+    QCOMPARE(controller.setGuildMemberRoomId("hamster-017", "999"), QString());
+    QVERIFY(!member().value("portraitIdentityVerified").toBool());
+    QVERIFY(member().value("portraitRoomIds").toStringList().isEmpty());
+    QVERIFY(member().value("avatarUrl").toString().isEmpty());
+    QVERIFY(member().value("fallbackAvatarUrl").toString().isEmpty());
 }
 
 void AppControllerTest::rejectsGuildQuickAddWithoutRoomOrCapacity()

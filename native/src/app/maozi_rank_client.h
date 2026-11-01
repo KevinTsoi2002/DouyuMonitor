@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QObject>
+#include <QByteArray>
 #include <QHash>
 #include <QUrl>
 #include <QVariantList>
@@ -69,10 +70,12 @@ private:
     void requestAnonymousSession(PendingAuthAction action);
     void requestSnapshot(const QString &accessToken);
     void requestVersionCheck(const QString &accessToken);
+    void monitorReply(QNetworkReply *reply);
+    void collectReplyData(QNetworkReply *reply);
     void finishError(const QString &message, bool preserveEntries = false);
-    void handleAuthReply(QNetworkReply *reply);
-    void handleSnapshotReply(QNetworkReply *reply);
-    void handleVersionReply(QNetworkReply *reply);
+    void handleAuthReply(QNetworkReply *reply, const QByteArray &payload);
+    void handleSnapshotReply(QNetworkReply *reply, const QByteArray &payload);
+    void handleVersionReply(QNetworkReply *reply, const QByteArray &payload);
     void parseSnapshot(const QByteArray &payload);
     void applyEntries(QVariantList entries,
                       QVariantList placementEntries,
@@ -91,6 +94,7 @@ private:
     QNetworkAccessManager *manager_ = nullptr;
     QTimer *timeoutTimer_ = nullptr;
     QNetworkReply *reply_ = nullptr;
+    QByteArray responseBody_;
     QUrl authEndpoint_;
     QUrl snapshotEndpoint_;
     QUrl versionEndpoint_;
@@ -106,6 +110,8 @@ private:
     bool loading_ = false;
     bool syncPending_ = false;
     bool snapshotRefreshActive_ = false;
+    bool versionCheckReauthAttempted_ = false;
+    bool responseTooLarge_ = false;
     QString errorMessage_;
     QString lastSyncError_;
     int totalVoters_ = 0;

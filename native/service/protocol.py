@@ -7,6 +7,7 @@ from typing import Any
 ROOM_ID_RE = re.compile(r"^[0-9]{1,20}$")
 QUALITY_VALUES = frozenset({"auto", "original", "super", "high", "standard"})
 MAX_QUALITY_RATE = 255
+MAX_JSONL_RESPONSE_BYTES = 1024 * 1024
 OPERATIONS = frozenset({"ping", "resolve", "search", "status", "cancel", "shutdown"})
 
 
@@ -65,7 +66,7 @@ def parse_request(line: str) -> dict[str, Any]:
         raise ProtocolError(ErrorCode.INVALID_INPUT)
 
     operation = value.get("op")
-    if operation not in OPERATIONS:
+    if not isinstance(operation, str) or operation not in OPERATIONS:
         raise ProtocolError(ErrorCode.INVALID_INPUT)
 
     request_id = value["requestId"]
@@ -146,3 +147,10 @@ def error_response(request_id: int, code: ErrorCode) -> dict[str, Any]:
             "retryable": code in RETRYABLE_CODES,
         },
     }
+
+
+def serialize_jsonl_response(value: dict[str, Any]) -> bytes:
+    encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    if len(encoded) > MAX_JSONL_RESPONSE_BYTES:
+        raise ProtocolError(ErrorCode.INVALID_RESPONSE)
+    return encoded + b"\n"

@@ -215,6 +215,7 @@ RoomCommandResult MultiRoomCoordinator::setPrimaryRoomDetailed(const QString &ro
     primaryRoomId_ = roomId;
     if (secondaryPrimaryRoomId_ == roomId) secondaryPrimaryRoomId_ = previousPrimary;
     recomputeQuality();
+    applyAudioFocus();
     publishSnapshots();
     return RoomCommandResult::Accepted;
 }
@@ -227,12 +228,20 @@ RoomCommandResult MultiRoomCoordinator::setSecondaryPrimaryRoomDetailed(const QS
     }
     secondaryPrimaryRoomId_ = roomId;
     recomputeQuality();
+    applyAudioFocus();
     publishSnapshots();
     return RoomCommandResult::Accepted;
 }
 
 bool MultiRoomCoordinator::setAudioFocus(const QString &roomId)
 {
+    if (roomId.isEmpty()) {
+        if (audioRoomId_.isEmpty()) return false;
+        audioRoomId_.clear();
+        applyAudioFocus();
+        publishSnapshots();
+        return true;
+    }
     if (!sessions_.contains(roomId)) return false;
     audioRoomId_ = roomId;
     applyAudioFocus();
@@ -319,6 +328,7 @@ RoomCommandResult MultiRoomCoordinator::moveRoomDetailed(const QString &roomId, 
     const int toIndex = qBound(0, fromIndex + delta, order_.size() - 1);
     if (toIndex == fromIndex) return RoomCommandResult::Unchanged;
     order_.move(fromIndex, toIndex);
+    applyAudioFocus();
     publishSnapshots();
     return RoomCommandResult::Accepted;
 }
@@ -401,6 +411,10 @@ RoomCommandResult MultiRoomCoordinator::replaceRooms(const QVector<CoordinatorRo
                : (order_.isEmpty() ? QString() : order_.front()))
         : QString();
 
+    const QString previousLayout = layoutId_;
+    if (layoutMode_ == QStringLiteral("primary-two") && order_.size() < 4) {
+        layoutMode_ = QStringLiteral("auto");
+    }
     layoutId_ = layoutMode_;
     recomputeQuality();
     applyAudioFocus();
@@ -412,6 +426,7 @@ RoomCommandResult MultiRoomCoordinator::replaceRooms(const QVector<CoordinatorRo
         }
         scheduler_.requestNow(roomId);
     }
+    if (previousLayout != layoutId_) emit layoutChanged(layoutId_);
     publishSnapshots();
     return RoomCommandResult::Accepted;
 }
@@ -459,11 +474,25 @@ bool MultiRoomCoordinator::setLayout(const QString &layoutId)
 
     const QString previousLayout = layoutId_;
     const QString previousMode = layoutMode_;
+    const QString previousSecondary = secondaryPrimaryRoomId_;
+    if (normalized == QStringLiteral("primary-two")
+        && (!sessions_.contains(secondaryPrimaryRoomId_)
+            || secondaryPrimaryRoomId_ == primaryRoomId_)) {
+        secondaryPrimaryRoomId_.clear();
+        for (const QString &candidate : order_) {
+            if (candidate != primaryRoomId_) {
+                secondaryPrimaryRoomId_ = candidate;
+                break;
+            }
+        }
+    }
     layoutMode_ = normalized;
     layoutId_ = normalized;
+    if (previousSecondary != secondaryPrimaryRoomId_) recomputeQuality();
     if (previousLayout != layoutId_) emit layoutChanged(layoutId_);
     publishSnapshots();
-    return previousLayout != layoutId_ || previousMode != layoutMode_;
+    return previousLayout != layoutId_ || previousMode != layoutMode_
+        || previousSecondary != secondaryPrimaryRoomId_;
 }
 
 bool MultiRoomCoordinator::setPrimaryRoomRatio(double ratio)
@@ -543,6 +572,7 @@ bool MultiRoomCoordinator::attachPlayer(const QString &roomId, MpvQuickItem *pla
         || !session->attachPlayer(player)) {
         return false;
     }
+    applyAudioFocus();
     publishSnapshots();
     return true;
 }
@@ -719,6 +749,11 @@ void MultiRoomCoordinator::connectSession(RoomSession *session)
             });
     connect(session, &RoomSession::liveStatusChanged, this,
             [this, session](RoomLiveStatus) {
+                emit roomStateChanged(session->roomId());
+                publishSnapshots();
+            });
+    connect(session, &RoomSession::playbackHealthChanged, this,
+            [this, session](RoomPlaybackHealth) {
                 emit roomStateChanged(session->roomId());
                 publishSnapshots();
             });
