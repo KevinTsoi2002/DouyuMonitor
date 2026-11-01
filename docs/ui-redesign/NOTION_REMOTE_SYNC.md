@@ -102,4 +102,4 @@
 ## 2026-11-01 安装器图标与新增预览
 
 - 本轮读取项目页时 Notion 返回 `Authentication required`，未写入远端记录；115起的编号未占用，不称已同步。
-- 调查、图标生成器与RC依赖修正、新截图及后续构建/发布证据保存在 [V1.0.0-icon-correction.md](../../native/docs/releases/V1.0.0-icon-correction.md)，待连接恢复后逐项同步。
+- 调查、图标生成器与RC依赖修正、新截图、构建/发布及回下载证据保存在 [V1.0.0-icon-correction.md](../../native/docs/releases/V1.0.0-icon-correction.md)，待连接恢复后逐项同步。本地图标和预览修正已推送为8a4f505；V1.0.0安装器已替换，新SHA-256为 `05c8edadbfe5902dc3c58ad78adbd7de9103140106c7847c6e9eb5bc2b608816`。Notion本轮状态仍为未同步。
