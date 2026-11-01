@@ -7,6 +7,9 @@
 #ifndef AppVersion
   #define AppVersion "0.0.0"
 #endif
+#ifndef AppIconName
+  #error AppIconName must be supplied by build-windows-installer.ps1
+#endif
 
 [Setup]
 AppId={{B9D87858-5B5A-4CB7-8B78-8A1D6F0D1E20}
@@ -20,8 +23,8 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir={#OutputDir}
 OutputBaseFilename=DouyuMonitor-Setup-V{#AppVersion}
-SetupIconFile={#SourceDir}\douyu_monitor.ico
-UninstallDisplayIcon={app}\douyu_monitor.ico
+SetupIconFile={#SourceDir}\{#AppIconName}
+UninstallDisplayIcon={app}\{#AppIconName}
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
@@ -34,9 +37,9 @@ Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: 
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{autoprograms}\DouyuMonitor\CSTG特勤终端"; Filename: "{app}\douyu_monitor_native.exe"; WorkingDir: "{app}"; IconFilename: "{app}\douyu_monitor.ico"
-Name: "{autoprograms}\DouyuMonitor\卸载 CSTG特勤终端"; Filename: "{uninstallexe}"; IconFilename: "{app}\douyu_monitor.ico"
-Name: "{autodesktop}\CSTG特勤终端"; Filename: "{app}\douyu_monitor_native.exe"; WorkingDir: "{app}"; IconFilename: "{app}\douyu_monitor.ico"; Tasks: desktopicon
+Name: "{autoprograms}\DouyuMonitor\CSTG特勤终端"; Filename: "{app}\douyu_monitor_native.exe"; WorkingDir: "{app}"; IconFilename: "{app}\{#AppIconName}"
+Name: "{autoprograms}\DouyuMonitor\卸载 CSTG特勤终端"; Filename: "{uninstallexe}"; IconFilename: "{app}\{#AppIconName}"
+Name: "{autodesktop}\CSTG特勤终端"; Filename: "{app}\douyu_monitor_native.exe"; WorkingDir: "{app}"; IconFilename: "{app}\{#AppIconName}"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\douyu_monitor_native.exe"; Description: "启动 CSTG特勤终端"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent unchecked

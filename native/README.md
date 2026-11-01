@@ -155,6 +155,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-installer
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\generate-app-icon.ps1
 ```
 
+安装脚本按ICO内容生成 `cstg-app-<SHA256前16位>.ico` 并统一用于安装器、快捷方式及卸载展示，避免更换品牌图标后继续复用旧快捷方式的图标缓存路径。直接编译Inno脚本时需要提供相同的 `AppIconName` 定义；通常应使用上面的安装包构建脚本。
+
 ## 验收边界
 
 自动化验证覆盖 C++、QML、服务协议、libmpv 依赖与自测入口。正式版布局最多支持 16 路并全部解码，24 路全解码测试版通过独立构建开关生成。发布前仍应在目标用户环境完成真实斗鱼 1/4/9/12/16/24 路长时间播放验收，重点观察高路数下的弹幕、CPU/GPU、内存和关闭稳定性。

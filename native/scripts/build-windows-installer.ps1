@@ -171,7 +171,10 @@ $serviceStageDir = Join-Path $stageDir 'streamget_service'
 if ($LASTEXITCODE -ne 0) {
     throw 'Staged StreamGet package failed provenance verification.'
 }
-Copy-Item $appIconPath -Destination $stageDir
+# Give changed artwork a new Shell cache identity across upgrades.
+$appIconHash = (Get-FileHash -LiteralPath $appIconPath -Algorithm SHA256).Hash.ToLowerInvariant()
+$appIconName = 'cstg-app-{0}.ico' -f $appIconHash.Substring(0, 16)
+Copy-Item -LiteralPath $appIconPath -Destination (Join-Path $stageDir $appIconName)
 
 if (-not (Test-Path (Join-Path $stageDir 'platforms\qwindows.dll'))) {
     throw 'Release Qt platform plugin qwindows.dll is missing from the installer stage.'
@@ -277,7 +280,7 @@ try {
     }
 
     try {
-        & $innoCompiler "/DSourceDir=$stageDir" "/DOutputDir=$installerRoot" "/DAppVersion=$projectVersion" $installerScript
+        & $innoCompiler "/DSourceDir=$stageDir" "/DOutputDir=$installerRoot" "/DAppVersion=$projectVersion" "/DAppIconName=$appIconName" $installerScript
         $buildResult.compilerExitCode = $LASTEXITCODE
         if ($buildResult.compilerExitCode -ne 0) {
             $failures.Add("Inno Setup compilation failed with exit code $($buildResult.compilerExitCode).")

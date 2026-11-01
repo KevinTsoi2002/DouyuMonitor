@@ -201,6 +201,14 @@ function Run-Publisher([string]$name, [string]$mode, [bool]$existingOutput = $fa
     }
     if ($mode -eq 'success') {
         Check ($null -ne $identity -and $identity.bytes -gt 0) "$name has a nonempty placeholder"
+        $sourceIcon = Join-Path $nativeRoot 'app\assets\douyu_monitor.ico'
+        $iconHash = (Get-FileHash -LiteralPath $sourceIcon -Algorithm SHA256).Hash.ToLowerInvariant()
+        $iconName = 'cstg-app-{0}.ico' -f $iconHash.Substring(0, 16)
+        $stagedIcon = File-Identity (Join-Path (Join-Path $stage 'DouyuMonitor') $iconName)
+        Check ($null -ne $stagedIcon -and $stagedIcon.sha256.ToLowerInvariant() -eq $iconHash) "$name stages a brand icon with a content-specific cache identity"
+        $compiler = Get-Content -LiteralPath $env:STEP66_COMPILER_LOG -Raw | ConvertFrom-Json
+        Check (@($compiler.arguments) -contains "/DAppIconName=$iconName") "$name supplies the exact staged icon name to Inno"
+        Check (-not (Test-Path -LiteralPath (Join-Path (Join-Path $stage 'DouyuMonitor') 'douyu_monitor.ico'))) "$name avoids the legacy shortcut icon cache path"
     }
 }
 
